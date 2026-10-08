@@ -23,6 +23,9 @@
 services:
   app:
     image: ${PAY_IMAGE:-ghcr.io/i94m/payment:latest}
+    # 镜像仅构建 amd64（生产 x86）；Apple Silicon 本地测试由 Docker Desktop
+    # Rosetta 模拟运行，固定 platform 保证 pull/up 选中 amd64 变体
+    platform: linux/amd64
     # 多实例负载均衡：不能固定 container_name（扩容会重名冲突），端口改用范围且只绑 127.0.0.1，
     # 由主机 nginx（见 nginx-example.conf）反代 8000-8002 做轮询/least_conn。
     # 启动 N 个实例：docker compose up -d --scale app=3（N ≤ 端口范围大小 3）
@@ -56,6 +59,7 @@ services:
 
   worker:
     image: ${PAY_IMAGE:-ghcr.io/i94m/payment:latest}
+    platform: linux/amd64
     container_name: pay-gateway-worker
     # SAQ worker：商户通知阶梯重试 / 掉单主动查单补单 / 过期关单
     # 需要更高吞吐时同样可去掉 container_name 后 --scale worker=N，
