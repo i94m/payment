@@ -1,0 +1,75 @@
+# 生产编排：只有 app×N + worker 容器化；MySQL 与 Redis 均用宿主机系统服务（非容器），
+# 容器统一经 host.docker.internal 访问 —— Linux 由 extra_hosts 的 host-gateway
+# 映射到宿主机，macOS Docker Desktop 自带该域名。宿主机服务接入要点见 DEPLOY.md。
+#
+# 服务器一条命令部署：scripts/deploy.sh（自动 .env 初始化 / pull / up / 首次建表）。
+# 镜像来源二选一：
+#   仓库拉取（推荐，服务器不装 node/pnpm）：EPAY_IMAGE=<仓库>/epay-next:<tag> ./scripts/deploy.sh
+#   本机构建：scripts/build-image.sh（前端/文档构建 + docker build 一条命令）
+# 默认 EPAY_IMAGE=epay-next:latest。
+services:
+  app:
+    build: .                        # 本机构建入口；服务器拉取部署时不会用到
+    image: ${EPAY_IMAGE:-epay-next:latest}
+    # 多实例负载均衡：不能固定 container_name（扩容会重名冲突），端口改用范围且只绑 127.0.0.1，
+    # 由主机 nginx（见 nginx-example.conf）反代 8000-8002 做轮询/least_conn。
+    # 启动 N 个实例：docker compose up -d --scale app=3（N ≤ 端口范围大小 3）
+    deploy:
+      replicas: 2                     # 默认 2 个实例；--scale app=N 可覆盖
+    # --workers 2：单容器 2 个 uvicorn 进程（容器级扩展另用 --scale app=N）
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--access-log"]
+    ports:
+      - "127.0.0.1:8000-8002:8000"    # 只绑本机回环：外部流量必须走主机 nginx，也避免绕过限流
+    env_file:
+      - .env
+    environment:
+      # 宿主机 MySQL / Redis（systemd 等系统服务，非容器）：容器内解析到宿主机。
+      # 要求两服务监听 0.0.0.0 或 docker 网桥 IP、账号允许容器网段连接（见 DEPLOY.md）；
+      # Redis 监听非回环必须 requirepass，对应 .env 的 REDIS_PASSWORD
+      - DB_HOST=host.docker.internal
+      - REDIS_HOST=host.docker.internal
+      - TZ=Asia/Shanghai
+      - FORWARDED_ALLOW_IPS=*          # 信任主机 nginx 传来的 X-Forwarded-*，
+                                       # 让 request.client.host 也是真实 IP（端口已仅绑 127.0.0.1，安全）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux 上把该域名映射到宿主机网关
+    volumes:
+      - ./storage:/app/storage
+      - ./.env:/app/.env:ro
+    networks:
+      - app-net
+
+  worker:
+    build: .
+    image: ${EPAY_IMAGE:-epay-next:latest}
+    container_name: epay-next-worker
+    # SAQ worker：商户通知阶梯重试 / 掉单主动查单补单 / 过期关单
+    # 需要更高吞吐时同样可去掉 container_name 后 --scale worker=N，
+    # SAQ 基于 Redis 队列分发，多 worker 并发消费天然安全
+    command: ["python", "-m", "saq", "app.worker.settings"]
+    # 镜像 HEALTHCHECK 探的是 :8000 HTTP（app 专用）；worker 跑 SAQ 不监听端口，
+    # 不覆盖会永远 unhealthy —— 改探 SAQ 进程存活（slim 镜像无 ps/pgrep，用 /proc 扫描）
+    healthcheck:
+      test: ["CMD", "python", "-c", "import glob,sys; sys.exit(0 if any('app.worker.settings' in open(p,'rb').read().decode(errors='replace') for p in glob.glob('/proc/[0-9]*/cmdline')) else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=host.docker.internal
+      - REDIS_HOST=host.docker.internal
+      - TZ=Asia/Shanghai
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./storage:/app/storage
+      - ./.env:/app/.env:ro
+      - ./plugins:/app/plugins:ro   # 插件热更新（可选）
+    networks:
+      - app-net
+
+networks:
+  app-net:
+    driver: bridge

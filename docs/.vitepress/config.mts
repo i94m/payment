@@ -1,0 +1,83 @@
+import { defineConfig } from "vitepress"
+
+// 对接文档站点 — 按商户对接流程组织（无 SDK 章节）。
+// 部署形态：由 FastAPI 于 /docs 路径直接托管 .vitepress/dist 静态产物，
+// 因此 base 固定为 /docs/；本地开发 `pnpm dev` 后访问 http://localhost:5173/docs/。
+// 注意：静态托管（StaticFiles）无 cleanUrls 重写，链接需带 .html 后缀。
+export default defineConfig({
+  lang: "zh-CN",
+  title: "对接文档",
+  description: "聚合支付网关商户对接文档",
+  base: "/docs/",
+  ignoreDeadLinks: true,
+
+  head: [
+    ["meta", { name: "robots", content: "all" }],
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/docs/favicon.svg" }],
+  ],
+
+  themeConfig: {
+    nav: [
+      { text: "首页", link: "/" },
+      { text: "支付接口", link: "/pay/api.html" },
+      { text: "签名算法", link: "/sign/rsa.html" },
+    ],
+
+    sidebar: [
+      {
+        text: "开始接入",
+        items: [
+          { text: "协议规则", link: "/guide/protocol.html" },
+        ],
+      },
+      {
+        text: "支付接口",
+        items: [
+          { text: "页面跳转支付", link: "/pay/cashier.html" },
+          { text: "API接口支付", link: "/pay/api.html" },
+          { text: "支付结果通知", link: "/pay/notify.html" },
+          { text: "申请退款", link: "/api/refund.html" },
+        ],
+      },
+      {
+        text: "签名算法",
+        items: [
+          { text: "RSA2签名算法", link: "/sign/rsa.html" },
+        ],
+      },
+      {
+        text: "查询",
+        items: [
+          { text: "查询单个订单", link: "/api/order-query.html" },
+          { text: "查询退款", link: "/api/refund.html#查询退款" },
+        ],
+      },
+      {
+        text: "附录",
+        items: [
+          { text: "支付方式列表", link: "/appendix/paytype.html" },
+          { text: "补单机制", link: "/appendix/replenish.html" },
+        ],
+      },
+    ],
+
+    // 不展示右侧"本页目录"
+    outline: false,
+
+    docFooter: {
+      prev: "上一页",
+      next: "下一页",
+    },
+
+    returnToTopLabel: "回到顶部",
+    sidebarMenuLabel: "菜单",
+    darkModeSwitchLabel: "外观",
+    lightModeSwitchTitle: "切换到浅色模式",
+    darkModeSwitchTitle: "切换到深色模式",
+
+    footer: {
+      message: "对接文档如有疑问请联系平台运营",
+      copyright: "聚合支付网关",
+    },
+  },
+})

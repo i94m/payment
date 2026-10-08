@@ -1,0 +1,49 @@
+[project]
+name = "epay-next"
+version = "0.1.0"
+description = "聚合支付网关（FastAPI 重写版）：商户开放 API + 插件化上游对接"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.14.0",
+    "annotated>=0.0.2",
+    "saq>=0.26.0",
+    "bcrypt>=4.0.0",
+    "Pillow>=11.0.0",
+    "fastapi-limiter>=0.1.6",
+    "fastapi-pagination>=0.15.4",
+    "fastapi[standard]>=0.118.0",
+    "asyncmy>=0.2.10",
+    "openpyxl>=3.1.0",
+    "rich>=13.0.0",
+    "typer>=0.12.0",
+    "pydantic-settings>=2.11.0",
+    "PyJWT>=2.8.0",
+    "python-multipart>=0.0.20",
+    "python-ulid>=3.1.0",
+    "redis>=6.4.0",
+    "sqlmodel>=0.0.25",
+    "user-agents>=2.2.0",
+    "pycryptodome>=3.23.0",
+    "cryptography>=48.0.0",
+    "httpx>=0.28.1",
+    "qrcode>=8.2",
+    "pyotp>=2.9.0",
+    "aiosmtplib>=5.1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "aiosqlite>=0.20.0",
+    "playwright>=1.63.0",
+]
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple"
+default = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

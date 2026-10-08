@@ -1,0 +1,9 @@
+{
+  "id": "gaosheng",
+  "name": "gaosheng",
+  "type": "payment",
+  "title": "高盛支付",
+  "version": "1.0.0",
+  "author": "epay-next",
+  "types": ["alipay", "wxpay"]
+}

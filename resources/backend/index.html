@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/images/logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EPay 商户中心</title>
+    <script>
+      window.GLOBAL = {
+        module: "merchant",
+        api: "/merchant-api"
+      };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/apps/merchant/main.tsx"></script>
+  </body>
+</html>

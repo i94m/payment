@@ -1,0 +1,4 @@
+# VitePress 文档模块
+node_modules/
+.vitepress/dist/
+.vitepress/cache/

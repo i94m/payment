@@ -1,0 +1,383 @@
+"""数据看板：首页统计点 + 首页快捷配置。
+
+统计点：
+- 订单总数 / 商户数量
+- 总计余额（商户余额合计）/ 结算总额（结算单合计）
+- 今日/昨日预计收入（扣量订单金额合计，is_deducted）
+- 今日订单成功率；近期（60/30/10/1 分钟）订单成功率与已支付成功笔数
+- 支付方式收入统计 / 支付通道收入统计 / 支付方式手续费利润（仅今日）
+
+所有统计实时计算，无缓存。
+
+快捷配置：
+- 金额路由：按支付方式配置金额区间 → 固定通道（写入 payroute_config，choose_channel 生效）
+- 通道限速：按通道配置 次/分钟（写入 channel_ratelimit，choose_channel 生效），附近期成功率
+"""
+from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
+
+from fastapi import Depends, APIRouter, Query
+from pydantic import BaseModel
+from sqlalchemy import and_, case
+from sqlmodel import col, func, select
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core.deps import SessionDep
+from app.core.security import AdminUser, PermissionChecker
+from app.models import Channel, Merchant, Order, PaymentType, Settlement
+from app.responses import err, suc
+from app.services.home_config import (
+    get_payroute_config,
+    get_ratelimit_last,
+    get_ratelimit_map,
+    replace_ratelimit_map,
+    set_payroute_item,
+    set_ratelimit_last,
+    set_ratelimit_one,
+)
+
+router = APIRouter()
+
+
+def _rate(success: int, total: int) -> float:
+    """成功率：分母为 0（窗口内无订单）按 0% 计。"""
+    return round(success / total * 100, 2) if total > 0 else 0.0
+
+
+def _f(v) -> float:
+    return float(Decimal(str(v or 0)))
+
+
+# ============================================================
+# 首页统计
+# ============================================================
+
+async def _today_stats(session: AsyncSession, today_start: datetime) -> dict:
+    """今日收入/利润统计。
+
+    结构：
+      {all, profit_all, paytype: {支付方式ID: 实收}, channel: {通道ID: 实收}, profit_paytype: {支付方式ID: 利润}}
+    口径：status=1（已支付），实收=realmoney（买家实付），利润=profit，按支付时间归属当日。
+    """
+    rows = (await session.exec(
+        select(
+            Order.payment_type_id, Order.channel_id,
+            func.coalesce(func.sum(Order.realmoney), 0), func.coalesce(func.sum(Order.profit), 0),
+        )
+        .where(col(Order.status) == 1,
+               col(Order.paid_at) >= today_start,
+               col(Order.paid_at) < today_start + timedelta(days=1))
+        .group_by(Order.payment_type_id, Order.channel_id)
+    )).all()
+    stat: dict = {"all": 0.0, "profit_all": 0.0, "paytype": {}, "channel": {}, "profit_paytype": {}}
+    for tid, cid, money, profit in rows:
+        m, p = _f(money), _f(profit)
+        stat["all"] = round(stat["all"] + m, 2)
+        stat["profit_all"] = round(stat["profit_all"] + p, 2)
+        stat["paytype"][str(tid)] = round(_f(stat["paytype"].get(str(tid))) + m, 2)
+        stat["channel"][str(cid)] = round(_f(stat["channel"].get(str(cid))) + m, 2)
+        stat["profit_paytype"][str(tid)] = round(_f(stat["profit_paytype"].get(str(tid))) + p, 2)
+    return stat
+
+
+@router.get("", dependencies=[Depends(PermissionChecker("dashboard.view"))])
+async def index(session: SessionDep, auth: AdminUser, days: int = 7):
+    """首页统计总览：老后台 getcount 全量统计点（实时）+ 近 N 日趋势图。"""
+    now = datetime.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday_start = today_start - timedelta(days=1)
+
+    # ---- 近期成功率/成功笔数：单条条件聚合（窗口左移 1 分钟避开支付中/回调未到订单）----
+    start60 = now - timedelta(minutes=60)
+    start30 = now - timedelta(minutes=30)
+    start10 = now - timedelta(minutes=10)
+    win1_start = now - timedelta(minutes=2)
+    win1_end = now - timedelta(minutes=1)
+    stats_since = min(win1_start, today_start)
+
+    paid = case((col(Order.status) == 1, 1), else_=0)
+    row = (await session.exec(
+        select(
+            func.count().label("allnum"),
+            func.sum(case((col(Order.created_at) >= today_start, paid), else_=0)).label("sucnum"),
+            func.sum(case((col(Order.created_at) >= start60, paid), else_=0)).label("sucnum_60"),
+            func.sum(case((col(Order.created_at) >= start30, paid), else_=0)).label("sucnum_30"),
+            func.sum(case((col(Order.created_at) >= start10, paid), else_=0)).label("sucnum_10"),
+            func.sum(case((and_(col(Order.created_at) >= win1_start, col(Order.created_at) < win1_end,
+                                col(Order.status) == 1), 1), else_=0)).label("sucnum_1m"),
+            func.sum(case((col(Order.created_at) >= start60, 1), else_=0)).label("allnum_60"),
+            func.sum(case((col(Order.created_at) >= start30, 1), else_=0)).label("allnum_30"),
+            func.sum(case((col(Order.created_at) >= start10, 1), else_=0)).label("allnum_10"),
+            func.sum(case((and_(col(Order.created_at) >= win1_start, col(Order.created_at) < win1_end),
+                           1), else_=0)).label("allnum_1m"),
+        )
+        .where(col(Order.created_at) >= stats_since)
+    )).one()
+    r = row._tuple() if hasattr(row, "_tuple") else row
+    (allnum, sucnum, suc60, suc30, suc10, suc1m, all60, all30, all10, all1m) = [int(v or 0) for v in r]
+
+    # ---- 预计收入（扣量订单）：今日 / 昨日 ----
+    deducted_today = (
+        col(Order.is_deducted).is_(True),
+        col(Order.created_at) >= today_start,
+    )
+    deducted_yesterday = (
+        col(Order.is_deducted).is_(True),
+        col(Order.created_at) >= yesterday_start,
+        col(Order.created_at) < today_start,
+    )
+    today_deduct_money = (await session.exec(
+        select(func.coalesce(func.sum(Order.money), 0)).where(*deducted_today)
+    )).one()
+    today_deduct_count = (await session.exec(
+        select(func.count()).select_from(Order).where(*deducted_today)
+    )).one()
+    yesterday_deduct_money = (await session.exec(
+        select(func.coalesce(func.sum(Order.money), 0)).where(*deducted_yesterday)
+    )).one()
+    yesterday_deduct_count = (await session.exec(
+        select(func.count()).select_from(Order).where(*deducted_yesterday)
+    )).one()
+
+    count1 = (await session.exec(select(func.count()).select_from(Order))).one()
+    count2 = (await session.exec(select(func.count()).select_from(Merchant))).one()
+
+    # ---- 支付方式 / 通道名称映射（仅启用）----
+    paytype = {str(t.id): t.name for t in (await session.exec(
+        select(PaymentType).where(col(PaymentType.status) == 1).order_by(PaymentType.sort, PaymentType.id)
+    )).all()}
+    channel = {str(c.id): c.name for c in (await session.exec(
+        select(Channel).where(col(Channel.status) == 1).order_by(Channel.sort, Channel.id)
+    )).all()}
+
+    # ---- 重统计段（实时计算）----
+    usermoney = (await session.exec(
+        select(func.coalesce(func.sum(Merchant.balance), 0)).select_from(Merchant)
+    )).one()
+    settlemoney = (await session.exec(
+        select(func.coalesce(func.sum(Settlement.amount), 0)).select_from(Settlement)
+        .where(col(Settlement.status) == 1)  # 仅已打款（0 待处理 / 2 已拒绝不计）
+    )).one()
+    order_today = await _today_stats(session, today_start)
+
+    # ---- 近 N 日趋势（图表用，保持既有口径：money=申报金额）----
+    trend = []
+    trend_days = max(1, min(days, 30))
+    for i in range(trend_days - 1, -1, -1):
+        day_start = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+        cnt = (await session.exec(
+            select(func.count()).select_from(Order).where(col(Order.status) == 1,
+                                                          col(Order.paid_at) >= day_start,
+                                                          col(Order.paid_at) < day_end)
+        )).one()
+        money = (await session.exec(
+            select(func.coalesce(func.sum(Order.money), 0)).select_from(Order)
+            .where(col(Order.status) == 1, col(Order.paid_at) >= day_start, col(Order.paid_at) < day_end)
+        )).one()
+        trend.append({"date": day_start.strftime("%Y-%m-%d"), "count": int(cnt), "money": _f(money)})
+
+    today_paid_count = (await session.exec(
+        select(func.count()).select_from(Order).where(col(Order.status) == 1, col(Order.paid_at) >= today_start)
+    )).one()
+    today_paid_money = (await session.exec(
+        select(func.coalesce(func.sum(Order.money), 0)).select_from(Order)
+        .where(col(Order.status) == 1, col(Order.paid_at) >= today_start)
+    )).one()
+    today_profit = (await session.exec(
+        select(func.coalesce(func.sum(Order.profit), 0)).select_from(Order)
+        .where(col(Order.status) == 1, col(Order.paid_at) >= today_start)
+    )).one()
+    total_paid_count = (await session.exec(
+        select(func.count()).select_from(Order).where(col(Order.status) == 1)
+    )).one()
+    total_paid_money = (await session.exec(
+        select(func.coalesce(func.sum(Order.money), 0)).select_from(Order).where(col(Order.status) == 1)
+    )).one()
+
+    return suc({
+        # 既有趋势图字段（兼容保留）
+        "today": {"count": int(today_paid_count), "money": _f(today_paid_money),
+                  "profit": _f(today_profit)},
+        "total": {"count": int(total_paid_count), "money": _f(total_paid_money),
+                  "merchant_count": int(count2)},
+        "trend": trend,
+        # ---- 首页统计点（实时）----
+        "count1": int(count1),
+        "count2": int(count2),
+        "usermoney": round(_f(usermoney), 2),
+        "settlemoney": round(_f(settlemoney), 2),
+        "today_deduct_money": round(_f(today_deduct_money), 2),
+        "today_deduct_count": int(today_deduct_count),
+        "yesterday_deduct_money": round(_f(yesterday_deduct_money), 2),
+        "yesterday_deduct_count": int(yesterday_deduct_count),
+        "success_rate": _rate(sucnum, allnum),
+        "success_rate_60m": _rate(suc60, all60),
+        "success_rate_30m": _rate(suc30, all30),
+        "success_rate_10m": _rate(suc10, all10),
+        "success_rate_1m": _rate(suc1m, all1m),
+        "sucnum_60m": suc60,
+        "sucnum_30m": suc30,
+        "sucnum_10m": suc10,
+        "sucnum_1m": suc1m,
+        "paytype": paytype,
+        "channel": channel,
+        "order_today": order_today,
+        "server_time": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "admin": auth.user.username if auth.user else "",
+    })
+
+
+# 兼容 /index 路径
+router.add_api_route("/index", index, methods=["GET"], include_in_schema=False)
+
+
+# ============================================================
+# 首页快捷配置：金额路由 / 通道限速
+# ============================================================
+
+@router.get("/config", dependencies=[Depends(PermissionChecker("dashboard.view"))])
+async def home_config(session: SessionDep):
+    """首页右侧快捷面板数据：支付方式、通道、金额路由与限速当前配置。"""
+    pay_types = [{"id": t.id, "code": t.code, "name": t.name} for t in (await session.exec(
+        select(PaymentType).where(col(PaymentType.status) == 1).order_by(PaymentType.sort, PaymentType.id)
+    )).all()]
+    channels = [{"id": c.id, "name": c.name, "payment_type_id": c.payment_type_id}
+                for c in (await session.exec(
+        select(Channel).where(col(Channel.status) == 1).order_by(Channel.sort, Channel.id)
+    )).all()]
+    payroute = await get_payroute_config(session)
+    ratelimit = await get_ratelimit_map(session)
+    return suc({
+        "pay_types": pay_types,
+        "channels": channels,
+        "payroute": {str(k): v for k, v in payroute.items()},
+        "ratelimit": {str(k): v for k, v in ratelimit.items()},
+        "ratelimit_last": await get_ratelimit_last(session),
+    })
+
+
+class PayrouteRequest(BaseModel):
+    type_id: int
+    enable: bool = False
+    min: str = "0.00"
+    max: str = "0.00"
+    channel: int = 0
+
+
+@router.post("/payroute", dependencies=[Depends(PermissionChecker("channel.update"))])
+async def save_payroute(body: PayrouteRequest, session: SessionDep):
+    """保存单个支付方式的金额路由配置（首页「金额路由」面板）。"""
+    pay_type = (await session.exec(
+        select(PaymentType).where(col(PaymentType.id) == body.type_id)
+    )).first()
+    if not pay_type:
+        return err(-1, "支付方式不存在")
+
+    try:
+        minv = Decimal(str(body.min or 0).strip() or 0)
+        maxv = Decimal(str(body.max or 0).strip() or 0)
+    except InvalidOperation:
+        return err(-1, "金额格式错误")
+    if minv < 0 or maxv < 0:
+        return err(-1, "金额不能为负数")
+
+    channel_id = int(body.channel or 0)
+    if channel_id > 0:
+        ch = (await session.exec(
+            select(Channel).where(col(Channel.id) == channel_id)
+        )).first()
+        if not ch or ch.payment_type_id != body.type_id:
+            return err(-1, "固定支付通道与支付方式不匹配")
+
+    await set_payroute_item(session, body.type_id, {
+        "enable": 1 if body.enable else 0,
+        "min": minv, "max": maxv, "channel": channel_id,
+    })
+    return suc("保存成功")
+
+
+class RatelimitRequest(BaseModel):
+    channel_id: int = 0   # 0=关闭所有通道限速
+    value: int | None = None  # 次/分钟
+
+
+@router.post("/ratelimit", dependencies=[Depends(PermissionChecker("channel.update"))])
+async def save_ratelimit(body: RatelimitRequest, session: SessionDep):
+    """保存通道限速；channel_id=0 一键关闭所有通道限速（首页「通道限速」面板）。"""
+    if body.channel_id <= 0:
+        await replace_ratelimit_map(session, {})
+        await set_ratelimit_last(session, 0)
+        return suc("已关闭所有通道限速")
+
+    ch = (await session.exec(
+        select(Channel).where(col(Channel.id) == body.channel_id)
+    )).first()
+    if not ch:
+        return err(-1, "通道不存在")
+
+    value = int(body.value or 0)
+    if value < 0:
+        return err(-1, "请输入正确的次数（非负整数）")
+    await set_ratelimit_one(session, body.channel_id, value)
+    await set_ratelimit_last(session, body.channel_id)
+    return suc("保存成功")
+
+
+class RatelimitLastRequest(BaseModel):
+    channel_id: int = 0
+
+
+@router.post("/ratelimit/last", dependencies=[Depends(PermissionChecker("channel.update"))])
+async def save_ratelimit_last(body: RatelimitLastRequest, session: SessionDep):
+    """记录限速面板最后选中通道（跨浏览器恢复用）。"""
+    await set_ratelimit_last(session, int(body.channel_id or 0))
+    return suc("ok")
+
+
+@router.get("/ratelimit-stats", dependencies=[Depends(PermissionChecker("dashboard.view"))])
+async def ratelimit_stats(session: SessionDep, cid: int = Query(0, ge=0)):
+    """通道近期成交统计。
+
+    窗口统一左移 1 分钟：进单量取 [2分钟前, 1分钟前)，成功率取「1 分钟前的最近 N 单」，
+    避开正在支付/回调未到的订单被误算为失败。进单量按速率上限封顶。
+    """
+    ratelimit_map = await get_ratelimit_map(session)
+    limit = int(ratelimit_map.get(cid, 0))
+    if cid <= 0 or limit <= 0:
+        return suc({"show": 0})
+
+    now = datetime.now()
+    win_start = now - timedelta(minutes=2)
+    win_end = now - timedelta(minutes=1)
+
+    allnum = int((await session.exec(
+        select(func.count()).select_from(Order)
+        .where(col(Order.channel_id) == cid,
+               col(Order.created_at) >= win_start,
+               col(Order.created_at) < win_end)
+    )).one())
+    allnum = min(allnum, limit)  # 展示值不超过当前设置的速率上限
+
+    # 最近 N 单（1 分钟前之前）的成交情况；status 1=已支付 计为成功
+    subq = (
+        select(Order.status)
+        .where(col(Order.channel_id) == cid, col(Order.created_at) < win_end)
+        .order_by(col(Order.created_at).desc(), col(Order.trade_no).desc())
+        .limit(limit)
+        .subquery()
+    )
+    row = (await session.exec(
+        select(
+            func.count().label("total"),
+            func.sum(case((col(subq.c.status) == 1, 1), else_=0)).label("success"),
+        ).select_from(subq)
+    )).one()
+    total = int(row[0] or 0)
+    success = int(row[1] or 0)
+    rate = min(round(success / total * 100, 2), 100.0) if total > 0 else 0.0
+
+    return suc({
+        "show": 1, "limit": limit, "allnum": allnum,
+        "total": total, "success": success, "rate": rate,
+    })

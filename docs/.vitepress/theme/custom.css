@@ -1,0 +1,14 @@
+/* 取消内容区宽度限制（默认 --vp-layout-max-width: 1440px，长表格会被压缩） */
+:root {
+  --vp-layout-max-width: 100%;
+}
+.VPDoc .container,
+.VPDoc .content,
+.VPDoc .content-container {
+  max-width: 100% !important;
+}
+
+/* 表格占满内容行，避免窄栏挤压换行错乱 */
+.vp-doc table {
+  width: 100%;
+}

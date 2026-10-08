@@ -1,0 +1,9 @@
+{
+  "id": "epay",
+  "name": "epay",
+  "type": "payment",
+  "title": "EPay 上游通道",
+  "version": "1.0.0",
+  "author": "epay-next",
+  "types": ["alipay", "wxpay", "qqpay", "bank"]
+}
