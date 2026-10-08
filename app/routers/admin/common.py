@@ -3,6 +3,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
 from app.core.deps import CacheDep, SessionDep
+from app.core.limiter import rate_limit
 from app.core.security import AdminUser, hash_password, verify_password
 from app.models import Merchant, SystemAdmin
 from app.responses import err, suc
@@ -15,8 +16,8 @@ public_router = APIRouter()
 
 
 @public_router.get("/site-info")
-async def get_site_info(session: SessionDep, cache: CacheDep):
-    """站点公开信息：站点名 + 功能开关（商户端菜单显隐），登录页/侧边栏/菜单用。"""
+async def get_site_info(session: SessionDep, cache: CacheDep, _rl=rate_limit(times=60)):
+    """站点公开信息：站点名 + 功能开关（商户端菜单显隐），登录页/侧边栏/菜单/landing 用。"""
     from app.services.settings import build_public_features, get_all_settings
     settings = await get_all_settings(session, cache=cache)
     return suc({

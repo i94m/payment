@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EPay - 一站式聚合支付管理系统</title>
+<title>聚合支付 - 一站式聚合支付管理系统</title>
 <style>
 /* ========== CSS Variables ========== */
 :root {
@@ -500,7 +500,7 @@ img { max-width: 100%; }
         <path d="M549.662286 379.111458m0 38.484412l0 333.58342q0 38.484412-38.484413 38.484412l0 0q-38.484412 0-38.484412-38.484412l0-333.58342q0-38.484412 38.484412-38.484412l0 0q38.484412 0 38.484413 38.484412Z" fill="#FFFFFF"/>
         <path d="M288.981497 542.248037m38.484412 0l367.423928 0q38.484412 0 38.484413 38.484413l0 0q0 38.484412-38.484413 38.484412l-367.423928 0q-38.484412 0-38.484412-38.484412l0 0q0-38.484412 38.484412-38.484413Z" fill="#FFFFFF"/>
       </svg>
-      EPay
+      <span data-site-name>聚合支付</span>
     </a>
     <ul class="nav-links" id="navLinks">
       <li><a href="#features">产品功能</a></li>
@@ -526,7 +526,7 @@ img { max-width: 100%; }
 
   <div class="container">
     <div class="hero-text fade-up">
-      <h1>一站式<span>聚合支付</span>管理系统</h1>
+      <h1>一站式<span data-site-name>聚合支付</span>管理系统</h1>
       <p>支持多通道聚合、智能轮询、代理分润，轻松管理支付业务。高性能、易扩展、安全可靠。</p>
       <div class="hero-buttons">
         <a href="/merchant" class="btn-primary">
@@ -990,7 +990,7 @@ img { max-width: 100%; }
 <footer class="footer" id="pricing">
   <div class="container">
     <div class="footer-content">
-      <div class="footer-brand"><span>Easy</span>Pay</div>
+      <div class="footer-brand"><span data-site-name>聚合支付</span></div>
       <div class="footer-links">
         <a href="/admin">管理后台</a>
       </div>
@@ -1035,6 +1035,15 @@ img { max-width: 100%; }
   document.querySelectorAll('.fade-up').forEach(function(el) {
     observer.observe(el);
   });
+
+  // Site name follows admin settings (public endpoint, silent on failure)
+  fetch('/admin-api/site-info').then(function(r) { return r.json(); }).then(function(res) {
+    var name = res && res.data && res.data.site_name;
+    if (!name) return;
+    document.title = name + ' - 一站式聚合支付管理系统';
+    var nodes = document.querySelectorAll('[data-site-name]');
+    for (var i = 0; i < nodes.length; i++) nodes[i].textContent = name;
+  }).catch(function() {});
 })();
 </script>
 </body>
