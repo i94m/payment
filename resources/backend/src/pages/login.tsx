@@ -82,7 +82,7 @@ export function LoginPage() {
 
   return (
     <div className="relative min-h-screen bg-background">
-      <div className="absolute top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-6 shadow-md sm:w-96">
+      <div className="absolute top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-card p-6 shadow-md sm:w-96">
         <h1 className="text-center text-2xl font-bold">{siteName || "EPay"}</h1>
         <p className="mt-1 text-center text-sm text-muted-foreground">
           {APP_MODULE === "merchant" ? "商户中心 · 输入您的账户信息以继续"
@@ -170,7 +170,7 @@ export function LoginPage() {
                           <img
                             src={captchaImage}
                             alt="captcha"
-                            className="h-10 w-[130px] rounded-md border cursor-pointer"
+                            className="h-10 w-[130px] rounded-md cursor-pointer"
                           />
                         </button>
                       )}
@@ -192,7 +192,7 @@ export function LoginPage() {
           )}
 
           <Button type="submit" className="h-10 w-full" disabled={loading}>
-            {loading ? "加载中..." : "登录"}
+            {loading ? "登录中..." : "登录"}
           </Button>
 
           {APP_MODULE === "merchant" && (

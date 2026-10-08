@@ -226,7 +226,7 @@ export function RegisterPage() {
           )}
 
           <Button type="submit" className="h-10 w-full" disabled={loading}>
-            {loading ? "加载中..." : "注册商户"}
+            {loading ? "注册中..." : "注册商户"}
           </Button>
 
           <div className="text-center text-sm text-muted-foreground">
