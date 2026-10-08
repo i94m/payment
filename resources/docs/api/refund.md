@@ -5,7 +5,7 @@
 
 支持多次部分退款；累计退款达到可退上限后订单转为全额退款状态。
 
-URL地址：`{site_url}/orders/{trade_no}/refund`
+URL地址：`{site_url}/api/orders/{trade_no}/refund`
 
 请求方式：`POST`（Content-Type: `application/json`，签名在 body 参数内）
 
@@ -51,7 +51,7 @@ URL地址：`{site_url}/orders/{trade_no}/refund`
 ## 请求示例
 
 ```bash
-curl -X POST "{site_url}/orders/260926120000000001/refund" \
+curl -X POST "{site_url}/api/orders/260926120000000001/refund" \
   -H "Content-Type: application/json" \
   -d '{
     "pid": 1001,
@@ -88,7 +88,7 @@ curl -X POST "{site_url}/orders/260926120000000001/refund" \
 
 ## 查询退款
 
-URL地址：`{site_url}/refunds/{refund_no}`
+URL地址：`{site_url}/api/refunds/{refund_no}`
 
 请求方式：`GET`（认证参数放在 URL query 上）
 
@@ -106,8 +106,8 @@ URL地址：`{site_url}/refunds/{refund_no}`
 返回字段与申请退款一致（查不到退款单时 `code` 非 0）。示例：
 
 ```bash
-curl "{site_url}/refunds/R2609261200000001001?pid=1001&timestamp=1696000000&sign=...&sign_type=RSA2"
+curl "{site_url}/api/refunds/R2609261200000001001?pid=1001&timestamp=1696000000&sign=...&sign_type=RSA2"
 ```
 
 提示：仅保存了商户退款号（`out_refund_no`）时，可用
-`{site_url}/refunds/none?out_refund_no=R20260926001&pid=...` 兜底查询。
+`{site_url}/api/refunds/none?out_refund_no=R20260926001&pid=...` 兜底查询。

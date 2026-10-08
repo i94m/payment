@@ -82,7 +82,7 @@ def create_order(out_trade_no: str, money: str = "10.00", sign_val: str | None =
     })
     if sign_val is not None:
         params["sign"] = sign_val
-    return req("POST", "/orders", params)
+    return req("POST", "/api/orders", params)
 
 
 def db_exec(sql: str, params: tuple = ()):
@@ -190,7 +190,7 @@ st3, body3, _ = create_order(tn, "10.00", sign_val="bad")
 check("错签拒绝", body3.get("code") != 0 and "签名" in body3.get("message", ""), str(body3)[:200])
 
 q = signed_params({"pid": PID})
-st4, body4, _ = req("GET", f"/orders/{trade_no}", params=q)
+st4, body4, _ = req("GET", f"/api/orders/{trade_no}", params=q)
 check("查单待支付", body4.get("code") == 0 and body4["data"]["status"] == 0, str(body4)[:200])
 
 print("== B. 收银台页面（普通商户，不透明链接） ==")
@@ -214,7 +214,7 @@ with urllib.request.urlopen(
     pay_ack = resp.read().decode()
 time.sleep(1.5)  # 等回调与记账落库
 q2 = signed_params({"pid": PID})
-st7, body7, _ = req("GET", f"/orders/{trade_no}", params=q2)
+st7, body7, _ = req("GET", f"/api/orders/{trade_no}", params=q2)
 check("回调后查单已支付", body7["data"]["status"] == 1, str(body7)[:300])
 rows = db_exec("SELECT money, realmoney, merchant_income, status, notify_status FROM orders WHERE trade_no=?",
                (trade_no,))
@@ -292,27 +292,27 @@ with urllib.request.urlopen(
 time.sleep(1.5)  # 等回调记账（10.00 → 商户到账 9.80）
 bal0 = db_exec("SELECT balance FROM merchants WHERE pid=1001")[0][0]
 
-rf1 = req("POST", f"/orders/{trade_rf}/refund", signed_params({
+rf1 = req("POST", f"/api/orders/{trade_rf}/refund", signed_params({
     "pid": PID, "refund_amount": "3.00", "out_refund_no": f"RF{int(time.time())}"}))
 refund_no = rf1[1].get("data", {}).get("refund_no", "")
 check("部分退款 3.00 成功", rf1[1].get("code") == 0 and rf1[1]["data"]["amount"] == "3.00"
       and rf1[1]["data"]["status"] == 1, str(rf1[1])[:200])
 
-oq = req("GET", f"/orders/{trade_rf}", params=signed_params({"pid": PID}))
+oq = req("GET", f"/api/orders/{trade_rf}", params=signed_params({"pid": PID}))
 check("查单退款字段 PARTIAL",
       oq[1]["data"]["refund_status"] == "PARTIAL" and oq[1]["data"]["refunded_amount"] == "3",
       str(oq[1]["data"])[:200])
 
-rfq = req("GET", f"/refunds/{refund_no}", params=signed_params({"pid": PID}))
+rfq = req("GET", f"/api/refunds/{refund_no}", params=signed_params({"pid": PID}))
 check("退款单查询（refund_no）",
       rfq[1].get("code") == 0 and rfq[1]["data"]["amount"] == "3.00"
       and rfq[1]["data"]["status"] == 1, str(rfq[1])[:200])
 
-rf2 = req("POST", f"/orders/{trade_rf}/refund", signed_params({"pid": PID}))
+rf2 = req("POST", f"/api/orders/{trade_rf}/refund", signed_params({"pid": PID}))
 check("缺省金额=剩余全额 6.80 退款成功",
       rf2[1].get("code") == 0 and rf2[1]["data"]["amount"] == "6.80", str(rf2[1])[:200])
 
-oq2 = req("GET", f"/orders/{trade_rf}", params=signed_params({"pid": PID}))
+oq2 = req("GET", f"/api/orders/{trade_rf}", params=signed_params({"pid": PID}))
 check("退满后查单 refund_status=FULL",
       oq2[1]["data"]["status"] == 1 and oq2[1]["data"]["refund_status"] == "FULL"
       and oq2[1]["data"]["refunded_amount"] == "9.8", str(oq2[1]["data"])[:200])

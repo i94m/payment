@@ -23,7 +23,7 @@ async def _pay_order(client, session, out_trade_no, money="100.00") -> Order:
         "name": "退款测试", "money": money,
     }
     params = signed_params(params)
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     assert resp.json()["code"] == 0, resp.json()
     order = (await session.exec(
         select(Order).where(Order.out_trade_no == out_trade_no))).one()
@@ -50,7 +50,7 @@ async def _refund(client, trade_no, amount=None, out_refund_no=None, reason=None
         params["out_refund_no"] = out_refund_no
     if reason is not None:
         params["reason"] = reason
-    resp = await client.post(f"/orders/{trade_no}/refund", json=signed_params(params))
+    resp = await client.post(f"/api/orders/{trade_no}/refund", json=signed_params(params))
     return resp.json()
 
 
@@ -154,7 +154,7 @@ async def test_unpaid_order_rejected(client, seeded, session):
         "notify_url": "https://merchant.example/notify", "return_url": "",
         "name": "退款测试", "money": "10.00",
     }
-    resp = await client.post("/orders", json=signed_params(params))
+    resp = await client.post("/api/orders", json=signed_params(params))
     trade_no = resp.json()["data"]["trade_no"]
 
     body = await _refund(client, trade_no)
@@ -172,7 +172,7 @@ async def test_deducted_order_rejected(client, seeded, session):
         "notify_url": "https://merchant.example/notify", "return_url": "",
         "name": "退款测试", "money": "10.00",
     }
-    resp = await client.post("/orders", json=signed_params(params))
+    resp = await client.post("/api/orders", json=signed_params(params))
     trade_no = resp.json()["data"]["trade_no"]
     order = (await session.exec(select(Order).where(Order.trade_no == trade_no))).one()
     notify = {
@@ -220,7 +220,7 @@ async def test_query_refund_and_order_fields(client, seeded, session):
     refund_no = b1["data"]["refund_no"]
 
     # refund_no 查询
-    q = await client.get(f"/refunds/{refund_no}",
+    q = await client.get(f"/api/refunds/{refund_no}",
                          params=signed_params({"pid": "1001"}))
     assert q.json()["code"] == 0
     assert q.json()["data"]["out_refund_no"] == "QRY1"
@@ -229,18 +229,18 @@ async def test_query_refund_and_order_fields(client, seeded, session):
     assert q.json()["data"]["reason"] == ""
 
     # out_refund_no 兜底查询（refund_no 随便给）
-    q2 = await client.get("/refunds/none",
+    q2 = await client.get("/api/refunds/none",
                           params=signed_params({"pid": "1001", "out_refund_no": "QRY1"}))
     assert q2.json()["code"] == 0
     assert q2.json()["data"]["refund_no"] == refund_no
 
     # 不存在的退款单
-    q3 = await client.get("/refunds/R0000000000000000000099",
+    q3 = await client.get("/api/refunds/R0000000000000000000099",
                           params=signed_params({"pid": "1001"}))
     assert q3.json()["code"] != 0
 
     # 查单退款字段：部分退
-    oq = await client.get(f"/orders/{order.trade_no}",
+    oq = await client.get(f"/api/orders/{order.trade_no}",
                           params=signed_params({"pid": "1001"}))
     assert oq.json()["code"] == 0
     assert oq.json()["data"]["refund_status"] == "PARTIAL"
@@ -248,7 +248,7 @@ async def test_query_refund_and_order_fields(client, seeded, session):
 
     # 退满后 → FULL
     await _refund(client, order.trade_no, amount="58.00")
-    oq2 = await client.get(f"/orders/{order.trade_no}",
+    oq2 = await client.get(f"/api/orders/{order.trade_no}",
                            params=signed_params({"pid": "1001"}))
     assert oq2.json()["data"]["refund_status"] == "FULL"
     assert oq2.json()["data"]["refunded_amount"] == "98"

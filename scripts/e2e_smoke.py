@@ -50,7 +50,7 @@ def api_create_order(money="6.00") -> dict:
     params["timestamp"] = str(int(time.time()))
     params["sign"] = make_rsa_sign(params, DEMO_MERCHANT_PRIVATE_KEY)
     params["sign_type"] = "RSA2"
-    req = urllib.request.Request(BASE + "/orders", data=json.dumps(params).encode(),
+    req = urllib.request.Request(BASE + "/api/orders", data=json.dumps(params).encode(),
                                  headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req) as r:
         body = json.loads(r.read())
@@ -165,7 +165,7 @@ def main():
         check("merchant 登录", lambda: ui_login(page2, "/", "demo", "demo123456"))
 
         for path, marker in [
-            ("/orders", "平台订单号"),
+            ("/api/orders", "平台订单号"),
             ("/settle", "可结算余额"),
             ("/records", "资金流水"),
             ("/security", "接口密钥"),

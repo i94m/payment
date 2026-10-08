@@ -1,7 +1,7 @@
 """高盛支付插件（sk 协议）测试：
 
 1. 签名：ASCII 升序 k=v& 拼接 + 末尾直接拼密钥（golden vector 锁算法）
-2. POST /orders 走 gaosheng 通道下单 → 拿到上游 payUrl
+2. POST /api/orders 走 gaosheng 通道下单 → 拿到上游 payUrl
 3. JSON 回调（验签通过 + orderState=2）→ success + 订单已支付 + api_trade_no
 4. 验签失败 → fail；非支付成功状态 → success 但不记账；金额不符 → fail
 5. 主动查单（queryOrder，orderState=2）→ paid
@@ -131,7 +131,7 @@ async def _create_gaosheng_order(client, out_trade_no: str):
         "name": "测试商品", "money": "100.00",
     }
     params = signed_params(params)
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     return resp.json()
 
 

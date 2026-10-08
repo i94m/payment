@@ -84,7 +84,7 @@ async def test_switch_off_no_files(client, seeded, engine, dbg_dir):
         "notify_url": "https://merchant.example/notify", "name": "测试", "money": "100.00",
     }
     params = signed_params(params)
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     assert resp.json()["code"] == 0
     trade_no = resp.json()["data"]["trade_no"]
 
@@ -125,7 +125,7 @@ async def test_switch_on_submit_logged_no_credentials(client, seeded, engine, db
         "notify_url": "https://merchant.example/notify", "name": "测试", "money": "100.00",
     }
     params = signed_params(params)
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     assert resp.json()["code"] == 0
     trade_no = resp.json()["data"]["trade_no"]
 

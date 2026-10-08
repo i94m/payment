@@ -32,7 +32,7 @@ async def _create_order(client, session, out_trade_no: str, money: str = "100.00
         "name": "扣量补单测试", "money": money,
     }
     params = signed_params(params)
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     assert resp.json()["code"] == 0, resp.json()
     return (await session.exec(
         select(Order).where(Order.out_trade_no == out_trade_no))).one()
@@ -239,7 +239,7 @@ async def test_deducted_order_query_api_masks(client, seeded, session, engine):
     await _pay_via_callback(client, o)
 
     params = signed_params({"pid": "1001"})
-    resp = await client.get(f"/orders/{o.trade_no}", params=params)
+    resp = await client.get(f"/api/orders/{o.trade_no}", params=params)
     data = resp.json()["data"]
     assert data["status"] == 0
     assert data["endtime"] == ""

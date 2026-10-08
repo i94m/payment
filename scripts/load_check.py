@@ -70,7 +70,7 @@ async def preload_orders(client: httpx.AsyncClient, n: int) -> list[str]:
 
 
 async def _post_order(client: httpx.AsyncClient, idx: int) -> str | None:
-    r = await client.post(f"http://127.0.0.1:{port_for(idx)}/orders",
+    r = await client.post(f"http://127.0.0.1:{port_for(idx)}/api/orders",
                           json=await create_order_params(idx),
                           headers={"X-Forwarded-For": IPS[idx % len(IPS)]})
     try:
@@ -164,7 +164,7 @@ async def main():
 
         async def s3(c, wid):
             i = next(idx_it)
-            r = await c.post(f"http://127.0.0.1:{port_for(wid)}/orders",
+            r = await c.post(f"http://127.0.0.1:{port_for(wid)}/api/orders",
                              json=await create_order_params(i),
                              headers={"X-Forwarded-For": IPS[i % len(IPS)]})
             body = r.json()

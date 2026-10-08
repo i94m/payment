@@ -26,7 +26,7 @@ async def _fetch_order(trade_no: str):
 
 
 async def _create_order(client, out_trade_no="CD1", money="100.00"):
-    """走 POST /orders 下单（下单时即拉起并落库支付信息）。"""
+    """走 POST /api/orders 下单（下单时即拉起并落库支付信息）。"""
     params = {
         "pid": "1001", "type": "alipay", "out_trade_no": out_trade_no,
         "notify_url": "https://merchant.example/notify",
@@ -34,7 +34,7 @@ async def _create_order(client, out_trade_no="CD1", money="100.00"):
         "name": "直跳测试", "money": money,
     }
     params = signed_params(params)
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     data = resp.json()
     assert data["code"] == 0, data
     return await _fetch_order(data["data"]["trade_no"])

@@ -40,7 +40,7 @@ def main():
     })
 
     req = urllib.request.Request(
-        PLATFORM + "/orders",
+        PLATFORM + "/api/orders",
         data=json.dumps(params).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",

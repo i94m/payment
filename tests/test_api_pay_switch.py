@@ -50,7 +50,7 @@ async def _admin_headers(session) -> dict:
 
 @pytest.mark.asyncio
 async def test_default_open_api_works(client, seeded):
-    resp = await client.post("/orders", json=await _order_params())
+    resp = await client.post("/api/orders", json=await _order_params())
     assert resp.json()["code"] == 0
 
 
@@ -64,7 +64,7 @@ async def test_site_info_includes_api_pay_enable(client):
 async def test_disabled_rejects_create_and_query(client, session):
     await set_settings(session, {"api_pay_enable": False})
 
-    resp = await client.post("/orders", json=await _order_params())
+    resp = await client.post("/api/orders", json=await _order_params())
     body = resp.json()
     assert resp.status_code == 400
     assert body["code"] != 0
@@ -72,12 +72,12 @@ async def test_disabled_rejects_create_and_query(client, session):
 
     # 验签通过的查单同样拒绝（与下单一致的开关口径）
     params = signed_params({"pid": "1001"})
-    resp2 = await client.get("/orders/SOMETRADE", params=params)
+    resp2 = await client.get("/api/orders/SOMETRADE", params=params)
     assert resp2.status_code == 400
     assert "API支付接口未开放" in resp2.json()["message"]
 
     # 签名错误仍优先报验签失败（开关判定在验签之后）
-    resp3 = await client.post("/orders", json=await _order_params(sign="bad"))
+    resp3 = await client.post("/api/orders", json=await _order_params(sign="bad"))
     assert "签名" in resp3.json()["message"]
 
 
@@ -128,7 +128,7 @@ async def test_admin_settings_page_exposes_switch(client, session):
     resp2 = await client.patch("/admin-api/setting", json={"api_pay_enable": False},
                                headers=await _admin_headers(session))
     assert resp2.json()["code"] == 0
-    resp3 = await client.post("/orders", json=await _order_params())
+    resp3 = await client.post("/api/orders", json=await _order_params())
     assert "API支付接口未开放" in resp3.json()["message"]
 
 

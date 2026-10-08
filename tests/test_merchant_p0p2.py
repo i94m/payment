@@ -58,7 +58,7 @@ async def _pay_order(client, session, out_trade_no, money="100.00"):
         "name": "测试商品", "money": money,
     }
     params = signed_params(params)
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     data = resp.json()
     assert data["code"] == 0, data
     order = (await session.exec(
@@ -398,19 +398,19 @@ async def test_domain_whitelist_enforced(client, seeded, session):
         "name": "测试商品", "money": "10.00",
     }
     params = signed_params(params)
-    r1 = await client.post("/orders", json=params)
+    r1 = await client.post("/api/orders", json=params)
     assert r1.json()["code"] == -1
     assert "未授权" in r1.json()["message"]
 
     # 白名单域名 → 通过
-    r2 = await client.post("/orders", json=params,
+    r2 = await client.post("/api/orders", json=params,
                            headers={"Referer": "https://merchant.example/page"})
     assert r2.json()["code"] == 0, r2.json()
 
     # 通配符子域 → 通过
     params["out_trade_no"] = "DM2"
     params = signed_params(params)
-    r3 = await client.post("/orders", json=params,
+    r3 = await client.post("/api/orders", json=params,
                            headers={"Origin": "https://a.partner.com"})
     assert r3.json()["code"] == 0
 

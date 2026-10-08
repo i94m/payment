@@ -7,9 +7,9 @@
 
 ## 功能范围（v1）
 
-- **商户开放 API（全新 REST 设计）**：`POST /orders`（下单，幂等）、
-  `GET /orders/{trade_no}`（查单）、`POST /orders/{trade_no}/refund`（退款，
-  支持多次部分退款）、`GET /refunds/{refund_no}`（退款查询）；
+- **商户开放 API（全新 REST 设计）**：`POST /api/orders`（下单，幂等）、
+  `GET /api/orders/{trade_no}`（查单）、`POST /api/orders/{trade_no}/refund`（退款，
+  支持多次部分退款）、`GET /api/refunds/{refund_no}`（退款查询）；
   pid + RSA2 签名认证（签名在 JSON body 参数内），统一 `{code,message,data}` 包络
 - **收银台**：HTML 页（`/cashier?trade_no=`，自包含单文件）+ 同资源 JSON
   `/cashier/types|pay|status`（公开 + 限流）
@@ -97,7 +97,7 @@ app/
     notify.py               # 商户通知 + 阶梯重试 + notify_logs
     settle.py  settings.py  crypto.py  plugin.py  plugin_interfaces.py
   routers/
-    openapi.py              # /orders 商户开放 API（签名认证）
+    openapi.py              # /api/orders 商户开放 API（签名认证）
     cashier.py              # /cashier/types|pay|status 收银台 JSON（限流）
     web.py                  # /cashier 收银台 HTML（自包含单文件）
     callbacks.py            # /callbacks/{plugin}/{trade_no} 上游回调网关

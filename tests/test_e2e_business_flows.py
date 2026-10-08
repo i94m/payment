@@ -54,7 +54,7 @@ async def _create_order(client, session, out_trade_no: str, money: str = "100.00
         "name": "链路测试", "money": money,
     }
     params = signed_params(params)
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     assert resp.json()["code"] == 0, resp.json()
     return (await session.exec(
         select(Order).where(Order.out_trade_no == out_trade_no))).one()

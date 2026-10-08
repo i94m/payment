@@ -1,6 +1,6 @@
 # 查询订单
 
-URL地址：`{site_url}/orders/{trade_no}`
+URL地址：`{site_url}/api/orders/{trade_no}`
 
 请求方式：`GET`（认证参数放在 URL query 上）
 

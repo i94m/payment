@@ -26,7 +26,7 @@ async def _create_order(client, out_trade_no="OPQ1"):
         "name": "不透明链接测试", "money": "10.00",
     }
     params = signed_params(params)
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     body = resp.json()
     assert body["code"] == 0, body
     return body["data"]

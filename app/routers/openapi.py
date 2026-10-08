@@ -6,10 +6,10 @@ timestamp 必填、±300s 防重放；GET 查单同一组参数放 query。
 （安全关键通道是 Webhook，已由平台私钥签名）。
 
 端点：
-- POST /orders                  创建支付订单
-- GET  /orders/{trade_no}       查询订单（path 资源 + query 签名认证）
-- POST /orders/{trade_no}/refund 发起退款（api_refund_enable 开关）
-- GET  /refunds/{refund_no}     查询退款单（?out_refund_no= 兜底）
+- POST /api/orders                  创建支付订单
+- GET  /api/orders/{trade_no}       查询订单（path 资源 + query 签名认证）
+- POST /api/orders/{trade_no}/refund 发起退款（api_refund_enable 开关）
+- GET  /api/refunds/{refund_no}     查询退款单（?out_refund_no= 兜底）
 """
 import logging
 from decimal import Decimal, InvalidOperation

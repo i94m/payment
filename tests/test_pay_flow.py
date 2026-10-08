@@ -1,13 +1,13 @@
 """支付主流程端到端测试（全新 REST 接口）：
 
-1. POST /orders 签名下单（RSA2，JSON body 内签名）→ 拿到上游 payurl（金额/费率落库正确）
+1. POST /api/orders 签名下单（RSA2，JSON body 内签名）→ 拿到上游 payurl（金额/费率落库正确）
 2. 同参重复下单 → 幂等返回同一订单
 3. 上游回调 /callbacks/{plugin}/{trade_no}（验签通过）→ 订单已支付 + 商户余额/流水正确
    + 重复回调幂等 + 插件名不一致拒绝
 4. 金额不符回调 → 记账拒绝
 5. 商户通知失败 → 阶梯重试状态落库
 6. 屏蔽回调后主动查单补单 → 记账 + 通知
-7. GET /orders/{trade_no} 查单（query 签名）
+7. GET /api/orders/{trade_no} 查单（query 签名）
 8. 收银台 /cashier/* 与 /cashier 页面
 """
 import hashlib
@@ -46,7 +46,7 @@ async def _fetch_order(trade_no: str):
 
 async def _create_order(client, out_trade_no="T1001", money="100.00",
                         sign=None, notify_url="", **extra):
-    """走 POST /orders 下单（RSA2 签名），返回 (json, 订单|None)。"""
+    """走 POST /api/orders 下单（RSA2 签名），返回 (json, 订单|None)。"""
     params = {
         "pid": "1001",
         "type": "alipay",
@@ -61,7 +61,7 @@ async def _create_order(client, out_trade_no="T1001", money="100.00",
     if sign is not None:
         params["sign"] = sign  # 显式坏签名用例
 
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     data = resp.json()
     trade_no = (data.get("data") or {}).get("trade_no")
     return data, await _fetch_order(trade_no) if trade_no else None
@@ -310,7 +310,7 @@ async def test_query_order_api(client, seeded):
     assert data["code"] == 0
 
     params = signed_params({"pid": "1001"})
-    resp = await client.get(f"/orders/{order.trade_no}", params=params)
+    resp = await client.get(f"/api/orders/{order.trade_no}", params=params)
     body = resp.json()
     assert body["code"] == 0, body
     assert body["data"]["status"] == 0
@@ -322,7 +322,7 @@ async def test_query_order_api(client, seeded):
     # 错误签名 → 非 0 code
     bad = signed_params({"pid": "1001"})
     bad["sign"] = "wrong"
-    resp2 = await client.get(f"/orders/{order.trade_no}", params=bad)
+    resp2 = await client.get(f"/api/orders/{order.trade_no}", params=bad)
     assert resp2.status_code in (400, 401)
     assert resp2.json()["code"] != 0
 

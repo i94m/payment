@@ -22,9 +22,9 @@ routers.include_router(merchant_router, prefix="/merchant-api", tags=["merchant"
 from .agent import router as agent_router  # noqa: E402
 routers.include_router(agent_router, prefix="/agent-api", tags=["agent"])
 
-# 商户开放 API（根路径资源风格）— pid+签名认证，协议差异由参数承载（sign_type 等）
+# 商户开放 API（/api 根路径资源风格）— pid+签名认证，协议差异由参数承载（sign_type 等）
 from .openapi import router as openapi_router  # noqa: E402
-routers.include_router(openapi_router, tags=["openapi"])
+routers.include_router(openapi_router, prefix="/api", tags=["openapi"])
 
 # 上游回调网关（/callbacks/{plugin}/{trade_no}）— 插件验签，公开
 from .callbacks import router as callbacks_router  # noqa: E402

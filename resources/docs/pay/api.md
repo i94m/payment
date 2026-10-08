@@ -2,7 +2,7 @@
 
 此接口可用于服务器后端发起支付请求，会返回支付二维码链接或支付跳转url。
 
-URL地址：`{site_url}/orders`
+URL地址：`{site_url}/api/orders`
 
 请求方式：`POST`（Content-Type: `application/json`，签名在 body 参数内）
 
@@ -51,7 +51,7 @@ URL地址：`{site_url}/orders`
 ## 请求示例
 
 ```bash
-curl -X POST "{site_url}/orders" \
+curl -X POST "{site_url}/api/orders" \
   -H "Content-Type: application/json" \
   -d '{
     "pid": 1001,

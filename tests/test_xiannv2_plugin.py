@@ -2,7 +2,7 @@
 
 1. 签名：升序 k=v& + "&secret=" + 密钥 → md5 小写（golden vector 来自网关 debug 回显实测）
 2. 兜底验签（secret 参与排序）变体
-3. POST /orders 走 xiannv2 通道下单 → 拿到上游 payUrl
+3. POST /api/orders 走 xiannv2 通道下单 → 拿到上游 payUrl
 4. JSON 回调（验签通过 + status=2）→ success + 订单已支付 + api_trade_no
 5. 验签失败 → fail；非支付成功状态 → success 但不记账；金额解析失败 → fail
 6. 主动查单（query）→ paid

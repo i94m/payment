@@ -47,7 +47,7 @@ async def _pay_order(client, session, out_trade_no, money="100.00"):
         "name": "测试商品", "money": money,
     }
     params = signed_params(params)
-    resp = await client.post("/orders", json=params)
+    resp = await client.post("/api/orders", json=params)
     assert resp.json()["code"] == 0, resp.json()
     order = (await session.exec(
         select(Order).where(Order.out_trade_no == out_trade_no)
@@ -428,7 +428,7 @@ async def test_notify_fail_blocks_pay_status(client, seeded, session):
         "name": "测试商品", "money": "1.00",
     }
     params = signed_params(params)
-    r = await client.post("/orders", json=params)
+    r = await client.post("/api/orders", json=params)
     assert r.json()["code"] != 0
 
     await set_settings(session, {

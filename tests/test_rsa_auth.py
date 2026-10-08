@@ -215,7 +215,7 @@ async def test_rsa_generate_saves_public_key(client, session):
 @pytest.mark.asyncio
 async def test_orders_response_plain_envelope(client, seeded):
     """响应为纯 {code,message,data} 包络：无 sign/sign_type/timestamp 响应签名。"""
-    resp = await client.post("/orders", json=signed_params({
+    resp = await client.post("/api/orders", json=signed_params({
         "pid": "1001", "type": "alipay", "out_trade_no": "ENVE1",
         "notify_url": "https://merchant.example/notify",
         "return_url": "https://merchant.example/return",
@@ -237,7 +237,7 @@ async def test_unconfigured_public_key_rejected_with_hint(client, seeded, sessio
     session.add(m)
     await session.commit()
 
-    resp = await client.post("/orders", json=signed_params({
+    resp = await client.post("/api/orders", json=signed_params({
         "pid": "1001", "type": "alipay", "out_trade_no": "NOPUB1",
         "notify_url": "https://merchant.example/notify",
         "return_url": "", "name": "测试商品", "money": "10.00",
