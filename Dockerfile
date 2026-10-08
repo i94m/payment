@@ -6,9 +6,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH"
 
-# 先复制依赖文件，命中缓存
+# 先复制依赖文件，命中缓存（--no-dev：dev 组的 pytest/playwright/aiosqlite 仅测试用，不进生产镜像）
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen
+RUN uv sync --frozen --no-dev
 
 # 复制后端代码
 COPY app/ ./app/
@@ -18,15 +18,15 @@ COPY alembic/ ./alembic/
 # alembic.ini 必须随镜像：既有库升级（artisan.py migrate upgrade）在容器内执行
 COPY alembic.ini ./alembic.ini
 
-# 复制前端构建产物（本地 pnpm build 后提交到 git）
-COPY resources/backend/dist/ ./resources/backend/dist/
+# 复制前端构建产物（vite 输出到 static/frontend，由 CI/build-image.sh 现场构建，不入库）
+COPY static/frontend/ ./static/frontend/
 # 守护：入口 HTML 缺失（前端构建不完整）直接让镜像构建失败，
 # 避免 SPA 白屏/404 问题被静默打进镜像（曾实测发生过：dist 只剩 admin/agent.html）
-RUN test -f resources/backend/dist/index.html \
-    && test -f resources/backend/dist/admin.html \
-    && test -f resources/backend/dist/agent.html
-# 对接文档 VitePress 产物（本地 docs/ 内 pnpm build 生成；compose 另有 ro 挂载可免重建镜像热更新）
-COPY docs/.vitepress/dist/ ./docs/.vitepress/dist/
+RUN test -f static/frontend/index.html \
+    && test -f static/frontend/admin.html \
+    && test -f static/frontend/agent.html
+# 对接文档 VitePress 产物（docs/ 内 pnpm build 生成，输出到 static/docs；compose 另有 ro 挂载可免重建镜像热更新）
+COPY static/docs/ ./static/docs/
 # 宣传首页（/landing 由 frontend.py 直接返回该文件，镜像内缺失时会兜底成商户中心 SPA 跳登录）
 COPY resources/backend/landing.html ./resources/backend/landing.html
 

@@ -176,8 +176,8 @@ resources/backend/.env
 
 # VitePress 对接文档（docs/ 子目录，独立模块）
 docs/node_modules/
-docs/.vitepress/dist/
 docs/.vitepress/cache/
 
-# 前端构建产物：本地构建，不入库（Dockerfile 构建前需先 npm run build）
-resources/backend/dist/
+# 构建产物（vite → static/frontend，vitepress → static/docs）：现场构建，不入库
+static/frontend/
+static/docs/

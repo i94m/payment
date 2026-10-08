@@ -47,20 +47,20 @@ jobs:
             resources/backend/pnpm-lock.yaml
             docs/pnpm-lock.yaml
 
-      - name: 构建前端 (resources/backend)
+      - name: 构建前端 (resources/backend → static/frontend)
         run: |
           cd resources/backend
           pnpm install --frozen-lockfile
           pnpm build
-          test -f dist/index.html
-          test -f dist/admin.html
+          test -f ../../static/frontend/index.html
+          test -f ../../static/frontend/admin.html
 
-      - name: 构建对接文档 (docs)
+      - name: 构建对接文档 (docs → static/docs)
         run: |
           cd docs
           pnpm install --frozen-lockfile
           pnpm build
-          test -f .vitepress/dist/index.html
+          test -f ../static/docs/index.html
 
       # ---- Docker 构建 & 推送 ghcr.io ----
       - uses: docker/setup-buildx-action@v3

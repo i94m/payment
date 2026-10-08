@@ -29,17 +29,17 @@ cd resources/backend
 pnpm install
 pnpm dev      # vite :5173, proxies /admin-api, /merchant-api, /storage, /upload to :8000
 pnpm lint
-pnpm build    # tsc -b && vite build -> resources/backend/dist
+pnpm build    # tsc -b && vite build -> ../../static/frontend
 ```
 
-`resources/backend/dist/` is **committed to git** — after any frontend change, run `pnpm build` and commit the rebuilt `dist/`, or the Docker image and server rendering will serve stale assets.
+Build outputs are **not committed** (gitignored): vite → `static/frontend/`, VitePress docs → `static/docs/`. CI (`.github/workflows/docker-image.yml`) and `scripts/build-image.sh` build them in place before `docker build`; a missing/incomplete output fails the image build via entry-file guards.
 
 Local demo: `scripts/seed_demo.py` (demo/demo123456, pid=1001), `scripts/mock_upstream.py` (:9000), `scripts/demo.py [amount]`.
 
 ## Gotchas
 
 - **Migrations are committed** (`alembic/versions/*.py` tracked; the old "gitignored" note is stale). Schema changes need a new revision chained to the current head (`uv run alembic history`), and `app/models.py` must stay in sync — fresh installs use `create_all` (`artisan.py db init`), existing DBs use `alembic upgrade head`. Keep the chain single-head (no two revisions sharing the same `down_revision`).
-- **Frontend is React 19 + Vite + shadcn/ui + Tailwind 4** (react-router-dom 7), with two SPAs under `resources/backend/src/apps/{admin,merchant}` built from `index.html` (merchant, served at `/`) / `admin.html` (served at `/admin`); marketing page at `/landing`. Docker copies `resources/backend/dist`.
+- **Frontend is React 19 + Vite + shadcn/ui + Tailwind 4** (react-router-dom 7), with two SPAs under `resources/backend/src/apps/{admin,merchant}` built from `index.html` (merchant, served at `/`) / `admin.html` (served at `/admin`); marketing page at `/landing`. Docker copies `static/frontend` and `static/docs`.
 - **`.env` is mandatory.** `app/core/config.py` raises at import if `APP_SECRET_KEY` or `STORAGE_LOCAL_SECRET` is empty — run `key generate` first.
 - **Tests bootstrap their own env** in `tests/conftest.py` (sqlite, `APP_ENV`, etc.) *before* importing `app`. Redis/cache/limiter are disabled and the upstream is mocked with `httpx.MockTransport`. `asyncio_mode = "auto"`, so async test functions run without markers.
 - **Money is `Decimal` end to end** (`Numeric(12,2)`); use `app/services/balance.py` `dmoney()` / the balance service, never `float`, when touching amounts.

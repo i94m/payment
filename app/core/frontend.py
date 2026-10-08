@@ -9,14 +9,14 @@ from app.core.modules import MODULES
 
 _DOCS_NOT_FOUND_TIP = (
     "对接文档未构建：请在 docs/ 目录执行 pnpm install && pnpm build "
-    "生成 .vitepress/dist（构建后无需重启即可访问）"
+    "生成 static/docs（构建后无需重启即可访问）"
 )
 
 
 def _docs_dist() -> str:
     """VitePress 产物目录（独立函数便于测试 monkeypatch 模拟未构建）。"""
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    return os.path.join(base_dir, "docs", ".vitepress", "dist")
+    return os.path.join(base_dir, "static", "docs")
 
 
 class _DocsStaticFiles(StaticFiles):
@@ -46,7 +46,7 @@ class _DocsStaticFiles(StaticFiles):
 def register_docs(app: FastAPI) -> None:
     """公开托管 VitePress 对接文档（/docs，无需登录）。
 
-    静态产物位于 docs/.vitepress/dist（docs/ 子目录为独立文档模块）。
+    静态产物位于 static/docs（docs/ 子目录为独立文档模块）。
     必须在 register_frontend 之前注册：SPA 兜底路由是全量 path 通配，
     后注册的 mount 永远轮不到。挂载不校验 dist 是否已存在（check_dir=False），
     未构建时请求 /docs 返回构建提示（见 _DocsStaticFiles），
@@ -60,9 +60,9 @@ def register_docs(app: FastAPI) -> None:
 
 
 def register_frontend(app: FastAPI) -> None:
-    """注册前端静态资源 + SPA fallback。resources/backend/dist 不存在时自动跳过。"""
+    """注册前端静态资源 + SPA fallback。static/frontend 不存在时自动跳过。"""
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    frontend_dir = os.path.join(base_dir, "resources", "backend", "dist")
+    frontend_dir = os.path.join(base_dir, "static", "frontend")
     landing_path = os.path.join(base_dir, "resources", "backend", "landing.html")
 
     if not os.path.exists(frontend_dir):

@@ -117,7 +117,7 @@ tests/                      # 签名 / 下单 / 回调幂等 / 阶梯重试 / �
 
 - 源码：`docs/` 子目录（`docs/.vitepress/config.mts` + Markdown 页面）
 - 本地开发：`cd docs && pnpm install && pnpm dev` → http://localhost:5173/docs/
-- 构建：`cd docs && pnpm build` → 产物 `docs/.vitepress/dist`（已 gitignore）
+- 构建：`cd docs && pnpm build` → 产物 `static/docs`（已 gitignore）
 - 托管：`app/core/frontend.py::register_docs` 将构建产物挂载到 `/docs`，
   后端启动即生效；商户后台「接入文档」菜单跳转 `/docs/`
 

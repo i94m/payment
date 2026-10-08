@@ -17,7 +17,7 @@
 ```shell
 scripts/build-image.sh --registry registry.example.com/myns --push
 # 默认标签 日期-git短sha，另打 latest；--tag v1.2.3 可指定版本
-# 前端与对接文档产物（dist）不入库，脚本会先现场构建再进镜像，产物缺失构建直接失败
+# 前端与对接文档产物（static/frontend、static/docs）不入库，脚本会先现场构建再进镜像，产物缺失构建直接失败
 ```
 
 服务器（只需 docker + compose + 宿主机 MySQL/Redis，不装 node/pnpm/python）：

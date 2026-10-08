@@ -101,7 +101,7 @@ async def health():
 # 对接文档（VitePress 静态站点，公开访问）— 必须先于 SPA 兜底路由注册
 register_docs(app)
 
-# 前端静态资源 + SPA fallback（resources/backend/dist 不存在时自动跳过）
+# 前端静态资源 + SPA fallback（static/frontend 不存在时自动跳过）
 register_frontend(app)
 
 # 挂载 storage

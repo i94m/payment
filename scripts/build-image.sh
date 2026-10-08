@@ -44,14 +44,14 @@ if [ "$SKIP_WEB" -eq 0 ]; then
   ( cd resources/backend
     [ -d node_modules ] || pnpm install --frozen-lockfile
     pnpm build )
-  [ -f resources/backend/dist/index.html ] || die "前端构建产物缺少 index.html（构建失败？）"
-  [ -f resources/backend/dist/admin.html ] || die "前端构建产物缺少 admin.html（构建失败？）"
+  [ -f static/frontend/index.html ] || die "前端构建产物缺少 index.html（构建失败？）"
+  [ -f static/frontend/admin.html ] || die "前端构建产物缺少 admin.html（构建失败？）"
 
   log "构建对接文档 (docs)..."
   ( cd docs
     [ -d node_modules ] || pnpm install --frozen-lockfile
     pnpm build )
-  [ -f docs/.vitepress/dist/index.html ] || die "文档构建产物缺失（构建失败？）"
+  [ -f static/docs/index.html ] || die "文档构建产物缺失（构建失败？）"
 fi
 
 # ---- 2. 版本标签 ----

@@ -1,7 +1,7 @@
 import { defineConfig } from "vitepress"
 
 // 对接文档站点 — 按商户对接流程组织（无 SDK 章节）。
-// 部署形态：由 FastAPI 于 /docs 路径直接托管 .vitepress/dist 静态产物，
+// 部署形态：由 FastAPI 于 /docs 路径直接托管 static/docs 静态产物，
 // 因此 base 固定为 /docs/；本地开发 `pnpm dev` 后访问 http://localhost:5173/docs/。
 // 注意：静态托管（StaticFiles）无 cleanUrls 重写，链接需带 .html 后缀。
 export default defineConfig({
@@ -9,6 +9,10 @@ export default defineConfig({
   title: "对接文档",
   description: "聚合支付网关商户对接文档",
   base: "/docs/",
+  // 产物统一输出到仓库根 static/docs（outDir 相对 docs/ 解析）；
+  // outDir 在项目根之外时 VitePress 默认不清空，必须显式开启
+  outDir: "../static/docs",
+  emptyOutDir: true,
   ignoreDeadLinks: true,
 
   head: [
