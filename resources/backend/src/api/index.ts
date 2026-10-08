@@ -1,4 +1,4 @@
-// epay 后端统一包络 {code, message, data} 已在 api-client 拦截器解包：
+// 后端统一包络 {code, message, data} 已在 api-client 拦截器解包：
 // 成功 → 直接拿到 data；失败 → reject {code, message}。
 
 // Laravel 风格分页结构（app/responses.paginate）
@@ -13,7 +13,7 @@ export interface PaginatedResponse<T> {
   has_pages: boolean
   /** 部分列表接口附加的汇总（如订单列表 summary.money） */
   summary?: Record<string, unknown>
-  /** 模板统计卡片（epay 后端暂无，保留可选兼容 data-list） */
+  /** 模板统计卡片（后端暂无，保留可选兼容 data-list） */
   statistics?: StatisticItem[]
 }
 

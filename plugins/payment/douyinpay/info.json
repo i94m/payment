@@ -4,7 +4,7 @@
   "type": "payment",
   "title": "抖音支付",
   "version": "1.0.0",
-  "author": "epaypro",
+  "author": "pay-gateway",
   "types": [],
   "inputs": [
     {"name": "appid", "title": "小程序AppID", "type": "input",

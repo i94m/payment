@@ -307,7 +307,7 @@ class AlipayBasePayment(BasePayment):
         return self._cfg("publickey")
 
     def _get_notify_url(self, order: dict) -> str:
-        """异步通知地址, 由 epaypro 统一网关路由。"""
+        """异步通知地址, 由平台统一网关路由。"""
         from app.core.config import config
         trade_no = order.get("trade_no", "")
         return f"{config.APP_URL}/pay/notify/{trade_no}"

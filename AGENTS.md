@@ -16,7 +16,7 @@ uv run python artisan.py key generate    # writes APP_SECRET_KEY + STORAGE_LOCAL
 uv run python artisan.py db init         # create tables + admin + pay types + settings + permission tree
 uv run uvicorn main:app --reload         # API on :8000
 uv run python -m saq app.worker.settings # SAQ worker (needs Redis): notify retries / query-fill / expire
-uv run pytest                            # tests (sqlite at /tmp/epay_pytest.db)
+uv run pytest                            # tests (sqlite at /tmp/pay_pytest.db)
 uv run pytest tests/test_pay_flow.py::test_create_order_and_notify_paid   # single test
 ```
 
@@ -60,6 +60,6 @@ Local demo: `scripts/seed_demo.py` (demo/demo123456, pid=1001), `scripts/mock_up
 - `app/worker/jobs/__init__.py` — SAQ jobs and cron list; register new jobs in `functions` and `cron_jobs`.
 - `app/commands/` — artisan command modules, auto-registered by `artisan.py`.
 - `app/logic/api_verify.py` + `app/lib/sign.py` — downstream merchant signature verification (MD5/RSA, 300s replay window).
-- `plugins/payment/epay/` — the outbound EPay protocol adapter used as the default upstream channel.
+- `plugins/payment/epay/` — the outbound 易支付 protocol adapter used as the default upstream channel.
 
 Default local seeds: admin `admin`/`123456`, local captcha `0000` (only when `APP_ENV=local`), demo merchant `demo`/`demo123456` (pid 1001).

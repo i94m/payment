@@ -28,7 +28,7 @@ export function LoginPage() {
   const [loginError, setLoginError] = React.useState("")
   const from = (location.state as { from?: string })?.from || "/"
 
-  // epay 后端登录必须携带图片验证码（一次性，5 分钟有效）
+  // 后端登录必须携带图片验证码（一次性，5 分钟有效）
   const isAgent = APP_MODULE === "agent"
   const schema = React.useMemo(() => z.object({
     username: z.string().min(1, isAgent ? "请输入代理名称" : "请输入用户名"),
@@ -84,7 +84,7 @@ export function LoginPage() {
   return (
     <div className="relative min-h-screen bg-background">
       <div className="absolute top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-card p-6 shadow-md sm:w-96">
-        <h1 className="text-center text-2xl font-bold">{siteName || "EPay"}</h1>
+        <h1 className="text-center text-2xl font-bold">{siteName}</h1>
         <p className="mt-1 text-center text-sm text-muted-foreground">
           {APP_MODULE === "merchant" ? "商户中心 · 输入您的账户信息以继续"
             : APP_MODULE === "agent" ? "代理中心 · 输入您的代理账号以继续"

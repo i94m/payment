@@ -1,8 +1,7 @@
-# epay-next — 聚合支付网关（FastAPI 重写版）
+# 聚合支付网关
 
 基于 FastAPI + SQLModel(异步) + SAQ + React 19(shadcn/ui) 的聚合支付网关。
-业务模型参考彩虹易支付（EPay），接口全部为全新 REST 设计。
-由 epay-python（PHP 彩虹易支付的 Python 移植版）精简重构而来：数据模型精简为 9 类核心表，
+接口全部为全新 REST 设计：数据模型精简为 9 类核心表，
 全链路异步（asyncmy + httpx.AsyncClient），金额全链路 Decimal。
 
 ## 功能范围（v1）
@@ -22,7 +21,7 @@
 - **上游回调网关**：`/callbacks/{plugin}/{trade_no}`（异步通知）与 `.../return`（同步回跳），
   URL 携带插件名并做一致性校验
 - **上游插件框架**：异步 `BasePayment`（submit/query/notify_handler）+ info.json 自动发现；
-  v1 内置 **EPay 上游通道插件**（`plugins/payment/epay/`，对接同类协议的上游网关）
+  内置 **易支付上游通道插件**（`plugins/payment/epay/`，对接易支付协议的上游网关）
 - **通道管理**：凭证 Fernet 加密（密钥派生自 APP_KEY）、商户费率/成本费率、
   随机/顺序/权重三种路由、金额区间与当日限额（Redis 计数）
 - **商户端**：登录（验证码）+ 管理员 SSO + 自助注册（开关/审核/邀请码绑定/
@@ -104,12 +103,12 @@ app/
     callbacks.py            # /callbacks/{plugin}/{trade_no} 上游回调网关
     admin/ merchant/        # 管理后台 / 商户端 REST API（v1 子集）
   worker/jobs/              # notify_merchant / query_upstream / 三个扫描 cron
-plugins/payment/epay/       # EPay 上游通道插件（v1 唯一新增插件）
+plugins/payment/epay/       # 易支付上游通道插件
 alembic/versions/0001_*.py  # 初始迁移
 tests/                      # 签名 / 下单 / 回调幂等 / 阶梯重试 / 补单 / 收银台
 ```
 
-老系统（PHP 版）仅作功能与业务逻辑参考；内部 API（admin-api/merchant-api）为全新 REST 设计，
+内部 API（admin-api/merchant-api）为全新 REST 设计，
 统一响应包络 `{"code":0,"message":"ok","data":...}`。
 
 ## 对接文档（resources/docs 独立模块）
@@ -154,7 +153,7 @@ docs/
 - **余额热点**：商户余额走行锁串行记账（强一致优先），流水表异步可查；后续量级上来可引入合并记账/异步入账
 - **通知与补单**：SAQ 队列削峰，扫描 cron 以 Redis 锁防多 worker 重复扫描，单轮 LIMIT 分批
 
-## 后台前端（fastapi-starter 模板重写）
+## 后台前端
 
 - 管理后台：`/admin`（登录验证码、数据看板、订单[补单/重发通知/退款/导出]、商户[密钥重置/余额调整/流水]、
   通道[按插件 inputs 动态凭证表单，Fernet 加密]、插件、支付方式、结算、回调日志、支付设置、RBAC 账号）

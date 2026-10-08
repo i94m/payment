@@ -103,7 +103,7 @@ export default function App({ routes, getMenu }: AppProps) {
 
   useEffect(() => {
     const moduleTitle = APP_MODULE === "admin" ? "管理后台" : APP_MODULE === "agent" ? "代理中心" : "商户中心"
-    document.title = `${siteName || "EPay"} ${moduleTitle}`
+    document.title = siteName ? `${siteName} ${moduleTitle}` : moduleTitle
   }, [siteName])
 
   return (

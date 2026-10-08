@@ -28,7 +28,7 @@ apiClient.interceptors.response.use(
   (response: AxiosResponse) => {
     // 二进制响应(CSV 导出等)直接透传，不走 JSON 包络解包
     if (!(response.data instanceof Blob)) {
-      // epay 后端统一包络 {code, message, data}:code=0 视为成功，直接解出 data;
+      // 后端统一包络 {code, message, data}:code=0 视为成功，直接解出 data;
       // suc("文案") 时 data 为 null，需要提示文案的调用方改从响应头拿不到——
       // 这类接口调用方一律用通用成功 toast，故此处安全。
       const body = response.data as { code?: number; message?: string; data?: unknown }

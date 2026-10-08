@@ -39,7 +39,7 @@ async def rate_limiter() -> None:
 
 
 async def bootstrap_platform_rsa_key() -> None:
-    """平台 RSA 私钥自检：为空则自动生成并落库（对齐老系统 epay 启动行为）。
+    """平台 RSA 私钥自检：为空则自动生成并落库。
 
     保证平台公钥始终可由私钥派生，API 响应/异步通知签名不缺位；
     失败仅告警，不阻塞启动。缓存失效避免 Redis 旧快照（无该 key）延迟生效。

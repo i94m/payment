@@ -1,6 +1,6 @@
 # 插件开发指南（AI 协作规范）
 
-本目录是 epay-next 的插件库。**任何 AI 编码助手在本目录下新增/修改插件时，必须遵守本指南**；与上游支付平台的对接协议、历史踩坑也记录在各个插件文件的 docstring 里，动手前先读同类参考实现。
+本目录是本项目的插件库。**任何 AI 编码助手在本目录下新增/修改插件时，必须遵守本指南**；与上游支付平台的对接协议、历史踩坑也记录在各个插件文件的 docstring 里，动手前先读同类参考实现。
 
 ## 1. 目录结构与发现机制
 
@@ -107,7 +107,7 @@ plugins/
 ## 8. 验收清单（写完插件必须逐项过）
 
 ```bash
-cd /Users/wade/web/app/epay-next
+cd <仓库根目录>
 ```
 
 1. **可导入**：`python -c "import plugins.payment.<name>.plugin"`
@@ -131,12 +131,12 @@ cd /Users/wade/web/app/epay-next
 - `info.json` 的 `id` 与目录名不一致 → 注册键错位，admin 建通道后回调 404
 - inputs 缺 placeholder 或写空话 → 运维建通道时不知道账号/密钥该填什么格式，填错后排查成本高
 - inputs 写成 dict（如 `douyinpay` 旧版 `info.json` 的形式）→ 渲染异常，**必须 list[dict]，勿模仿旧格式**
-- 老 PHP 插件的 `/tmp/epay_*.log` 文件日志、`global $siteurl` 全局变量、`daddslashes` 转义在新架构里都没有对应物，从 PHP 插件改写时不要照搬
+- 老 PHP 插件的 `/tmp/*.log` 文件日志、`global $siteurl` 全局变量、`daddslashes` 转义在新架构里都没有对应物，从 PHP 插件改写时不要照搬
 
 ## 10. 参考实现
 
 - `plugins/payment/_example/` — **伪代码骨架模板，新插件的起点**；`_` 前缀目录不会被注册、不在后台展示，复制使用时去掉前缀并把 `example.py`/`info.example.json` 重命名为 `plugin.py`/`info.json`
-- `plugins/payment/epay/plugin.py` — EPay 上游通道，最标准的 MD5 签名 + 回调 + 查单 + 退款全量参考
+- `plugins/payment/epay/plugin.py` — 易支付上游通道，最标准的 MD5 签名 + 回调 + 查单 + 退款全量参考
 - `plugins/payment/shuangzi/plugin.py` — 第三方聚合网关（POST-form 协议、数字支付方式编码），inputs 全字段带 placeholder 的示范
 - `plugins/payment/alipaysl/`、`wxpayn/`、`douyinpay/` — 官方 SDK 型（RSA/证书签名）参考
 - `plugins/sms/`、`plugins/mail/` — 非支付类简单插件（同步接口）的最小样例

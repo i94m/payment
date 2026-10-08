@@ -52,7 +52,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuButton asChild size="lg" tooltip={"仪表盘"}>
               <Link to="/">
                 <img src="/images/logo.svg" alt="" className="size-5!" />
-                <span className="truncate group-data-[collapsible=icon]:hidden">{siteName || "EPay"}</span>
+                <span className="truncate group-data-[collapsible=icon]:hidden">{siteName}</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

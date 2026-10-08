@@ -4,6 +4,6 @@
   "type": "payment",
   "title": "双子支付",
   "version": "1.0.0",
-  "author": "epay-next",
+  "author": "pay-gateway",
   "types": ["alipay", "wxpay"]
 }
