@@ -84,5 +84,5 @@ curl -X POST "{site_url}/orders" \
 }
 ```
 
-支付成功后可通过 [支付成功回调通知](/pay/notify.html)、[查单接口](/api/order-query.html) 获取结果，
+支付成功后可通过 [回调通知](/pay/notify.html)、[查询订单](/api/order-query.html) 获取结果，
 通过 [申请退款](/api/refund.html) 接口退款。

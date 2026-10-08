@@ -1,4 +1,4 @@
-# 查询单个订单
+# 查询订单
 
 URL地址：`{site_url}/orders/{trade_no}`
 

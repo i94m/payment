@@ -1,6 +1,6 @@
-# 支付结果通知
+# 回调通知
 
-通知类型：服务器异步通知（notify_url，POST JSON Webhook）、页面跳转通知（return_url，GET 回跳）
+通知方式：服务器异步通知（`notify_url`，POST JSON Webhook）
 
 ## 异步通知（notify_url）
 
@@ -89,13 +89,3 @@ if ($ok && $body['trade_status'] === 'TRADE_SUCCESS') {
 ```
 
 其它语言（Python/Node.js）验签函数见 [RSA2签名算法 - 验签代码示例](/sign/rsa.html#验签代码示例平台公钥)。
-
-## 同步回跳（return_url）
-
-支付成功后收银台会把用户浏览器重定向到下单时传入的 `return_url`（GET 请求，参数平铺在
-URL query 上），参数与异步通知一致（`pid / trade_no / out_trade_no / type / name / money /
-trade_status / param(未传时无) / timestamp / sign / sign_type=RSA2`），签名同样由平台私钥
-RSA2 签发、可用平台公钥验签。
-
-注意：return_url 仅用于用户浏览器端的支付完成展示，**不作为入账依据**（浏览器回跳可能被
-用户伪造或放弃），入账请以异步通知或查单结果为准。

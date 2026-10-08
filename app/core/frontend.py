@@ -1,11 +1,33 @@
 import os
+import re
 
 from fastapi import FastAPI, HTTPException
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import FileResponse, JSONResponse, RedirectResponse
 from starlette.staticfiles import StaticFiles
 
+from app.core.config import config
 from app.core.modules import MODULES
+
+# 管理后台页面路径前缀保留字：页面路径改跑这些前缀会撞路由/静态挂载/文档
+_RESERVED_PREFIXES = {
+    "admin", "merchant", "agent", "docs", "api", "storage", "static",
+    "assets", "images", "css", "audio", "landing", "paypage", "cashier",
+    "orders", "callbacks", "upload", "health", "openapi",
+    "admin-api", "merchant-api", "agent-api",
+}
+
+
+def _admin_prefix() -> str:
+    """管理后台页面路径前缀（ADMIN_PATH_PREFIX，默认 admin，见 config.py）。
+
+    仅约束页面路径：小写字母/数字/连字符，且不得与保留前缀冲突；
+    非法或冲突时静默回退 admin（入口隐藏靠改值，不靠报错）。
+    """
+    raw = (config.ADMIN_PATH_PREFIX or "").strip().lower().strip("/")
+    if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", raw) and raw not in _RESERVED_PREFIXES:
+        return raw
+    return "admin"
 
 _DOCS_NOT_FOUND_TIP = (
     "对接文档未构建：请在 resources/docs 目录执行 pnpm install && pnpm build "
@@ -69,6 +91,8 @@ def register_frontend(app: FastAPI) -> None:
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     frontend_dir = os.path.join(base_dir, "static", "frontend")
     landing_path = os.path.join(base_dir, "static", "index.html")
+    # 管理后台页面路径前缀（ADMIN_PATH_PREFIX 可配，默认 admin；调用期读取便于测试）
+    admin_prefix = _admin_prefix()
 
     if not os.path.exists(frontend_dir):
         return
@@ -86,13 +110,13 @@ def register_frontend(app: FastAPI) -> None:
         dir_path = os.path.join(frontend_dir, subdir)
         if os.path.exists(dir_path):
             app.mount(f"/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-{subdir}")
-            # /admin、/agent、/merchant 深链下相对引用 ./assets 解析到对应子路径，各双挂一份
+            # /{admin_prefix}、/agent、/merchant 深链下相对引用 ./assets 解析到对应子路径，各双挂一份
             # （vite base="./"，SPA fallback 又支持 /merchant 旧前缀，漏挂会导致该路径下白屏）
-            app.mount(f"/admin/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-admin-{subdir}")
+            app.mount(f"/{admin_prefix}/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-admin-{subdir}")
             app.mount(f"/agent/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-agent-{subdir}")
             app.mount(f"/merchant/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-merchant-{subdir}")
 
-    # 入口页：/ 宣传首页（static/index.html，缺失时兜底商户中心）、/admin 总后台（admin.html）、
+    # 入口页：/ 宣传首页（static/index.html，缺失时兜底商户中心）、/{admin_prefix} 总后台（admin.html）、
     # /agent 代理面板（agent.html）、/merchant 商户中心（index.html）、/landing 宣传页（兼容旧地址）
     def _landing() -> FileResponse | JSONResponse:
         if os.path.exists(landing_path):
@@ -107,7 +131,7 @@ def register_frontend(app: FastAPI) -> None:
     async def merchant_entry():
         return _entry("index.html")
 
-    @app.get("/admin")
+    @app.get(f"/{admin_prefix}")
     async def admin_entry():
         return _entry("admin.html")
 
@@ -140,9 +164,9 @@ def register_frontend(app: FastAPI) -> None:
         last_segment = full_path.rsplit("/", 1)[-1]
         if "." in last_segment:
             raise HTTPException(status_code=404, detail="Not Found")
-        # 总后台/代理面板前端（/admin、/agent 深链刷新）；其余（含 /merchant 及其子路径，
+        # 总后台/代理面板前端（/{admin_prefix}、/agent 深链刷新）；其余（含 /merchant 及其子路径，
         # 商户中心入口在 /merchant）兜底为商户中心
-        if full_path == "admin" or full_path.startswith("admin/"):
+        if full_path == admin_prefix or full_path.startswith(admin_prefix + "/"):
             return _entry("admin.html")
         if full_path == "agent" or full_path.startswith("agent/"):
             return _entry("agent.html")

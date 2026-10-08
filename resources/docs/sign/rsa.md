@@ -16,7 +16,7 @@
 | 方向 | 签名密钥 | 验签密钥 |
 |---|---|---|
 | 商户 → 平台（下单/查单/退款） | 商户私钥 | 商户公钥（平台存管） |
-| 平台 → 商户（异步通知/回跳） | 平台私钥 | 平台公钥（商户面板查看） |
+| 平台 → 商户（异步通知） | 平台私钥 | 平台公钥（商户面板查看） |
 
 ## 签名四步
 
@@ -139,8 +139,7 @@ function makeRsaSign(params, privateKeyPem) {
 
 ## 验签代码示例（平台公钥）
 
-用于验证平台 [异步通知](/pay/notify.html)（POST JSON body 内签名）与
-[同步回跳](/pay/notify.html#同步回跳return_url)（GET query 平铺参数）。平台公钥可在
+用于验证平台 [回调通知](/pay/notify.html)（POST JSON body 内签名）。平台公钥可在
 商户后台「安全设置 → 接口密钥」查看复制（单行 Base64）。
 
 Python：

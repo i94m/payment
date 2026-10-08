@@ -39,8 +39,8 @@ export default defineConfig({
         text: "API列表",
         items: [
           { text: "支付下单", link: "/pay/api.html" },
-          { text: "支付成功回调通知", link: "/pay/notify.html" },
-          { text: "查询单个订单", link: "/api/order-query.html" },
+          { text: "回调通知", link: "/pay/notify.html" },
+          { text: "查询订单", link: "/api/order-query.html" },
           { text: "申请退款", link: "/api/refund.html" },
           { text: "查询退款", link: "/api/refund.html#查询退款" },
         ],

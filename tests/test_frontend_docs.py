@@ -99,3 +99,30 @@ async def test_builtin_docs_ui_disabled():
         assert "swagger-ui" not in r.text.lower(), path
         if path == "/openapi.json":
             assert r.status_code == 404, (r.status_code, r.text[:120])
+
+
+@pytest.mark.skipif(not frontend.os.path.exists(FRONTEND_ENTRY), reason="前端未构建")
+async def test_admin_prefix_configurable(monkeypatch):
+    """ADMIN_PATH_PREFIX 自定义后：/{prefix} 服务总后台与资源深链，/admin 不再注册。
+
+    非法/保留值（如 docs）静默回退 admin，且不遮蔽文档路由。
+    """
+    from app.core.config import config
+    from starlette.routing import Mount
+
+    monkeypatch.setattr(config, "ADMIN_PATH_PREFIX", "console-9x")
+    app = _registered(_build_app())
+    r = await _get(app, "/console-9x")
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    r = await _get(app, "/console-9x/deep/link")
+    assert r.status_code == 200
+    mounted = {route.path for route in app.routes if isinstance(route, Mount)}
+    assert "/console-9x/assets" in mounted
+    assert "/admin" not in mounted
+
+    monkeypatch.setattr(config, "ADMIN_PATH_PREFIX", "docs")  # 保留字 → 回退 admin
+    app2 = _registered(_build_app())
+    r = await _get(app2, "/admin")
+    assert r.status_code == 200
+    r = await _get(app2, "/docs")
+    assert r.status_code == 307  # 文档路由未被遮蔽

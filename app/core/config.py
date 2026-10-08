@@ -28,6 +28,9 @@ class Config(BaseSettings):
 
     APP_NAME: str
     APP_URL: str
+    # 管理后台页面路径前缀（默认 admin）：改掉可隐藏后台入口，如 "console-x9"。
+    # 仅约束页面路径；管理 API 固定为 /admin-api，不受影响。
+    ADMIN_PATH_PREFIX: str = "admin"
     APP_CORS_ORIGINS: str = "*"
     SENTRY_DSN: HttpUrl | None = None
     APP_DEBUG: bool = False
