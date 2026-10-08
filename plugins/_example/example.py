@@ -4,7 +4,7 @@
    本模板【不会】被注册、不会出现在 admin 后台插件列表。
 
 使用方法：
-1. 复制整个 _example 目录 → plugins/payment/<你的插件名>/
+1. 复制整个 _example 目录 → plugins/<你的插件名>/
 2. example.py 重命名为 plugin.py，info.example.json 重命名为 info.json
    （id 改成与目录名一致，version 新插件一律 1.0.0）
 3. 按下方注释逐段替换伪代码；硬性规则见 plugins/README.md，
@@ -33,7 +33,7 @@ _log = logging.getLogger(__name__)
 # 一、签名（按上游文档实现，以下是最常见的 MD5 协议范式）
 # ============================================================
 def _make_sign(params: dict, key: str) -> str:
-    """伪代码：MD5 签名范式（真实实现参考 plugins/payment/epay/plugin.py）。
+    """伪代码：MD5 签名范式（真实实现参考 plugins/epay/plugin.py）。
 
     1. 排除 sign / sign_type 字段
     2. 排除空值：'' 和 None 不参与，但 "0" 必须参与（历史大坑！）

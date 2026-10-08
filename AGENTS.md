@@ -43,7 +43,7 @@ Local demo: `scripts/seed_demo.py` (demo/demo123456, pid=1001), `scripts/mock_up
 - **`.env` is mandatory.** `app/core/config.py` raises at import if `APP_SECRET_KEY` or `STORAGE_LOCAL_SECRET` is empty — run `key generate` first.
 - **Tests bootstrap their own env** in `tests/conftest.py` (sqlite, `APP_ENV`, etc.) *before* importing `app`. Redis/cache/limiter are disabled and the upstream is mocked with `httpx.MockTransport`. `asyncio_mode = "auto"`, so async test functions run without markers.
 - **Money is `Decimal` end to end** (`Numeric(12,2)`); use `app/services/balance.py` `dmoney()` / the balance service, never `float`, when touching amounts.
-- **Adding a payment plugin needs no registry edit.** Create `plugins/payment/<name>/plugin.py` (subclass `BasePayment`) + optional `info.json`; discovery is by directory. The registry key is `info.json`'s `id` (fallback: dir name). Prefer the class `meta: PluginMeta`; old sync plugins are tolerated via `maybe_await`.
+- **Adding a payment plugin needs no registry edit.** Create `plugins/<name>/plugin.py` (subclass `BasePayment`) + optional `info.json`; discovery is by directory. The registry key is `info.json`'s `id` (fallback: dir name). Prefer the class `meta: PluginMeta`; old sync plugins are tolerated via `maybe_await`.
 - **Response envelope.** All internal admin/merchant + open API responses use `app/responses.suc()` → `{code:0,message,data}` and `err()`.
 - **Runtime settings are a DB-backed KV registry.** `app/constants/settings.py` `SETTINGS_REGISTRY` is the single source of truth; add a key there and seed it via `db init`, read through `app/services/settings.py`. Values are typed (bool/int/decimal-as-string/list_int) — don't store raw strings.
 - **Everything DB is async** (`AsyncSession`, asyncmy). Pass the session into service functions; don't introduce sync SQLAlchemy calls.
@@ -60,6 +60,6 @@ Local demo: `scripts/seed_demo.py` (demo/demo123456, pid=1001), `scripts/mock_up
 - `app/worker/jobs/__init__.py` — SAQ jobs and cron list; register new jobs in `functions` and `cron_jobs`.
 - `app/commands/` — artisan command modules, auto-registered by `artisan.py`.
 - `app/logic/api_verify.py` + `app/lib/sign.py` — downstream merchant signature verification (MD5/RSA, 300s replay window).
-- `plugins/payment/epay/` — the outbound 易支付 protocol adapter used as the default upstream channel.
+- `plugins/epay/` — the outbound 易支付 protocol adapter used as the default upstream channel.
 
 Default local seeds: admin `admin`/`123456`, local captcha `0000` (only when `APP_ENV=local`), demo merchant `demo`/`demo123456` (pid 1001).

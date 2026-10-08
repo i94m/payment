@@ -66,7 +66,7 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./.env:/app/.env:ro
-      - ./plugins:/app/plugins:ro   # 插件热更新（可选）
+      - ./plugins:/app/plugins:ro   # 支付插件热更新（可选）
     networks:
       - app-net
 

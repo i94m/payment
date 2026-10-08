@@ -1,27 +1,24 @@
 # 插件开发指南（AI 协作规范）
 
-本目录是本项目的插件库。**任何 AI 编码助手在本目录下新增/修改插件时，必须遵守本指南**；与上游支付平台的对接协议、历史踩坑也记录在各个插件文件的 docstring 里，动手前先读同类参考实现。
+本目录是本项目的**支付插件库**（短信/邮件适配器在 `app/addons/{sms,mail}/`，不属插件体系）。**任何 AI 编码助手在本目录下新增/修改插件时，必须遵守本指南**；与上游支付平台的对接协议、历史踩坑也记录在各个插件文件的 docstring 里，动手前先读同类参考实现。
 
 ## 1. 目录结构与发现机制
 
 ```
 plugins/
-├── payment/
-│   ├── <plugin_name>/       支付插件
-│   │   ├── plugin.py        必需，插件实现
-│   │   └── info.json        必需，静态元信息
-│   └── _example/            ★ 示例模板（伪代码），新插件从这里复制开始
-├── sms/<plugin_name>/       短信插件（BaseSms）
-├── mail/<plugin_name>/      邮件插件（BaseMail）
+├── <plugin_name>/           支付插件
+│   ├── plugin.py            必需，插件实现
+│   └── info.json            必需，静态元信息
+├── _example/                ★ 示例模板（伪代码），新插件从这里复制开始
 └── README.md                本文件
 ```
 
 注册由 `app/services/plugin.py` 的 `PluginRegistry` 完成，规则：
 
-- 只扫描 `plugins/{payment,sms,mail}/` 下一级目录，目录内必须有 `plugin.py`
+- 只扫描 `plugins/` 下一级目录，目录内必须有 `plugin.py`
 - **`_` 前缀目录一律跳过**（不注册、不在后台插件列表展示），保留给模板/示例/临时实验；
-  新插件从 `plugins/payment/_example/` 复制后**必须去掉下划线前缀**
-- 通过 `importlib` 导入 `plugins.<type>.<name>.plugin`，模块内**任何**继承
+  新插件从 `plugins/_example/` 复制后**必须去掉下划线前缀**
+- 通过 `importlib` 导入 `plugins.<name>.plugin`，模块内**任何**继承
   `BasePayment / BaseSms / BaseMail` 的类都会被注册（取第一个命中的）
 - 注册键 = `info.json` 的 `id`（缺省目录名）；**`id` 必须与目录名一致**
 - 加载失败只记 warning 不中断启动 —— 新插件写完后要主动验证注册成功（见 §8）
@@ -69,7 +66,7 @@ plugins/
 
 1. **MD5 一律小写**：Python `hexdigest()` 本身就是小写；比对时两侧统一（PHP 老代码用 `strcasecmp` 的，Python 侧 `.lower() == .lower()`）
 2. **排序语义**：PHP `ksort($arr, SORT_STRING)` ≙ Python `sorted(keys)`（ASCII 字符串升序）
-3. **空值排除的边界**：排除 `''` 和 `None`，但 **`"0"` 必须参与签名**（`'' == '0'` 在 PHP 是宽松比较的坑；参考 `plugins/payment/epay/plugin.py` 的 `_sign_content_epay` 注释）
+3. **空值排除的边界**：排除 `''` 和 `None`，但 **`"0"` 必须参与签名**（`'' == '0'` 在 PHP 是宽松比较的坑；参考 `plugins/epay/plugin.py` 的 `_sign_content_epay` 注释）
 4. **拼接方式逐字核对上游文档**：`k=v&k=v` 后**直接拼 key** 还是拼 **`&key=密钥`**，逐字核对（epay 插件是前者、shuangzi 是后者），差一个 `&` 签名就错
 5. **有文档签名示例向量的，先离线验证再写业务逻辑**（见 §8），验证不过说明拼接规则理解有误
 6. URL 编码：签名用**原始值**编码前的串；发起跳转时才用 `urlencode()`
@@ -110,7 +107,7 @@ plugins/
 cd <仓库根目录>
 ```
 
-1. **可导入**：`python -c "import plugins.payment.<name>.plugin"`
+1. **可导入**：`python -c "import plugins.<name>.plugin"`
 2. **注册成功**：`PluginRegistry.reload()` 后 `get_payment_class("<id>")` 非 None（写临时脚本或用 `python -c` 验证）
 3. **签名有文档向量的必须离线比对**（如双子 `96cf5606...` 示例），用 `python -c` 算一遍
 4. **meta 表单字段与实际读取的 channel 键一一对应**（input name ↔ `self.channel.get(...)`）
@@ -135,8 +132,9 @@ cd <仓库根目录>
 
 ## 10. 参考实现
 
-- `plugins/payment/_example/` — **伪代码骨架模板，新插件的起点**；`_` 前缀目录不会被注册、不在后台展示，复制使用时去掉前缀并把 `example.py`/`info.example.json` 重命名为 `plugin.py`/`info.json`
-- `plugins/payment/epay/plugin.py` — 易支付上游通道，最标准的 MD5 签名 + 回调 + 查单 + 退款全量参考
-- `plugins/payment/shuangzi/plugin.py` — 第三方聚合网关（POST-form 协议、数字支付方式编码），inputs 全字段带 placeholder 的示范
-- `plugins/payment/alipaysl/`、`wxpayn/`、`douyinpay/` — 官方 SDK 型（RSA/证书签名）参考
-- `plugins/sms/`、`plugins/mail/` — 非支付类简单插件（同步接口）的最小样例
+- `plugins/_example/` — **伪代码骨架模板，新插件的起点**；`_` 前缀目录不会被注册、不在后台展示，复制使用时去掉前缀并把 `example.py`/`info.example.json` 重命名为 `plugin.py`/`info.json`
+- `plugins/epay/plugin.py` — 易支付上游通道，最标准的 MD5 签名 + 回调 + 查单 + 退款全量参考
+- `plugins/shuangzi/plugin.py` — 第三方聚合网关（POST-form 协议、数字支付方式编码），inputs 全字段带 placeholder 的示范
+- `plugins/alipaysl/`、`wxpayn/`、`douyinpay/` — 官方 SDK 型（RSA/证书签名）参考
+
+短信/邮件适配器已迁至 `app/addons/{sms,mail}/`（复用 storage addon 的组织方式），由 `PluginRegistry` 按包名扫描，不适用本指南的插件验收流程。

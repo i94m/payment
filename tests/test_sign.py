@@ -33,7 +33,7 @@ def test_sign_content_keeps_zero_string():
 
 
 def test_sign_content_epay_variant_keeps_zero_string():
-    from plugins.payment.epay.plugin import _sign_content_epay
+    from plugins.epay.plugin import _sign_content_epay
     data = {"pid": "0", "money": "5", "type": "alipay", "name": ""}
     # 规则：只排除空字符串，"0" 参与签名
     assert "pid=0" in _sign_content_epay(data)

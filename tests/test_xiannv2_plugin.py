@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from plugins.payment.xiannv2.plugin import (
+from plugins.xiannv2.plugin import (
     Xiannv2Payment,
     _is_paid,
     _money_2dp,

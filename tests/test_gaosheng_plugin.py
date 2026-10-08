@@ -43,7 +43,7 @@ def _sk_sign(data: dict, key: str) -> str:
 
 
 def _make_plugin(config: dict | None = None):
-    from plugins.payment.gaosheng.plugin import GaoshengPayment
+    from plugins.gaosheng.plugin import GaoshengPayment
     cfg = {
         "appurl": "https://upstream.example/pay/skpay.php?fun=createOrder",
         "appmchid": GAOSHENG_MCH,
@@ -60,7 +60,7 @@ def test_sk_sign_golden_vector():
 
 def test_sk_sign_excludes_empty_and_sign():
     """空值不参与签名；sign 字段排除；大小写不敏感比对。"""
-    from plugins.payment.gaosheng.plugin import _sign, _verify_sign
+    from plugins.gaosheng.plugin import _sign, _verify_sign
     data = {
         "merchant": GAOSHENG_MCH, "orderNo": "T1001", "currentTime": "1748723893",
         "payType": "6237", "amount": "10.00", "notifyUrl": "https://x/notify",
@@ -73,7 +73,7 @@ def test_sk_sign_excludes_empty_and_sign():
 
 
 def test_amount_format():
-    from plugins.payment.gaosheng.plugin import _amount
+    from plugins.gaosheng.plugin import _amount
     assert _amount("100") == "100.00"
     assert _amount("10.00") == "10.00"
     assert _amount(Decimal("99.999")) == "100.00"
@@ -81,7 +81,7 @@ def test_amount_format():
 
 def test_extract_error_surfaces_nested_remark():
     """外层 msg 笼统 "fail" 时，取 data.remark 内的真实原因。"""
-    from plugins.payment.gaosheng.plugin import _extract_error
+    from plugins.gaosheng.plugin import _extract_error
     data = {
         "code": 400, "msg": "fail",
         "data": {

@@ -1,4 +1,4 @@
-"""插件注册表 — 扫描 plugins/ 目录自动发现。
+"""插件注册表 — 支付插件扫描 plugins/ 自动发现，短信/邮件适配器在 app/addons/。
 
 - 注册键取 info.json 的 id（缺省目录名）
 - 插件元信息（凭证表单 schema 等）优先读插件类的 meta 属性（PluginMeta），
@@ -36,20 +36,20 @@ class PluginRegistry:
     _mail: dict[str, type[BaseMail]] = {}
     _loaded = False
 
+    # (注册表属性, 基类, 包名)：扫描目录 = 包名转路径，import 模块串 = 包名派生
     TYPE_MAP = {
-        "payment": ("_payment", BasePayment),
-        "sms": ("_sms", BaseSms),
-        "mail": ("_mail", BaseMail),
+        "payment": ("_payment", BasePayment, "plugins"),
+        "sms": ("_sms", BaseSms, "app.addons.sms"),
+        "mail": ("_mail", BaseMail, "app.addons.mail"),
     }
 
     @classmethod
-    def discover(cls, base_path: str | None = None):
+    def discover(cls):
         if cls._loaded:
             return
-        root = Path(base_path or "plugins")
-        for plugin_type, (attr, base_cls) in cls.TYPE_MAP.items():
+        for plugin_type, (attr, base_cls, pkg) in cls.TYPE_MAP.items():
             registry = getattr(cls, attr)
-            type_dir = root / plugin_type
+            type_dir = Path(pkg.replace(".", "/"))
             if not type_dir.exists():
                 continue
             for d in sorted(type_dir.iterdir()):
@@ -69,7 +69,7 @@ class PluginRegistry:
                     except Exception:
                         info = {}
                 try:
-                    mod = importlib.import_module(f"plugins.{plugin_type}.{d.name}.plugin")
+                    mod = importlib.import_module(f"{pkg}.{d.name}.plugin")
                     for name in dir(mod):
                         obj = getattr(mod, name)
                         if isinstance(obj, type) and issubclass(obj, base_cls) and obj is not base_cls:
@@ -128,10 +128,10 @@ class PluginRegistry:
     @classmethod
     def _info_json(cls, plugin_name: str) -> dict:
         """读插件目录的 info.json（取不到返回空 dict）。"""
-        root = Path("plugins/payment") / plugin_name / "info.json"
-        if root.exists():
+        info_path = Path("plugins") / plugin_name / "info.json"
+        if info_path.exists():
             try:
-                return json.loads(root.read_text())
+                return json.loads(info_path.read_text())
             except Exception:
                 pass
         return {}
@@ -158,7 +158,7 @@ class PluginRegistry:
 
     @classmethod
     def list_plugins(cls) -> list[dict]:
-        """扫描 plugins/payment 目录，返回全部插件元信息（供 admin）。"""
+        """扫描 plugins/ 目录，返回全部支付插件元信息（供 admin）。"""
         cls.discover()
         result = []
         for name, plugin_cls in cls._payment.items():
