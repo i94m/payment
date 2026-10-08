@@ -15,7 +15,7 @@ import pytest
 
 from main import app
 
-from app.core.cache import DisabledCache, get_cache
+from app.core.cache import get_cache
 from app.core.security import (
     hash_password,
     is_token_revoked,
@@ -65,7 +65,7 @@ def _use_shared_cache(cache: FakeRedisCache):
 
 def _restore_disabled_cache():
     async def _disabled():
-        yield DisabledCache()
+        yield FakeRedisCache()  # 空实例：语义上等价于「恢复默认空缓存」
 
     app.dependency_overrides[get_cache] = _disabled
 

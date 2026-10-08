@@ -116,28 +116,35 @@ def register_frontend(app: FastAPI) -> None:
             app.mount(f"/agent/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-agent-{subdir}")
             app.mount(f"/merchant/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-merchant-{subdir}")
 
-    # 入口页：/ 宣传首页（static/index.html，缺失时兜底商户中心）、/{admin_prefix} 总后台（admin.html）、
-    # /agent 代理面板（agent.html）、/merchant 商户中心（index.html）、/landing 宣传页（兼容旧地址）
+    # 入口页：/ 宣传首页（static/index.html，缺失时兜底商户中心）、/{admin_prefix}/ 总后台（admin.html）、
+    # /agent/ 代理面板（agent.html）、/merchant/ 商户中心（index.html）、/landing 宣传页（兼容旧地址）。
+    # 无斜杠路径 307 规范化到带斜杠：URL 唯一（收藏/日志/Referer 一致），
+    # 且 vite base="./" 的相对资源引用只按带斜杠目录解析一种口径。
+    # 注意：SPA fallback 是全量通配，Starlette 自动的 redirect_slashes 永远轮不到，
+    # 必须显式注册无斜杠跳转路由。
     def _landing() -> FileResponse | JSONResponse:
         if os.path.exists(landing_path):
             return FileResponse(landing_path, headers={"Cache-Control": "no-cache"})
         return _entry("index.html")
 
+    def _slash_pair(path: str, entry: str):
+        """注册 /{path} → 307 /{path}/ 与 /{path}/ → 入口页 的成对路由。"""
+
+        @app.get(path)
+        async def entry_redirect():
+            return RedirectResponse(url=f"{path}/", status_code=307)
+
+        @app.get(f"{path}/")
+        async def entry_page():
+            return _entry(entry)
+
     @app.get("/")
     async def home():
         return _landing()
 
-    @app.get("/merchant")
-    async def merchant_entry():
-        return _entry("index.html")
-
-    @app.get(f"/{admin_prefix}")
-    async def admin_entry():
-        return _entry("admin.html")
-
-    @app.get("/agent")
-    async def agent_entry():
-        return _entry("agent.html")
+    _slash_pair("/merchant", "index.html")
+    _slash_pair(f"/{admin_prefix}", "admin.html")
+    _slash_pair("/agent", "agent.html")
 
     @app.get("/landing")
     async def landing():

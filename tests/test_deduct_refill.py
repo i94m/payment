@@ -207,8 +207,7 @@ class _FakeRedisCache:
 
 @pytest.mark.asyncio
 async def test_deduct_counter_redis_and_db_paths(client, seeded, session):
-    """Redis 路径 n%freq==0 命中；DisabledCache 回退走 counters 行（命中后清零）。"""
-    from app.core.cache import DisabledCache
+    """Redis 路径 n%freq==0 命中；cache=None 回退走 counters 行（命中后清零）。"""
     from app.services.order import _hit_deduct
 
     await set_settings(session, {"deduct_enable": True, "deduct_frequency": 2})
@@ -219,7 +218,7 @@ async def test_deduct_counter_redis_and_db_paths(client, seeded, session):
     assert await _hit_deduct(session, o, cache=fake) is True    # n=2
     assert await _hit_deduct(session, o, cache=fake) is False   # n=3
 
-    db_cache = DisabledCache()
+    db_cache = None  # 无缓存（测试环境）：走 counters 行锁路径
     assert await _hit_deduct(session, o, cache=db_cache) is False  # counter=1
     assert await _hit_deduct(session, o, cache=db_cache) is True   # counter=2 命中并清零
     assert await _hit_deduct(session, o, cache=db_cache) is False  # counter=1（重新累计）

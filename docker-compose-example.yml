@@ -16,8 +16,8 @@ services:
     # 启动 N 个实例：docker compose up -d --scale app=3（N ≤ 端口范围大小 3）
     deploy:
       replicas: 2                     # 默认 2 个实例；--scale app=N 可覆盖
-    # --workers 2：单容器 2 个 uvicorn 进程（容器级扩展另用 --scale app=N）
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--access-log"]
+    # 单容器 Web 进程数走 .env 的 WEB_WORKERS（镜像 CMD 读 ${WEB_WORKERS:-2}，默认 2）；
+    # 容器级扩展另用 --scale app=N（端口 8000-8002，N ≤ 3）
     ports:
       - "127.0.0.1:8000-8002:8000"    # 只绑本机回环：外部流量必须走主机 nginx，也避免绕过限流
     env_file:
@@ -66,7 +66,7 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./.env:/app/.env:ro
-      - ./plugins:/app/plugins:ro   # 支付插件热更新（可选）
+      # 支付插件已随镜像 Cython 编译固化（.so），不支持目录挂载热更新；加插件需重建镜像
     networks:
       - app-net
 

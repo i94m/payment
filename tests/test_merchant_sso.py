@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlparse
 
 from main import app
 
-from app.core.cache import DisabledCache, get_cache
+from app.core.cache import get_cache
 from app.core.security import issue_token
 from app.models import SystemAdmin
 
@@ -40,14 +40,14 @@ async def test_sso_does_not_revoke_existing_merchant_sessions(client, seeded, se
     await session.refresh(admin)
     admin_token = await issue_token(guard="admin", user_id=admin.id, session=session)
 
-    # client fixture 默认每次请求使用独立 DisabledCache；SSO 凭证需要跨请求共享。
+    # client fixture 默认每次请求使用独立假缓存；SSO 凭证需要跨请求共享。
     cache = MemoryCache()
 
     async def _shared_cache():
         yield cache
 
-    async def _disabled_cache():
-        yield DisabledCache()
+    async def _empty_cache():
+        yield MemoryCache()
 
     app.dependency_overrides[get_cache] = _shared_cache
     try:
@@ -73,4 +73,4 @@ async def test_sso_does_not_revoke_existing_merchant_sessions(client, seeded, se
         assert profile_body["code"] == 0, profile_body
         assert profile_body["data"]["username"] == m.username
     finally:
-        app.dependency_overrides[get_cache] = _disabled_cache
+        app.dependency_overrides[get_cache] = _empty_cache

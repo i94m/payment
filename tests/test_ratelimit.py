@@ -5,7 +5,6 @@
 import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.cache import DisabledCache
 from app.services.balance import dmoney
 from app.services.channel import choose_channel
 from app.services.home_config import set_ratelimit_one
@@ -81,9 +80,8 @@ async def test_reserve_slot_true_then_false_when_full():
 
 
 async def test_reserve_slot_fail_open_signals():
-    # None / DisabledCache / 异常 → None（调用方回退或放行）
+    # None / 未配置限速 → None（调用方回退或放行）
     assert await reserve_channel_slot(None, 86, 10) is None
-    assert await reserve_channel_slot(DisabledCache(), 86, 10) is None
     assert await reserve_channel_slot(FakeRedis(), 86, 0) is None  # 未配置限速
 
 
@@ -95,10 +93,9 @@ async def test_exceeded_redis_read_side():
     exceeded = await exceeded_channel_ids_redis(cache, ratelimit_map, now=_NOW)
     assert exceeded == {86}
 
-    # 空 map / Redis 不可用
+    # 空 map / 无缓存
     assert await exceeded_channel_ids_redis(cache, {}, now=_NOW) == set()
     assert await exceeded_channel_ids_redis(None, ratelimit_map, now=_NOW) is None
-    assert await exceeded_channel_ids_redis(DisabledCache(), ratelimit_map, now=_NOW) is None
 
 
 # ============================================================

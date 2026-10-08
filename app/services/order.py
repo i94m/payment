@@ -19,7 +19,7 @@ from sqlalchemy import select as sa_select
 from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.cache import CacheClient, DisabledCache, try_lock, release_lock
+from app.core.cache import CacheClient, try_lock, release_lock
 from app.models import Counter, Merchant, Order, PaymentType
 from app.services.balance import change_merchant_balance, dmoney
 from app.services.pay_debug import write_pay_debug
@@ -480,7 +480,7 @@ async def _hit_deduct(session: AsyncSession, order: Order,
         return False
 
     # Redis 原子计数：INCR 单命令原子，取模命中即第 frequency 笔（模自然循环，无需重置）
-    if cache is not None and not isinstance(cache, DisabledCache):
+    if cache is not None:
         try:
             n = await cache.incr(CacheKeys.DEDUCT_ORDER_COUNTER)
             return int(n) % frequency == 0

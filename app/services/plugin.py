@@ -8,6 +8,7 @@
 """
 import asyncio
 import importlib
+import importlib.util
 import json
 import logging
 from pathlib import Path
@@ -58,8 +59,12 @@ class PluginRegistry:
                 if d.name.startswith("_"):
                     # `_` 前缀目录是模板/示例（如 _example），不注册、不在后台展示
                     continue
-                plugin_file = d / "plugin.py"
-                if not plugin_file.exists():
+                # 编译镜像里插件已是 .so，不再存在 plugin.py；
+                # 按 import 系统后缀表探测模块是否存在（.py 与 .so 通用）
+                try:
+                    if importlib.util.find_spec(f"{pkg}.{d.name}.plugin") is None:
+                        continue
+                except (ImportError, ValueError):
                     continue
                 info_file = d / "info.json"
                 info = {}

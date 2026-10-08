@@ -16,6 +16,8 @@ resources/
 # 以下目录从不被 Dockerfile COPY，仅避免进入构建上下文（不影响镜像内容）
 tests/
 scripts/
+# 例外：编译脚本要进 builder 阶段
+!scripts/compile_backend.py
 .github/
 .vscode/
 .pytest_cache/

@@ -10,7 +10,6 @@ Redis 不可用时读侧/写侧均返回 None，调用方回退 DB 双窗口检�
 import math
 import time
 
-from app.core.cache import DisabledCache
 from app.core.config import config
 
 LIMIT_WINDOW = 6  # 窗口秒数
@@ -49,7 +48,7 @@ async def exceeded_channel_ids_redis(
     """
     if not ratelimit_map:
         return set()
-    if cache is None or isinstance(cache, DisabledCache):
+    if cache is None:
         return None
     try:
         ws = window_start(now)
@@ -71,7 +70,7 @@ async def reserve_channel_slot(cache, channel_id: int, limit_per_minute: int) ->
     返回 True=有名额；False=本窗口已满；None=Redis 不可用/未启用限速
     （调用方结合读侧结果决定放行或回退，不阻塞支付）。
     """
-    if cache is None or isinstance(cache, DisabledCache) or limit_per_minute <= 0:
+    if cache is None or limit_per_minute <= 0:
         return None
     try:
         count = await cache.eval(RESERVE_LUA, 1, reserve_key(channel_id), LIMIT_WINDOW + 5)

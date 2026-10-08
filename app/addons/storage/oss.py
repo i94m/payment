@@ -42,6 +42,7 @@ class OSSStorage(StorageInterface):
 
     async def get_list(self, options: dict | None = None) -> list[dict]:
         options = options or {}
+        import oss2  # 与 _get_bucket 一致的懒加载（oss2 为可选依赖）
         bucket = self._get_bucket()
         params = {}
         if options.get("limit"):

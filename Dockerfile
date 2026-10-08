@@ -1,16 +1,27 @@
-FROM python:3.12-slim
+# ---------- Stage 1: builder —— 依赖安装 + Cython 编译（源码保护） ----------
+# app/ 与 plugins/ 的 .py 全部编译为机器码 .so 并删除源码，最终镜像内无业务 .py。
+# gcc 只用于编译本项目代码；第三方依赖（asyncmy/cryptography/pycryptodome 等
+# C/Rust 扩展）全部走 wheel 安装无需重编；python:slim 自带 CPython 头文件。
+FROM python:3.12-slim AS builder
 
-# 安装 uv
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
-ENV PATH="/app/.venv/bin:$PATH"
 
-# 先复制依赖文件，命中缓存（--no-dev：dev 组的 pytest/playwright/aiosqlite 仅测试用，不进生产镜像）
+# 1) 运行时依赖（缓存层；--no-dev：dev 组的 pytest/playwright/aiosqlite 仅测试用，不进生产镜像）
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-# 复制后端代码
+# 2) 独立编译 venv：cython + setuptools（不污染运行时 .venv，也不进 pyproject/uv.lock；
+#    cython 钉到实测过的次版本保证构建可复现 —— .so 运行时不依赖 cython）
+RUN uv venv /opt/cybuild \
+    && uv pip install --python /opt/cybuild/bin/python "cython==3.3.*" setuptools
+
+# 3) 源码 + 编译脚本 + 前端产物（顺序保持缓存友好）
+COPY scripts/compile_backend.py ./compile_backend.py
 COPY app/ ./app/
 COPY main.py ./artisan.py ./
 COPY plugins/ ./plugins/
@@ -25,7 +36,7 @@ COPY static/frontend/ ./static/frontend/
 RUN test -f static/frontend/index.html \
     && test -f static/frontend/admin.html \
     && test -f static/frontend/agent.html
-# 对接文档 VitePress 产物（resources/docs 内 pnpm build 生成，输出到 static/docs；compose 另有 ro 挂载可免重建镜像热更新）
+# 对接文档 VitePress 产物（resources/docs 内 pnpm build 生成，输出到 static/docs）
 COPY static/docs/ ./static/docs/
 # 宣传首页（/landing 由 frontend.py 直接返回该文件，镜像内缺失时会兜底成商户中心 SPA 跳登录）
 COPY static/index.html ./static/index.html
@@ -36,9 +47,51 @@ COPY .env.example .env
 # 创建 storage 目录结构
 RUN mkdir -p storage/logs storage/public storage/exports storage/private
 
+# 4) Cython 编译 app/ + plugins/ → .so，并删除 .py（脚本内含自检：失败不删源码；
+#    SO_COMPILE=1 是脚本安全守卫 —— 仅容器构建编译，本地开发永远直接跑源码）
+RUN SO_COMPILE=1 /opt/cybuild/bin/python compile_backend.py
+
+# 5) 编译后构建期冒烟（坏镜像出不了 builder）：
+#    import main —— FastAPI include_router 即解析全部端点签名，内省损坏当场失败
+#    PluginRegistry.discover() —— 插件 .so 全量可导入（find_spec 探测）
+#    settings() —— SAQ worker 配置可加载（任务函数与定时任务全量）
+#    必填密钥用环境变量注入（pydantic-settings 环境变量优先于 env_file）
+RUN APP_SECRET_KEY=build-smoke STORAGE_LOCAL_SECRET=build-smoke \
+    /app/.venv/bin/python -c "import main, artisan; \
+    from app.services.plugin import PluginRegistry; PluginRegistry.discover(); \
+    from app.worker import settings; s = settings(); \
+    print('routes:', len(main.app.routes), '| payment:', len(PluginRegistry._payment), \
+          '| worker functions:', len(s['functions']), '| cron_jobs:', len(s['cron_jobs']))"
+
+# 6) 守护：app/ 与 plugins/ 下不允许残留 .py（_example 插件开发模板除外）
+RUN test -z "$(find app plugins -name '*.py' -not -path 'plugins/_example/*')" \
+    || { echo '残留 .py 源码，编译不完整'; exit 1; }
+
+# ---------- Stage 2: runtime —— 只含编译产物，无业务源码 ----------
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+# venv 与编译产物分开拷：runtime 只可能有这里列出的内容，
+# builder 中间层里的 .py 永远进不了最终镜像（多阶段 COPY 拷的是末态文件系统）
+# venv 同基础镜像同绝对路径传递（shebang/pyvenv.cfg 有效），runtime 不需要 uv
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/app/ ./app/
+COPY --from=builder /app/plugins/ ./plugins/
+COPY --from=builder /app/main.py /app/artisan.py ./
+COPY --from=builder /app/alembic/ ./alembic/
+COPY --from=builder /app/alembic.ini ./alembic.ini
+COPY --from=builder /app/static/ ./static/
+COPY --from=builder /app/.env ./.env
+
+# 创建 storage 目录结构
+RUN mkdir -p storage/logs storage/public storage/exports storage/private
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-CMD ["/bin/sh", "-c", "mkdir -p storage/logs storage/public storage/exports storage/private && uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2 --access-log"]
+# WEB_WORKERS 经 compose env_file / docker run -e 导出为容器环境变量；未配置默认 2
+CMD ["/bin/sh", "-c", "mkdir -p storage/logs storage/public storage/exports storage/private && uvicorn main:app --host 0.0.0.0 --port 8000 --workers \"${WEB_WORKERS:-2}\" --access-log"]

@@ -32,7 +32,21 @@ async def test_scan_only_recent_pending(engine, seeded, session, monkeypatch):
     from app.worker import jobs as worker_jobs
     from sqlalchemy.ext.asyncio import async_sessionmaker
     from sqlmodel.ext.asyncio.session import AsyncSession
-    from app.core.cache import DisabledCache
+    from app.core.cache import CacheClient
+
+    class _AlwaysLockCache:
+        """try_lock 恒拿到锁（set 返回真值），让扫描任务正常放行执行。"""
+
+        async def get(self, key):
+            return None
+
+        async def set(self, key, value, **kwargs):
+            return True
+
+        async def delete(self, key):
+            return None
+
+    fake_cache: CacheClient = _AlwaysLockCache()
 
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(worker_jobs, "session_maker", maker)
@@ -41,7 +55,7 @@ async def test_scan_only_recent_pending(engine, seeded, session, monkeypatch):
 
     @asynccontextmanager
     async def _fake_cache_ctx():
-        yield DisabledCache()
+        yield fake_cache
 
     import app.core.cache as cache_module
     monkeypatch.setattr(cache_module, "get_cache_ctx", _fake_cache_ctx)

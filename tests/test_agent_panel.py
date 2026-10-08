@@ -11,7 +11,7 @@ from app.services import paytoken
 
 from main import app
 
-from app.core.cache import DisabledCache, get_cache
+from app.core.cache import get_cache
 from app.core.security import hash_password, issue_token
 from app.models import Agent, Merchant, Order
 
@@ -189,7 +189,7 @@ async def test_merchant_sso_into_agent_panel(client, seeded, session):
         yield cache
 
     async def _disabled_cache():
-        yield DisabledCache()
+        yield MemoryCache()
 
     app.dependency_overrides[get_cache] = _shared_cache
     try:

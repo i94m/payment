@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import importlib
-import os
+import pkgutil
 import sys
 import typer
 
@@ -13,13 +13,16 @@ def get_commands():
     # 否则初始化第一步就会因密钥缺失而失败（鸡生蛋问题）。
     only_key = len(sys.argv) > 1 and sys.argv[1] == "key"
     modules = []
-    for file in os.listdir('app/commands'):
-        if file.endswith('.py') and not file.startswith('__') and not file.startswith('pydantic'):
-            module_name = file[:-3]
-            if only_key and module_name != 'key':
-                continue
-            module = importlib.import_module(f'app.commands.{module_name}')
-            modules.append(module)
+    # pkgutil 按 import 系统后缀表识别模块：dev 下是 *.py，
+    # 编译镜像里是 *.cpython-312-*.so，两种形态无需分支
+    import app.commands
+    for mod in pkgutil.iter_modules(app.commands.__path__):
+        name = mod.name
+        if mod.ispkg or name.startswith("__") or name.startswith("pydantic"):
+            continue
+        if only_key and name != "key":
+            continue
+        modules.append(importlib.import_module(f'app.commands.{name}'))
     return modules
 
 

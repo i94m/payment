@@ -313,23 +313,38 @@ async def _get_current_user_by_guard(
     return AuthResult(user=user, guard=guard, jti=jti)
 
 
-def _create_auth_dependency(guard: str):
-    scheme = _oauth2_schemes.get(guard, OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False))
-
-    async def dependency(
-        token: Annotated[str | None, Depends(scheme)],
-        session: SessionDep,
-        cache: CacheDep,
-    ) -> AuthResult:
-        return await _get_current_user_by_guard(guard, token, session, cache)
-
-    dependency.__name__ = f"get_current_{guard}"
-    return dependency
+# 各 guard 的认证依赖必须显式写成模块级函数（不用工厂闭包）：
+# Cython 编译后函数注解会被字符串化，FastAPI 靠「注解字符串 + 模块全局名」
+# eval 还原依赖 —— 注解里引用闭包变量（工厂里的 scheme）在编译产物中必然
+# 解析失败，端点会把 token/cache 当成必填 query 参数。scheme 因此取自模块级
+# _oauth2_schemes 并以模块级名字被注解引用。
+_scheme_admin = _oauth2_schemes["admin"]
+_scheme_merchant = _oauth2_schemes["merchant"]
+_scheme_agent = _oauth2_schemes["agent"]
 
 
-get_current_admin = _create_auth_dependency("admin")
-get_current_merchant = _create_auth_dependency("merchant")
-get_current_agent = _create_auth_dependency("agent")
+async def get_current_admin(
+    token: Annotated[str | None, Depends(_scheme_admin)],
+    session: SessionDep,
+    cache: CacheDep,
+) -> AuthResult:
+    return await _get_current_user_by_guard("admin", token, session, cache)
+
+
+async def get_current_merchant(
+    token: Annotated[str | None, Depends(_scheme_merchant)],
+    session: SessionDep,
+    cache: CacheDep,
+) -> AuthResult:
+    return await _get_current_user_by_guard("merchant", token, session, cache)
+
+
+async def get_current_agent(
+    token: Annotated[str | None, Depends(_scheme_agent)],
+    session: SessionDep,
+    cache: CacheDep,
+) -> AuthResult:
+    return await _get_current_user_by_guard("agent", token, session, cache)
 
 AdminUser = Annotated[AuthResult, Depends(get_current_admin)]
 MerchantUser = Annotated[AuthResult, Depends(get_current_merchant)]

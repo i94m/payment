@@ -38,6 +38,8 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "aiosqlite>=0.20.0",
     "playwright>=1.63.0",
+    # 源码保护编译用（scripts/compile_backend.py，仅容器 builder 阶段实际执行）
+    "cython==3.3.*",
 ]
 
 [[tool.uv.index]]

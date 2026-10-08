@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # 服务器一条命令部署/升级（MySQL、Redis 均为宿主机系统服务，本脚本只管容器侧）：
+# 注意：镜像内后端源码已 Cython 编译为 .so（无业务 .py），插件同样随镜像固化；
+#       本脚本与 artisan.py（入口保留 .py）交互，用法完全不变。
 #
 #   PAY_IMAGE=registry.example.com/myns/pay-gateway:<tag> ./scripts/deploy.sh
 #

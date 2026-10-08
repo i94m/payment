@@ -35,6 +35,12 @@ class Config(BaseSettings):
     SENTRY_DSN: HttpUrl | None = None
     APP_DEBUG: bool = False
 
+    # Web 进程数（uvicorn --workers）：compose env_file 会把它导出为容器环境变量，
+    # 镜像 CMD 以 ${WEB_WORKERS:-2} 读取，未配置时默认 2。
+    # 有效并发 = WEB_WORKERS × 容器副本数（--scale）；单 worker 的 DB 连接
+    # = DB_POOL_SIZE + DB_MAX_OVERFLOW，调大 worker 数按需同步调大连接池。
+    WEB_WORKERS: int = 2
+
     # DB
     DB_SCHEME: str = "mysql"
     DB_HOST: str
@@ -90,7 +96,7 @@ class Config(BaseSettings):
     HTTP_CONNECT_TIMEOUT: int = 5
     HTTP_READ_TIMEOUT: int = 15
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field(return_type=MultiHostUrl)  # type: ignore[prop-decorator]
     @property
     def db_connect(self) -> MultiHostUrl:
         if self.DB_SCHEME == "pgsql":
@@ -108,7 +114,7 @@ class Config(BaseSettings):
             path=self.DB_DATABASE,
         )
 
-    @computed_field
+    @computed_field(return_type=dict)
     @property
     def get_redis_config(self) -> dict:
         return {

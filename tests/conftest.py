@@ -34,6 +34,32 @@ from app.core.config import config  # noqa: E402
 from app.core.database import get_db  # noqa: E402
 from app.core.security import hash_password  # noqa: E402
 from app.lib.sign import make_rsa_sign, pem_to_flat  # noqa: E402
+
+# ------------------------------------------------------------
+# 设置缓存失效包装（必须在测试模块导入前生效）：
+# 生产链路 set_settings(..., cache) 末尾会 invalidate_cache；
+# 测试直调 set_settings(session, values) 不带 cache —— 假缓存里的设置
+# 快照会残留旧值。这里包一层：写入后失效所有已注册假缓存中的设置快照，
+# 让「测试中途改设置 → 后续请求读到新值」与生产行为一致。
+# ------------------------------------------------------------
+import app.services.settings as _settings_mod  # noqa: E402
+
+_test_caches: list = []
+_set_settings_original = _settings_mod.set_settings
+
+
+async def _set_settings_with_invalidation(session, values, cache=None):
+    await _set_settings_original(session, values, cache=cache)
+    key = _settings_mod._cache_key()
+    for c in _test_caches:
+        try:
+            await c.delete(key)
+        except Exception:
+            pass
+
+
+_settings_mod.set_settings = _set_settings_with_invalidation
+
 from app.models import (  # noqa: E402
     Channel,
     Merchant,
@@ -233,11 +259,57 @@ async def client(engine, seeded, monkeypatch):
 
     app.dependency_overrides[get_db] = _get_db_test
 
-    # 强制降级缓存，避免全局 Redis 连接池跨事件循环复用
-    from app.core.cache import DisabledCache, get_cache
+    # 无操作假缓存替代真 Redis：避免测试连全局 Redis / 连接池跨事件循环复用。
+    # （生产语义：Redis 不可用时 get_cache 抛 CacheUnavailableError，不降级；
+    #   这里注入 no-op 假缓存仅为了在无 Redis 的测试环境跑通依赖链。）
+    from app.core.cache import get_cache
+
+    class NoopCache:
+        """内存存取 + 真实计数语义的最小缓存（对齐真 Redis 常用子集）。
+
+        set 返回真值（try_lock 视为拿到锁）；incr 为真实计数
+        （扣量/限次等依赖 INCR 累计，恒 1 会让模运算永远不命中）。
+        """
+
+        def __init__(self):
+            self._d = {}
+
+        async def get(self, key):
+            return self._d.get(key)
+
+        async def set(self, key, value, **kwargs):
+            self._d[key] = value
+            return True
+
+        async def delete(self, key):
+            self._d.pop(key, None)
+            return None
+
+        async def incr(self, key):
+            n = int(self._d.get(key, 0) or 0) + 1
+            self._d[key] = n
+            return n
+
+        async def decr(self, key):
+            n = int(self._d.get(key, 0) or 0) - 1
+            self._d[key] = n
+            return n
+
+        async def ttl(self, key):
+            return -1
+
+        async def expire(self, key, seconds):
+            return None
+
+        async def keys(self, pattern):
+            return []
+
+    cache = NoopCache()  # 整个测试共享一个实例：INCR 计数跨请求累计（对齐真 Redis）
+    _test_caches.clear()
+    _test_caches.append(cache)
 
     async def _get_cache_test():
-        yield DisabledCache()
+        yield cache
 
     app.dependency_overrides[get_cache] = _get_cache_test
 

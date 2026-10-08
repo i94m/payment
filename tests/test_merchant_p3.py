@@ -373,7 +373,7 @@ class _FakeRedis:
 async def test_deduct_counter_redis_atomic(client, seeded, session):
     """Redis INCR 原子计数：频次 3，前 6 笔命中第 3/6 笔，模循环无需重置。
 
-    覆盖有 Redis 时的主路径（默认 fixture 是 DisabledCache，走行锁回退分支）。
+    覆盖有 Redis 时的主路径（默认 fixture 是无操作假缓存，无缓存时走行锁回退分支）。
     """
     from app.core.cache import get_cache
     from main import app
