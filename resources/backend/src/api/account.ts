@@ -13,6 +13,7 @@ export interface SettingItem {
   type: string // string | text | int | float | decimal | bool | list | list_int
   group: string
   label: string
+  description?: string
   updated_at: string | null
 }
 

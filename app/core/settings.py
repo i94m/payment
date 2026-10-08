@@ -101,6 +101,7 @@ def merged_items(rows: list[Setting]) -> list[dict[str, Any]]:
             "type": str(spec.type),
             "group": str(spec.group),
             "label": spec.label,
+            "description": spec.description,
             "updated_at": row.updated_at if row is not None else None,
         })
     return items

@@ -3,7 +3,7 @@
 - 开（默认）：开放 API 正常下单/查单，商户端菜单含「API信息」
 - 关：开放 API 拒绝下单/查单（明确错误信息）；商户端隐藏「API信息」菜单入口，
   但页面与逻辑保留（/merchant-api/account/apikey 直访仍可用）；收款页/收银台不受影响
-- 管理端支付设置页可见并可在 UI 编辑该开关
+- 管理端站点配置页不展示该开关（页面白名单收敛），PATCH 仍可调
 """
 import pytest
 from sqlmodel import select
@@ -119,7 +119,7 @@ async def test_disabled_keeps_paypage_and_cashier(client, session):
 
 @pytest.mark.asyncio
 async def test_admin_settings_page_hides_switch(client, session):
-    """开关不在支付设置页展示（页面白名单收敛），但配置功能保留：PATCH 仍可调、API 照常受控。"""
+    """开关不在站点配置页展示（页面白名单收敛），但配置功能保留：PATCH 仍可调、API 照常受控。"""
     resp = await client.get("/admin-api/setting", headers=await _admin_headers(session))
     keys = {i["key"] for i in resp.json()["data"]["items"]}
     assert "api_pay_enable" not in keys
@@ -154,6 +154,28 @@ async def test_api_order_rate_limit_configurable(client, session):
     bad = await client.patch("/admin-api/setting",
                              json={"api_order_rate_limit": "abc"}, headers=h)
     assert bad.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_settings_page_whitelist_deduct_and_settle(client, session):
+    """页面白名单 = 站点名称 + 扣量 + 结算组（自动结算/D+1 除外）：
+    注册开关、D+1 开关不再展示，PATCH 仍可调（页面隐藏 ≠ 只读）。"""
+    from app.constants.settings import ADMIN_SETTING_KEYS
+    from app.services.settings import get_all_settings, setting_enabled
+
+    h = await _admin_headers(session)
+    resp = await client.get("/admin-api/setting", headers=h)
+    keys = {i["key"] for i in resp.json()["data"]["items"]}
+    assert keys == ADMIN_SETTING_KEYS
+    assert "site_name" in keys
+    assert "merchant_reg_open" not in keys
+    assert "settle_d1_enable" not in keys
+
+    # D+1 经 PATCH 写入后运行期读取生效
+    ok = await client.patch("/admin-api/setting", json={"settle_d1_enable": True}, headers=h)
+    assert ok.json()["code"] == 0
+    settings = await get_all_settings(session)
+    assert setting_enabled(settings["settle_d1_enable"]) is True
 
 
 @pytest.mark.asyncio

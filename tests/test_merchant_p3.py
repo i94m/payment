@@ -80,6 +80,26 @@ async def test_register_disabled_by_default(client, seeded, session):
 
 
 @pytest.mark.asyncio
+async def test_reg_switch_hidden_from_settings_page(client, seeded, session):
+    """注册开关不在站点配置页展示（页面白名单收敛），但配置功能保留：PATCH 仍可调、注册照常受控。"""
+    h = await _admin_headers(session)
+    resp = await client.get("/admin-api/setting", headers=h)
+    keys = {i["key"] for i in resp.json()["data"]["items"]}
+    assert "merchant_reg_open" not in keys
+
+    # 写入走同一校验通道（页面隐藏 ≠ 只读）
+    resp2 = await client.patch("/admin-api/setting", json={"merchant_reg_open": True}, headers=h)
+    assert resp2.json()["code"] == 0
+
+    # 打开后注册入口照常生效
+    r = await client.post("/merchant-api/auth/register", json={
+        "username": "regopen", "password": "abc123",
+        "captcha_key": "x", "captcha_code": "0000",
+    })
+    assert r.json()["code"] == 0, r.json()
+
+
+@pytest.mark.asyncio
 async def test_register_flow_with_review_and_invite(client, seeded, session):
     from app.services.settings import set_settings as _ss
     await _ss(session, {"merchant_reg_open": True, "merchant_reg_review": True})

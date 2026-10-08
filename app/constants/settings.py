@@ -43,6 +43,7 @@ class SettingSpec:
     default: Any
     group: SettingGroup
     label: str  # 中文说明(前端渲染)
+    description: str = ""  # 补充描述(前端渲染在标签下方,可空)
 
 
 SETTINGS_REGISTRY: dict[str, SettingSpec] = {
@@ -67,12 +68,12 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
         SettingSpec("test_pay_enable", SettingType.BOOL, True, SettingGroup.ORDER, "通道测试支付开关（admin 通道调试用）"),
         SettingSpec("test_pay_merchant_pid", SettingType.INT, 0, SettingGroup.ORDER,
                     "测试支付挂单商户 PID（0=未配置，通道测试不可用）"),
-        SettingSpec("deduct_enable", SettingType.BOOL, False, SettingGroup.ORDER,
-                    "扣量开关（开启后按成功订单频次轮询抽单，商户侧显示为未支付）"),
+        SettingSpec("deduct_enable", SettingType.BOOL, False, SettingGroup.ORDER, "扣量开关",
+                    description="开启后按成功订单频次轮询抽单，商户侧显示为未支付"),
         SettingSpec("deduct_frequency", SettingType.INT, 0, SettingGroup.ORDER,
-                    "扣量频率（每 N 笔成功订单扣 1 笔，0=不扣）"),
+                    "扣量频率（每 N 笔扣 1，0=不扣）"),
         SettingSpec("deduct_minmoney", SettingType.DECIMAL, "0.00", SettingGroup.ORDER,
-                    "扣量豁免金额（订单金额≤该值不参与扣量，0=不豁免）"),
+                    "豁免金额（订单≤该值不扣，0=不豁免）"),
         # ---- notify ----
         SettingSpec("notify_retry_ladder", SettingType.LIST_INT,
                     [1, 2, 5, 10, 30, 60, 120], SettingGroup.NOTIFY,
@@ -116,12 +117,12 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
     ]
 }
 
-# 支付设置页可见 key 白名单：站点名称 + 注册开关 + 扣量 + 结算组（自动结算除外）。
-# api_pay_enable / api_order_rate_limit 不在页面上暴露（仍由注册表提供默认值、
+# 站点配置页可见 key 白名单：站点名称 + 扣量 + 结算组（自动结算 / D+1 除外）。
+# 注册开关、api_pay_enable / api_order_rate_limit 等不在页面上暴露（仍由注册表提供默认值、
 # 运行期生效，可直接写库或 PATCH 接口调整），其余项同理只是不在设置页展示/编辑。
-ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable"}
+ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable", "settle_d1_enable"}
 ADMIN_SETTING_KEYS: set[str] = (
-    {"site_name", "merchant_reg_open"}
+    {"site_name"}
     | {k for k in SETTINGS_REGISTRY if k.startswith("deduct_")}
     | {k for k, spec in SETTINGS_REGISTRY.items() if spec.group is SettingGroup.SETTLE}
 ) - ADMIN_SETTING_HIDDEN_KEYS
