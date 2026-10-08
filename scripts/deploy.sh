@@ -18,7 +18,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-COMPOSE_FILE=${COMPOSE_FILE:-docker-compose-example.yml}
+COMPOSE_FILE=${COMPOSE_FILE:-docker-compose.production.yml}
 
 log() { printf '\033[1;36m[deploy]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[deploy]\033[0m %s\n' "$*" >&2; exit 1; }

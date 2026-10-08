@@ -1,16 +1,28 @@
-# 生产编排：只有 app×N + worker 容器化；MySQL 与 Redis 均用宿主机系统服务（非容器），
-# 容器统一经 host.docker.internal 访问 —— Linux 由 extra_hosts 的 host-gateway
-# 映射到宿主机，macOS Docker Desktop 自带该域名。宿主机服务接入要点见 DEPLOY.md。
+# 唯一编排文件（生产 & 本地测试共用）：app×N + worker 容器化；
+# MySQL 与 Redis 均用宿主机系统服务（非容器），容器统一经 host.docker.internal
+# 访问 —— Linux 由 extra_hosts 的 host-gateway 映射到宿主机，macOS Docker
+# Desktop 自带该域名。宿主机服务接入要点见 DEPLOY.md。
 #
-# 服务器一条命令部署：scripts/deploy.sh（自动 .env 初始化 / pull / up / 首次建表）。
-# 镜像来源二选一：
-#   仓库拉取（推荐，服务器不装 node/pnpm）：PAY_IMAGE=<仓库>/pay-gateway:<tag> ./scripts/deploy.sh
-#   本机构建：scripts/build-image.sh（前端/文档构建 + docker build 一条命令）
-# 默认 PAY_IMAGE=pay-gateway:latest。
+# 镜像由 .github/workflows/docker-image.yml 自动构建发布（ghcr.io/i94m/payment）：
+#   push 到 main  → main / latest / sha-xxxxxxx
+#   push tag v1.2.3 → 1.2.3 / 1.2 / sha-xxxxxxx
+#
+# 数据库/Redis 指向默认宿主机服务（host.docker.internal），本地测试等场景
+# 在 .env 里覆盖（compose 变量插值读 .env，环境变量优先于容器内 env_file）：
+#   DB_HOST_CONTAINER=106.55.182.210     # 例：远程测试库
+#   DB_PORT_CONTAINER=33806
+#   REDIS_HOST_CONTAINER / REDIS_PORT_CONTAINER 同理（缺省 host.docker.internal:6379）
+#
+# 用法：
+#   服务器一条命令（自动 .env 初始化 / pull / up / 建表迁移）：
+#     ./scripts/deploy.sh                # 默认就是本文件；固定版本加 PAY_IMAGE=ghcr.io/i94m/payment:sha-xxxxxxx
+#   本地测试 / 手动：
+#     docker compose -f docker-compose.production.yml up -d
+#   本机构建镜像（无仓库场景，scripts/build-image.sh 产出 pay-gateway:latest）：
+#     PAY_IMAGE=pay-gateway:latest docker compose -f docker-compose.production.yml up -d
 services:
   app:
-    build: .                        # 本机构建入口；服务器拉取部署时不会用到
-    image: ${PAY_IMAGE:-pay-gateway:latest}
+    image: ${PAY_IMAGE:-ghcr.io/i94m/payment:latest}
     # 多实例负载均衡：不能固定 container_name（扩容会重名冲突），端口改用范围且只绑 127.0.0.1，
     # 由主机 nginx（见 nginx-example.conf）反代 8000-8002 做轮询/least_conn。
     # 启动 N 个实例：docker compose up -d --scale app=3（N ≤ 端口范围大小 3）
@@ -25,9 +37,12 @@ services:
     environment:
       # 宿主机 MySQL / Redis（systemd 等系统服务，非容器）：容器内解析到宿主机。
       # 要求两服务监听 0.0.0.0 或 docker 网桥 IP、账号允许容器网段连接（见 DEPLOY.md）；
-      # Redis 监听非回环必须 requirepass，对应 .env 的 REDIS_PASSWORD
-      - DB_HOST=host.docker.internal
-      - REDIS_HOST=host.docker.internal
+      # Redis 监听非回环必须 requirepass，对应 .env 的 REDIS_PASSWORD。
+      # *_CONTAINER 变量在 .env 覆盖即可改指远程库（见文件头注释）。
+      - DB_HOST=${DB_HOST_CONTAINER:-host.docker.internal}
+      - DB_PORT=${DB_PORT_CONTAINER:-3306}
+      - REDIS_HOST=${REDIS_HOST_CONTAINER:-host.docker.internal}
+      - REDIS_PORT=${REDIS_PORT_CONTAINER:-6379}
       - TZ=Asia/Shanghai
       - FORWARDED_ALLOW_IPS=*          # 信任主机 nginx 传来的 X-Forwarded-*，
                                        # 让 request.client.host 也是真实 IP（端口已仅绑 127.0.0.1，安全）
@@ -40,8 +55,7 @@ services:
       - app-net
 
   worker:
-    build: .
-    image: ${PAY_IMAGE:-pay-gateway:latest}
+    image: ${PAY_IMAGE:-ghcr.io/i94m/payment:latest}
     container_name: pay-gateway-worker
     # SAQ worker：商户通知阶梯重试 / 掉单主动查单补单 / 过期关单
     # 需要更高吞吐时同样可去掉 container_name 后 --scale worker=N，
@@ -58,8 +72,10 @@ services:
     env_file:
       - .env
     environment:
-      - DB_HOST=host.docker.internal
-      - REDIS_HOST=host.docker.internal
+      - DB_HOST=${DB_HOST_CONTAINER:-host.docker.internal}
+      - DB_PORT=${DB_PORT_CONTAINER:-3306}
+      - REDIS_HOST=${REDIS_HOST_CONTAINER:-host.docker.internal}
+      - REDIS_PORT=${REDIS_PORT_CONTAINER:-6379}
       - TZ=Asia/Shanghai
     extra_hosts:
       - "host.docker.internal:host-gateway"

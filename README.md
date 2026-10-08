@@ -60,7 +60,7 @@ uv run python -m saq app.worker.settings  # Worker：通知重试/补单/过期
 uv run pytest                             # 测试（134 个用例，sqlite 本地文件库）
 ```
 
-Docker 全链路：`cp docker-compose-example.yml docker-compose.yml && docker compose up -d`
+Docker 全链路：`docker compose -f docker-compose.production.yml up -d`（镜像从 ghcr.io 拉取）
 （默认起 2 个 app 实例，端口仅绑 `127.0.0.1:8000-8002`；`--scale app=3` 扩到 3 个。
 主机 nginx 反代负载均衡见 `nginx-example.conf`：上游轮询这组端口，`nginx -t` 后 reload 生效。
 生产部署与 MySQL 高并发配置见 `DEPLOY.md`。）

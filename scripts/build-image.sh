@@ -8,7 +8,7 @@
 #   scripts/build-image.sh --tag v1.2.3           # 指定版本标签（默认 日期-git短sha）
 #   scripts/build-image.sh --skip-web             # 跳过前端/文档构建（dist 已是最新时）
 #
-# 服务器侧拉取部署（MySQL 用宿主机实例，见 docker-compose-example.yml / DEPLOY.md）：
+# 服务器侧拉取部署（MySQL 用宿主机实例，见 docker-compose.production.yml / DEPLOY.md）：
 #   PAY_IMAGE=<仓库>/pay-gateway:<版本> docker compose pull app worker
 #   PAY_IMAGE=<仓库>/pay-gateway:<版本> docker compose up -d
 set -euo pipefail

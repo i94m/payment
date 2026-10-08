@@ -4,7 +4,7 @@
 
 | 组件 | 运行方式 | 参考 |
 |---|---|---|
-| app × N | 容器（`--scale app=N`，端口 `127.0.0.1:8000-8002`） | `docker-compose-example.yml` |
+| app × N | 容器（`--scale app=N`，端口 `127.0.0.1:8000-8002`） | `docker-compose.production.yml` |
 | worker | 容器（SAQ：通知重试/补单/过期关单，可 `--scale worker=N`） | 同上 |
 | MySQL 8.0 | **宿主机系统服务（非容器）**；容器化仅为备选 | 本文·一 |
 | Redis | **宿主机系统服务（非容器）**（队列/限流/锁/扣量计数） | 本文·一之 3 |
@@ -31,8 +31,9 @@ git pull && PAY_IMAGE=registry.example.com/myns/pay-gateway:<tag> ./scripts/depl
 已有库自动 alembic 增量迁移。可重复执行（升级=换镜像标签再跑一次）；
 `--scale N` 调 app 实例数，`--no-pull` 跳过拉取。
 
-`PAY_IMAGE` 环境变量决定 compose 用的镜像名（默认 `pay-gateway:latest`，本机
-`scripts/build-image.sh` 产出的就是它）。服务器上请固定带版本标签拉取，避免 latest 漂移。
+`PAY_IMAGE` 环境变量决定 compose 用的镜像名（默认 `ghcr.io/i94m/payment:latest`，
+GitHub Actions 自动构建发布；本机 `scripts/build-image.sh` 产出 `pay-gateway:<tag>`，
+用 `PAY_IMAGE=pay-gateway:<tag>` 指定）。服务器上请固定带版本标签拉取，避免 latest 漂移。
 
 ## 一、MySQL 高并发配置
 
