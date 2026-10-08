@@ -111,13 +111,13 @@ tests/                      # 签名 / 下单 / 回调幂等 / 阶梯重试 / �
 老系统（PHP 版）仅作功能与业务逻辑参考；内部 API（admin-api/merchant-api）为全新 REST 设计，
 统一响应包络 `{"code":0,"message":"ok","data":...}`。
 
-## 对接文档（docs/ 独立模块）
+## 对接文档（resources/docs 独立模块）
 
 商户对接文档为独立 VitePress 站点，**公开访问（无需登录）**，按商户对接流程组织（无 SDK）：
 
-- 源码：`docs/` 子目录（`docs/.vitepress/config.mts` + Markdown 页面）
-- 本地开发：`cd docs && pnpm install && pnpm dev` → http://localhost:5173/docs/
-- 构建：`cd docs && pnpm build` → 产物 `static/docs`（已 gitignore）
+- 源码：`resources/docs`（`resources/docs/.vitepress/config.mts` + Markdown 页面）
+- 本地开发：`cd resources/docs && pnpm install && pnpm dev` → http://localhost:5173/docs/
+- 构建：`cd resources/docs && pnpm build` → 产物 `static/docs`（已 gitignore）
 - 托管：`app/core/frontend.py::register_docs` 将构建产物挂载到 `/docs`，
   后端启动即生效；商户后台「接入文档」菜单跳转 `/docs/`
 

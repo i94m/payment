@@ -1,11 +1,26 @@
 .git
 .venv
-node_modules
 **/node_modules
 **/.vitepress/cache
-__pycache__
-*.pyc
+**/__pycache__
+**/*.pyc
+**/*.md
 .env
+.mcp.json
 storage/
-*.md
 .gitignore
+
+# 前端/文档源码不进构建上下文：镜像只取构建产物 static/ 与 landing.html
+resources/docs/
+resources/backend/*
+!resources/backend/landing.html
+
+# 以下目录从不被 Dockerfile COPY，仅避免进入构建上下文（不影响镜像内容）
+tests/
+scripts/
+.github/
+.vscode/
+.pytest_cache/
+.playwright-mcp/
+docker-compose*.yml
+nginx-example.conf

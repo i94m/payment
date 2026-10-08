@@ -9,9 +9,9 @@ export default defineConfig({
   title: "对接文档",
   description: "聚合支付网关商户对接文档",
   base: "/docs/",
-  // 产物统一输出到仓库根 static/docs（outDir 相对 docs/ 解析）；
+  // 产物统一输出到仓库根 static/docs（outDir 相对 resources/docs/ 解析，即项目根上两级）；
   // outDir 在项目根之外时 VitePress 默认不清空，必须显式开启
-  outDir: "../static/docs",
+  outDir: "../../static/docs",
   emptyOutDir: true,
   ignoreDeadLinks: true,
 

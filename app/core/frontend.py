@@ -8,7 +8,7 @@ from starlette.staticfiles import StaticFiles
 from app.core.modules import MODULES
 
 _DOCS_NOT_FOUND_TIP = (
-    "对接文档未构建：请在 docs/ 目录执行 pnpm install && pnpm build "
+    "对接文档未构建：请在 resources/docs 目录执行 pnpm install && pnpm build "
     "生成 static/docs（构建后无需重启即可访问）"
 )
 
@@ -46,7 +46,7 @@ class _DocsStaticFiles(StaticFiles):
 def register_docs(app: FastAPI) -> None:
     """公开托管 VitePress 对接文档（/docs，无需登录）。
 
-    静态产物位于 static/docs（docs/ 子目录为独立文档模块）。
+    静态产物位于 static/docs（resources/docs 为独立文档模块）。
     必须在 register_frontend 之前注册：SPA 兜底路由是全量 path 通配，
     后注册的 mount 永远轮不到。挂载不校验 dist 是否已存在（check_dir=False），
     未构建时请求 /docs 返回构建提示（见 _DocsStaticFiles），

@@ -174,9 +174,9 @@ resources/backend/.env
 # Claude Code MCP（含数据库明文密码）
 .mcp.json
 
-# VitePress 对接文档（docs/ 子目录，独立模块）
-docs/node_modules/
-docs/.vitepress/cache/
+# VitePress 对接文档（resources/docs，独立模块）
+resources/docs/node_modules/
+resources/docs/.vitepress/cache/
 
 # 构建产物（vite → static/frontend，vitepress → static/docs）：现场构建，不入库
 static/frontend/

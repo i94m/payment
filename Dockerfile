@@ -25,7 +25,7 @@ COPY static/frontend/ ./static/frontend/
 RUN test -f static/frontend/index.html \
     && test -f static/frontend/admin.html \
     && test -f static/frontend/agent.html
-# 对接文档 VitePress 产物（docs/ 内 pnpm build 生成，输出到 static/docs；compose 另有 ro 挂载可免重建镜像热更新）
+# 对接文档 VitePress 产物（resources/docs 内 pnpm build 生成，输出到 static/docs；compose 另有 ro 挂载可免重建镜像热更新）
 COPY static/docs/ ./static/docs/
 # 宣传首页（/landing 由 frontend.py 直接返回该文件，镜像内缺失时会兜底成商户中心 SPA 跳登录）
 COPY resources/backend/landing.html ./resources/backend/landing.html

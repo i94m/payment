@@ -47,8 +47,8 @@ if [ "$SKIP_WEB" -eq 0 ]; then
   [ -f static/frontend/index.html ] || die "前端构建产物缺少 index.html（构建失败？）"
   [ -f static/frontend/admin.html ] || die "前端构建产物缺少 admin.html（构建失败？）"
 
-  log "构建对接文档 (docs)..."
-  ( cd docs
+  log "构建对接文档 (resources/docs)..."
+  ( cd resources/docs
     [ -d node_modules ] || pnpm install --frozen-lockfile
     pnpm build )
   [ -f static/docs/index.html ] || die "文档构建产物缺失（构建失败？）"

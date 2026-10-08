@@ -16,5 +16,5 @@ router.include_router(agent.router, prefix="/agent", tags=["merchant-agent"])
 router.include_router(paypage.router, prefix="/paypage", tags=["merchant-paypage"])
 router.include_router(message.router, prefix="/message", tags=["merchant-message"])
 
-# 对接文档已迁移为独立 VitePress 站点（docs/ 子目录），
+# 对接文档已迁移为独立 VitePress 站点（resources/docs），
 # 由 app.core.frontend.register_docs 公开托管在 /docs，支持未登录查看。
