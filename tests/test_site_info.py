@@ -20,19 +20,21 @@ async def test_site_info_public(client):
 async def test_site_info_features_defaults(client):
     resp = await client.get("/merchant-api/site-info")
     features = resp.json()["data"]["features"]
-    # 默认全开（菜单开关），外链为空串
+    # 默认全开（菜单开关），外链为空串；注册开关默认关闭
     for key in ("agent_enable", "recharge_enable", "paypage_enable"):
         assert features[key] is True
+    assert features["merchant_reg_open"] is False
     assert features["site_qq_group"] == ""
     assert features["site_app_url"] == ""
 
 
 @pytest.mark.asyncio
 async def test_site_info_features_reflect_updates(client, session):
-    await set_settings(session, {"agent_enable": False, "site_qq_group": "https://qm.qq.com/xxx"})
+    await set_settings(session, {"agent_enable": False, "merchant_reg_open": True, "site_qq_group": "https://qm.qq.com/xxx"})
     resp = await client.get("/admin-api/site-info")
     data = resp.json()["data"]
     assert data["features"]["agent_enable"] is False
+    assert data["features"]["merchant_reg_open"] is True
     assert data["features"]["site_qq_group"] == "https://qm.qq.com/xxx"
     # 公开端点只下发白名单键，绝不泄露敏感配置
     assert "platform_rsa_private_key" not in data

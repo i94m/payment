@@ -8,6 +8,7 @@ export interface SiteFeatures {
   recharge_enable: boolean
   paypage_enable: boolean
   api_pay_enable: boolean
+  merchant_reg_open: boolean
   site_qq_group: string
   site_app_url: string
 }
@@ -17,6 +18,7 @@ export const DEFAULT_SITE_FEATURES: SiteFeatures = {
   recharge_enable: true,
   paypage_enable: true,
   api_pay_enable: true,
+  merchant_reg_open: true,
   site_qq_group: "",
   site_app_url: "",
 }

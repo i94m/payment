@@ -20,6 +20,7 @@ export function LoginPage() {
   const login = useAuthStore((s) => s.login)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const siteName = useSiteStore((s) => s.siteName)
+  const siteFeatures = useSiteStore((s) => s.features)
 
   const [loading, setLoading] = React.useState(false)
   const [captchaKey, setCaptchaKey] = React.useState("")
@@ -170,7 +171,7 @@ export function LoginPage() {
                           <img
                             src={captchaImage}
                             alt="captcha"
-                            className="h-10 w-[130px] rounded-md cursor-pointer"
+                            className="h-10 w-[130px] cursor-pointer"
                           />
                         </button>
                       )}
@@ -195,7 +196,7 @@ export function LoginPage() {
             {loading ? "登录中..." : "登录"}
           </Button>
 
-          {APP_MODULE === "merchant" && (
+          {APP_MODULE === "merchant" && siteFeatures.merchant_reg_open && (
             <div className="text-center text-sm text-muted-foreground">
               {"还没有账号？"}{" "}
               <Link to="/register" className="text-primary underline-offset-4 hover:underline">

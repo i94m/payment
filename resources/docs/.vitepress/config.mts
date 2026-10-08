@@ -21,6 +21,9 @@ export default defineConfig({
   ],
 
   themeConfig: {
+    // 与管理后台同一 logo（resources/backend/public/images/logo.svg 的副本）
+    logo: "/logo.svg",
+
     nav: [
       { text: "首页", link: "/" },
       { text: "支付接口", link: "/pay/api.html" },

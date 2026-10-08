@@ -12,10 +12,10 @@ URL地址：`{site_url}/orders`
 |---|---|---|---|---|---|
 | 商户ID | pid | 是 | Int | 1001 | |
 | 支付方式 | type | 是 | String | alipay | [支付方式列表](/appendix/paytype.html) |
-| 商户订单号 | out_trade_no | 是 | String | 20160806151343349 | 同一商户下唯一，重复请求幂等返回原订单 |
-| 异步通知地址 | notify_url | 是 | String | http://www.pay.com/notify_url.php | 服务器异步通知地址 |
-| 跳转通知地址 | return_url | 否 | String | http://www.pay.com/return_url.php | 支付完成后收银台跳转地址 |
-| 商品名称 | name | 是 | String | VIP会员 | 如超过127个字节会自动截取 |
+| 商户订单号 | out_trade_no | 是 | String | 20160806151343349 | 同一商户下唯一，最长64字符，重复请求幂等返回原订单 |
+| 异步通知地址 | notify_url | 否 | String | http://www.pay.com/notify_url.php | 服务器异步通知地址，缺省时使用商户后台配置的默认通知地址 |
+| 跳转通知地址 | return_url | 否 | String | http://www.pay.com/return_url.php | 支付完成后收银台跳转地址，缺省时使用商户后台配置的默认回跳地址 |
+| 商品名称 | name | 是 | String | VIP会员 | 最长128字符，超出自动截取 |
 | 商品金额 | money | 是 | String | 1.00 | 单位：元，最大2位小数 |
 | 业务扩展参数 | param | 否 | String | 没有请留空 | 支付后原样返回 |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝（防重放） |

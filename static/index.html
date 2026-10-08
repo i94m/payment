@@ -526,7 +526,7 @@ img { max-width: 100%; }
 
   <div class="container">
     <div class="hero-text fade-up">
-      <h1>一站式<span data-site-name>聚合支付</span>管理系统</h1>
+      <h1>一站式<span>聚合支付</span>管理系统</h1>
       <p>支持多通道聚合、智能轮询、代理分润，轻松管理支付业务。高性能、易扩展、安全可靠。</p>
       <div class="hero-buttons">
         <a href="/merchant" class="btn-primary">
@@ -542,7 +542,7 @@ img { max-width: 100%; }
           <span class="mock-dot"></span>
           <span class="mock-dot"></span>
           <span class="mock-dot"></span>
-          <div class="mock-url">pay.example.com/admin</div>
+          <div class="mock-url">pay.example.com</div>
         </div>
         <div class="mock-body">
           <div class="mock-stats">
@@ -878,7 +878,7 @@ img { max-width: 100%; }
 <section class="section" id="highlights">
   <div class="container">
     <div class="section-title fade-up">
-      <h2>为什么选择 EPay</h2>
+      <h2>为什么选择 <span data-site-name>聚合支付</span></h2>
       <p>开箱即用，覆盖支付业务全流程</p>
     </div>
     <div class="features-grid">
@@ -971,15 +971,18 @@ img { max-width: 100%; }
       </div>
     </div>
     <div class="code-block fade-up">
-      <div><span class="comment">// 调用统一支付接口</span></div>
-      <div><span class="key">POST</span> <span class="str">/api/pay/create</span></div>
+      <div><span class="comment">// 创建支付订单（pid + RSA2 签名，详见对接文档）</span></div>
+      <div><span class="key">POST</span> <span class="str">/orders</span></div>
       <br>
       <div>{</div>
-      <div>&nbsp;&nbsp;<span class="key">"merchant_no"</span><span class="punct">:</span> <span class="str">"M20260517001"</span><span class="punct">,</span></div>
-      <div>&nbsp;&nbsp;<span class="key">"order_no"</span><span class="punct">:</span> <span class="str">"ORD20260517001"</span><span class="punct">,</span></div>
-      <div>&nbsp;&nbsp;<span class="key">"amount"</span><span class="punct">:</span> <span class="num">99.00</span><span class="punct">,</span></div>
-      <div>&nbsp;&nbsp;<span class="key">"pay_type"</span><span class="punct">:</span> <span class="str">"alipay_scan"</span><span class="punct">,</span></div>
-      <div>&nbsp;&nbsp;<span class="key">"notify_url"</span><span class="punct">:</span> <span class="str">"https://yoursite.com/callback"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"pid"</span><span class="punct">:</span> <span class="num">1001</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"type"</span><span class="punct">:</span> <span class="str">"alipay"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"out_trade_no"</span><span class="punct">:</span> <span class="str">"20160806151343349"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"name"</span><span class="punct">:</span> <span class="str">"商品名称"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"money"</span><span class="punct">:</span> <span class="str">"99.00"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"notify_url"</span><span class="punct">:</span> <span class="str">"https://yoursite.com/notify"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"timestamp"</span><span class="punct">:</span> <span class="num">1696000000</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"sign_type"</span><span class="punct">:</span> <span class="str">"RSA2"</span><span class="punct">,</span></div>
       <div>&nbsp;&nbsp;<span class="key">"sign"</span><span class="punct">:</span> <span class="str">"a1b2c3d4e5f6..."</span></div>
       <div>}</div>
     </div>
@@ -989,14 +992,8 @@ img { max-width: 100%; }
 <!-- ==================== Footer ==================== -->
 <footer class="footer" id="pricing">
   <div class="container">
-    <div class="footer-content">
-      <div class="footer-brand"><span data-site-name>聚合支付</span></div>
-      <div class="footer-links">
-        <a href="/admin">管理后台</a>
-      </div>
-    </div>
     <div class="footer-copy">
-      &copy; 2026 EPay - 聚合支付管理系统
+      &copy; 2026 <span data-site-name>聚合支付</span>
     </div>
   </div>
 </footer>

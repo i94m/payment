@@ -19,6 +19,7 @@ export function RegisterPage() {
   const register = useAuthStore((s) => s.register)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const siteName = useSiteStore((s) => s.siteName)
+  const siteFeatures = useSiteStore((s) => s.features)
 
   const [loading, setLoading] = React.useState(false)
   const [captchaKey, setCaptchaKey] = React.useState("")
@@ -64,6 +65,21 @@ export function RegisterPage() {
     return null
   }
 
+  // 注册开关未开放：不渲染表单（后端 /register 同样拒绝，双重防护）
+  if (!siteFeatures.merchant_reg_open) {
+    return (
+      <div className="relative min-h-screen bg-background">
+        <div className="absolute top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-card p-6 shadow-md sm:w-96">
+          <h1 className="text-center text-2xl font-bold">{siteName || "EPay"}</h1>
+          <p className="mt-1 text-center text-sm text-muted-foreground">{"平台暂未开放商户注册，请联系管理员开通"}</p>
+          <div className="mt-6 text-center text-sm">
+            <Link to="/login" className="text-primary underline-offset-4 hover:underline">{"返回登录"}</Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const onSubmit = async (data: z.infer<typeof schema>) => {
     setLoading(true)
     setRegError("")
@@ -88,7 +104,7 @@ export function RegisterPage() {
 
   return (
     <div className="relative min-h-screen bg-background">
-      <div className="absolute top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-lg bg-card p-6 shadow-md sm:w-96">
+      <div className="absolute top-1/2 left-1/2 w-80 -translate-x-1/2 -translate-y-1/2 rounded-lg border bg-card p-6 shadow-md sm:w-96">
         <h1 className="text-center text-2xl font-bold">{siteName || "EPay"}</h1>
         <p className="mt-1 text-center text-sm text-muted-foreground">{"注册商户"}</p>
 
