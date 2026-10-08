@@ -13,9 +13,9 @@ URL地址：`{site_url}/api/orders/{trade_no}/refund`
 
 | 字段名 | 变量名 | 必填 | 类型 | 示例值 | 描述 |
 |---|---|---|---|---|---|
-| 平台订单号 | trade_no | 是 | String | 260926120000000001 | 路径参数 |
+| 平台订单号 | trade_no | 是 | String | 2609261200000000001234 | 路径参数 |
 | 商户ID | pid | 是 | Int | 1001 | |
-| 退款金额 | refund_amount | 否 | String | 0.50 | 单位：元，最大2位小数；缺省 = 剩余可退全额 |
+| 退款金额 | refund_amount | 否 | String | 0.50 | 单位：元，最多2位小数（超出自动四舍五入）；缺省 = 剩余可退全额 |
 | 商户退款号 | out_refund_no | 否 | String | R20260926001 | 商户侧唯一退款单号，幂等键：重复提交返回原退款单 |
 | 退款原因 | reason | 否 | String | 用户申请 | |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝（防重放） |
@@ -25,7 +25,7 @@ URL地址：`{site_url}/api/orders/{trade_no}/refund`
 退款规则：
 
 - 订单须为**已支付**状态，未支付订单无法退款；
-- 可退上限为该订单的**商户到账金额**（实付金额 × 商户费率，非订单申报金额），
+- 可退上限为该订单的**商户到账金额**（实付金额按商户费率折算后的到账金额，非订单申报金额），
   可通过[查单接口](/api/order-query.html)的 `refunded_amount` 与退款响应跟踪进度；
 - 多次部分退款累计不能超过上限，超过将拒绝；
 - `out_refund_no` 幂等：同一商户同一 `out_refund_no` 重复提交返回原退款单，不重复扣款；
@@ -39,9 +39,9 @@ URL地址：`{site_url}/api/orders/{trade_no}/refund`
 |---|---|---|---|---|
 | 返回状态码 | code | Int | 0 | 0为成功，其它值为失败 |
 | 返回信息 | message | String | ok | 失败时返回原因 |
-| 平台退款单号 | refund_no | String | R2609261200000001 | R 开头 22 位 |
+| 平台退款单号 | refund_no | String | R2609261200000000001001 | R 开头 22 位 |
 | 商户退款号 | out_refund_no | String | R20260926001 | 未传时为空 |
-| 平台订单号 | trade_no | String | 260926120000000001 | |
+| 平台订单号 | trade_no | String | 2609261200000000001234 | |
 | 退款金额 | amount | String | 0.50 | |
 | 退款状态 | status | Int | 1 | 1 为成功（同步模型，返回即成功） |
 | 退款原因 | reason | String | 用户申请 | 未传时为空 |
@@ -51,7 +51,7 @@ URL地址：`{site_url}/api/orders/{trade_no}/refund`
 ## 请求示例
 
 ```bash
-curl -X POST "{site_url}/api/orders/260926120000000001/refund" \
+curl -X POST "{site_url}/api/orders/2609261200000000001234/refund" \
   -H "Content-Type: application/json" \
   -d '{
     "pid": 1001,
@@ -71,9 +71,9 @@ curl -X POST "{site_url}/api/orders/260926120000000001/refund" \
   "code": 0,
   "message": "ok",
   "data": {
-    "refund_no": "R2609261200000001001",
+    "refund_no": "R2609261200000000001001",
     "out_refund_no": "R20260926001",
-    "trade_no": "260926120000000001",
+    "trade_no": "2609261200000000001234",
     "amount": "0.50",
     "status": 1,
     "reason": "用户申请",
@@ -96,7 +96,7 @@ URL地址：`{site_url}/api/refunds/{refund_no}`
 
 | 字段名 | 变量名 | 必填 | 类型 | 示例值 | 描述 |
 |---|---|---|---|---|---|
-| 平台退款单号 | refund_no | 是 | String | R2609261200000001001 | 路径参数 |
+| 平台退款单号 | refund_no | 是 | String | R2609261200000000001001 | 路径参数 |
 | 商户ID | pid | 是 | Int | 1001 | |
 | 商户退款号 | out_refund_no | 否 | String | R20260926001 | 兜底查询：refund_no 未命中时按它查询 |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝 |
@@ -106,7 +106,7 @@ URL地址：`{site_url}/api/refunds/{refund_no}`
 返回字段与申请退款一致（查不到退款单时 `code` 非 0）。示例：
 
 ```bash
-curl "{site_url}/api/refunds/R2609261200000001001?pid=1001&timestamp=1696000000&sign=...&sign_type=RSA2"
+curl "{site_url}/api/refunds/R2609261200000000001001?pid=1001&timestamp=1696000000&sign=...&sign_type=RSA2"
 ```
 
 提示：仅保存了商户退款号（`out_refund_no`）时，可用

@@ -5,7 +5,7 @@
 无需 Authorization 头。
 
 - 签名原文：全部请求参数按参数名 ASCII 升序拼成 `a=b&c=d&e=f`（参数值不做 URL 编码），
-  其中 `sign`、`sign_type` 与空值（`null`、空字符串）**不参与**，字符串 `"0"` **参与**签名
+  其中 `sign`、`sign_type` 与空值（`null`、空字符串，含纯空白）**不参与**，字符串 `"0"` **参与**签名
 - 签名算法：SHA256WithRSA（PKCS#1 v1.5），结果 Base64 编码后作为 `sign` 参数
 - `sign_type` 固定传 `RSA2`
 - `timestamp` 必填：Unix 秒时间戳，与服务器偏差超过 300 秒拒绝（防重放）
@@ -20,7 +20,7 @@
 
 ## 签名四步
 
-1. 去掉 `sign`、`sign_type`，去掉空值参数；
+1. 去掉 `sign`、`sign_type`，去掉空值参数（`null`、空字符串，含纯空白）；
 2. 其余参数按参数名 ASCII 升序排序，拼成 `k1=v1&k2=v2&...`（值不 URL 编码）；
 3. 用商户私钥对拼串做 SHA256WithRSA 签名，结果 Base64 编码得到 `sign`；
 4. 请求 JSON body 中带上 `sign`、`sign_type=RSA2` 与 `timestamp`。
@@ -64,7 +64,9 @@ from cryptography.hazmat.primitives.asymmetric import padding
 def make_rsa_sign(params: dict, private_key_pem: str) -> str:
     keys = sorted(
         k for k in params
-        if k not in ("sign", "sign_type") and params[k] not in ("", None)
+        if k not in ("sign", "sign_type")
+        and params[k] is not None
+        and str(params[k]).strip() != ""
     )
     sign_str = "&".join(f"{k}={params[k]}" for k in keys)
     private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
@@ -79,7 +81,7 @@ function getSignContent($params) {
     ksort($params);
     $parts = [];
     foreach ($params as $k => $v) {
-        if ($k === 'sign' || $k === 'sign_type' || $v === '' || $v === null) continue;
+        if ($k === 'sign' || $k === 'sign_type' || $v === null || trim((string)$v) === '') continue;
         $parts[] = $k . '=' . $v;
     }
     return implode('&', $parts);
@@ -96,7 +98,7 @@ const crypto = require("crypto")
 
 function makeRsaSign(params, privateKeyPem) {
   const keys = Object.keys(params)
-    .filter((k) => !["sign", "sign_type"].includes(k) && params[k] !== "" && params[k] != null)
+    .filter((k) => !["sign", "sign_type"].includes(k) && params[k] != null && String(params[k]).trim() !== "")
     .sort()
   const signStr = keys.map((k) => `${k}=${params[k]}`).join("&")
   return crypto.createSign("RSA-SHA256")
@@ -120,7 +122,9 @@ from cryptography.hazmat.primitives.asymmetric import padding
 def verify_rsa_sign(params: dict, public_key_b64: str, sign: str) -> bool:
     keys = sorted(
         k for k in params
-        if k not in ("sign", "sign_type") and params[k] not in ("", None)
+        if k not in ("sign", "sign_type")
+        and params[k] is not None
+        and str(params[k]).strip() != ""
     )
     sign_str = "&".join(f"{k}={params[k]}" for k in keys)
     pem = ("-----BEGIN PUBLIC KEY-----\n"
@@ -142,7 +146,7 @@ function verifyRsaSign($params, $publicKey, $sign) {
     ksort($params);
     $parts = [];
     foreach ($params as $k => $v) {
-        if ($k === 'sign' || $k === 'sign_type' || $v === '' || $v === null) continue;
+        if ($k === 'sign' || $k === 'sign_type' || $v === null || trim((string)$v) === '') continue;
         $parts[] = $k . '=' . $v;
     }
     $pem = "-----BEGIN PUBLIC KEY-----\n"
@@ -160,7 +164,7 @@ const crypto = require("crypto")
 
 function verifyRsaSign(params, publicKeyB64, sign) {
   const keys = Object.keys(params)
-    .filter((k) => !["sign", "sign_type"].includes(k) && params[k] !== "" && params[k] != null)
+    .filter((k) => !["sign", "sign_type"].includes(k) && params[k] != null && String(params[k]).trim() !== "")
     .sort()
   const signStr = keys.map((k) => `${k}=${params[k]}`).join("&")
   const pem = `-----BEGIN PUBLIC KEY-----\n${publicKeyB64.replace(/(.{64})/g, "$1\n")}-----END PUBLIC KEY-----`

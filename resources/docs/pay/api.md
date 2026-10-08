@@ -16,7 +16,7 @@ URL地址：`{site_url}/api/orders`
 | 异步通知地址 | notify_url | 否 | String | http://www.pay.com/notify_url.php | 服务器异步通知地址，缺省时使用商户后台配置的默认通知地址 |
 | 跳转通知地址 | return_url | 否 | String | http://www.pay.com/return_url.php | 页面跳转通知地址，缺省时使用商户后台配置的默认回跳地址 |
 | 商品名称 | name | 是 | String | VIP会员 | 最长128字符，超出自动截取 |
-| 商品金额 | money | 是 | String | 1.00 | 单位：元，最大2位小数 |
+| 商品金额 | money | 是 | String | 1.00 | 单位：元，最多2位小数（超出自动四舍五入） |
 | 业务扩展参数 | param | 否 | String | 没有请留空 | 支付后原样返回，最长500字符 |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝（防重放） |
 | 签名字符串 | sign | 是 | String | jKt+H3m...（Base64） | 签名算法[点此查看](/sign/rsa.html) |
@@ -28,10 +28,10 @@ URL地址：`{site_url}/api/orders`
 |---|---|---|---|---|
 | 返回状态码 | code | Int | 0 | 0为成功，其它值为失败 |
 | 返回信息 | message | String | ok | 失败时返回原因 |
-| 订单号 | trade_no | String | 260926120000000001 | 平台订单号 |
+| 订单号 | trade_no | String | 2609261200000000001234 | 平台订单号 |
 | 商户订单号 | out_trade_no | String | 20160806151343349 | 商户系统内部的订单号 |
 | 支付类型 | pay_type | String | qrcode | jump / qrcode / scheme / html |
-| 支付跳转url | payurl | String | {site_url}/cashier?... | pay_type=jump 时返回，直接跳转到该url支付 |
+| 支付跳转url | payurl | String | https://pay.upstream.com/submit.php?... | pay_type=jump 时返回（上游通道支付地址），直接跳转到该url支付 |
 | 二维码链接 | qrcode | String | weixin://wxpay/bizpayurl?pr=04IPMKM | pay_type=qrcode 时返回，根据该url生成二维码 |
 | 小程序跳转url | urlscheme | String | weixin://dl/business/?ticket=xxx | pay_type=scheme 时返回，使用js跳转该url可拉起小程序支付 |
 | 收银台HTML | html | String | &lt;html&gt;... | pay_type=html 时返回，直接输出到页面渲染 |
@@ -74,7 +74,7 @@ curl -X POST "{site_url}/api/orders" \
   "code": 0,
   "message": "ok",
   "data": {
-    "trade_no": "260926120000000001",
+    "trade_no": "2609261200000000001234",
     "out_trade_no": "20160806151343349",
     "pay_type": "qrcode",
     "qrcode": "weixin://wxpay/bizpayurl?pr=04IPMKM",

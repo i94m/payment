@@ -8,7 +8,7 @@ URL地址：`{site_url}/api/orders/{trade_no}`
 
 | 字段名 | 变量名 | 必填 | 类型 | 示例值 | 描述 |
 |---|---|---|---|---|---|
-| 平台订单号 | trade_no | 是 | String | 260926120000000001 | 路径参数 |
+| 平台订单号 | trade_no | 是 | String | 2609261200000000001234 | 路径参数 |
 | 商户ID | pid | 是 | Int | 1001 | |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝（防重放） |
 | 签名字符串 | sign | 是 | String | jKt+H3m...（Base64） | 签名算法[点此查看](/sign/rsa.html) |
@@ -22,7 +22,7 @@ URL地址：`{site_url}/api/orders/{trade_no}`
 |---|---|---|---|---|
 | 返回状态码 | code | Int | 0 | 0为成功，其它值为失败 |
 | 返回信息 | message | String | ok | 失败时返回原因 |
-| 平台订单号 | trade_no | String | 260926120000000001 | 平台订单号 |
+| 平台订单号 | trade_no | String | 2609261200000000001234 | 平台订单号 |
 | 商户订单号 | out_trade_no | String | 20160806151343349 | 商户系统内部的订单号 |
 | 支付方式 | type | String | alipay | [支付方式列表](/appendix/paytype.html) |
 | 商品名称 | name | String | VIP会员 | |
@@ -40,7 +40,7 @@ URL地址：`{site_url}/api/orders/{trade_no}`
   "code": 0,
   "message": "ok",
   "data": {
-    "trade_no": "260926120000000001",
+    "trade_no": "2609261200000000001234",
     "out_trade_no": "20160806151343349",
     "type": "alipay",
     "name": "VIP会员",
