@@ -51,7 +51,7 @@ if [ "$SKIP_WEB" -eq 0 ]; then
   ( cd resources/docs
     [ -d node_modules ] || pnpm install --frozen-lockfile
     pnpm build )
-  [ -f static/docs/index.html ] || die "文档构建产物缺失（构建失败？）"
+  [ -f static/docs/guide/protocol.html ] || die "文档构建产物缺失（构建失败？）"
 fi
 
 # ---- 2. 版本标签 ----

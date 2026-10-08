@@ -60,7 +60,7 @@ jobs:
           cd resources/docs
           pnpm install --frozen-lockfile
           pnpm build
-          test -f ../../static/docs/index.html
+          test -f ../../static/docs/guide/protocol.html
 
       # ---- Docker 构建 & 推送 ghcr.io（amd64 + arm64 双架构）----
       # QEMU 交叉构建 arm64（Actions runner 为 x86；arm64 侧依赖安装走模拟，较慢，
