@@ -17,16 +17,13 @@ export default defineConfig({
 
   head: [
     ["meta", { name: "robots", content: "all" }],
-    ["link", { rel: "icon", type: "image/svg+xml", href: "/docs/favicon.svg" }],
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/docs/logo.svg" }],
   ],
 
   themeConfig: {
-    // 与管理后台同一 logo（resources/backend/public/images/logo.svg 的副本）
-    logo: "/logo.svg",
-
     nav: [
       { text: "首页", link: "/" },
-      { text: "支付接口", link: "/pay/api.html" },
+      { text: "API列表", link: "/pay/api.html" },
       { text: "签名算法", link: "/sign/rsa.html" },
     ],
 
@@ -35,27 +32,16 @@ export default defineConfig({
         text: "开始接入",
         items: [
           { text: "协议规则", link: "/guide/protocol.html" },
-        ],
-      },
-      {
-        text: "支付接口",
-        items: [
-          { text: "页面跳转支付", link: "/pay/cashier.html" },
-          { text: "API接口支付", link: "/pay/api.html" },
-          { text: "支付结果通知", link: "/pay/notify.html" },
-          { text: "申请退款", link: "/api/refund.html" },
-        ],
-      },
-      {
-        text: "签名算法",
-        items: [
           { text: "RSA2签名算法", link: "/sign/rsa.html" },
         ],
       },
       {
-        text: "查询",
+        text: "API列表",
         items: [
+          { text: "支付下单", link: "/pay/api.html" },
+          { text: "支付成功回调通知", link: "/pay/notify.html" },
           { text: "查询单个订单", link: "/api/order-query.html" },
+          { text: "申请退款", link: "/api/refund.html" },
           { text: "查询退款", link: "/api/refund.html#查询退款" },
         ],
       },

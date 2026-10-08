@@ -1,4 +1,4 @@
-# API接口支付
+# 支付下单
 
 此接口可用于服务器后端发起支付请求，会返回支付二维码链接或支付跳转url。
 
@@ -35,7 +35,7 @@ URL地址：`{site_url}/orders`
 | 二维码链接 | qrcode | String | weixin://wxpay/bizpayurl?pr=04IPMKM | pay_type=qrcode 时返回，根据该url生成二维码 |
 | 小程序跳转url | urlscheme | String | weixin://dl/business/?ticket=xxx | pay_type=scheme 时返回，使用js跳转该url可拉起小程序支付 |
 | 收银台HTML | html | String | &lt;html&gt;... | pay_type=html 时返回，直接输出到页面渲染 |
-| 收银台地址 | cashier_url | String | {site_url}/c/{不透明令牌} | 备用收银台地址，可引导用户跳转支付 |
+| 收银台地址 | cashier_url | String | {site_url}/c/{不透明令牌} | 收银台地址，可引导用户跳转到该页面完成支付（收银台内可更换支付方式） |
 | 订单有效期 | expires_in | Int | 300 | 订单有效期（秒） |
 
 注：`payurl`、`qrcode`、`urlscheme`、`html` 四个参数只会返回其中一个（由 `pay_type` 决定）。
@@ -45,7 +45,7 @@ URL地址：`{site_url}/orders`
 - 设备类型无需传入：服务端根据请求的 `User-Agent` 自动判断 PC / 移动端并匹配相应的上游支付形态；
 - 若平台为商户配置了**支付域名白名单**，请求须携带合法的 `Referer` 或 `Origin` 且域名命中白名单（支持 `*.example.com` 通配），否则返回「来源域名未授权」；
 - 下单接口有频率限制（默认 60 次/分钟，平台可调），超限返回失败；
-- 拉起上游失败时本接口返回失败，但订单仍保留待支付状态（`trade_no` 有效），可稍后重试或改用 [页面跳转支付](/pay/cashier.html)；
+- 拉起上游失败时本接口返回失败，但订单仍保留待支付状态（`trade_no` 有效），可稍后重试，或用返回的 `cashier_url` 收银台地址引导用户支付；
 - 响应为纯 `{code, message, data}` 包络，不附带响应签名（请求认证已覆盖请求方向，响应回传在同一 TLS 连接内）。
 
 ## 请求示例
@@ -84,5 +84,5 @@ curl -X POST "{site_url}/orders" \
 }
 ```
 
-支付成功后可通过 [支付结果通知](/pay/notify.html)、[查单接口](/api/order-query.html) 获取结果，
+支付成功后可通过 [支付成功回调通知](/pay/notify.html)、[查单接口](/api/order-query.html) 获取结果，
 通过 [申请退款](/api/refund.html) 接口退款。
