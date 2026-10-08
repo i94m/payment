@@ -87,8 +87,18 @@ def register_frontend(app: FastAPI) -> None:
             app.mount(f"/agent/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-agent-{subdir}")
             app.mount(f"/merchant/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-merchant-{subdir}")
 
-    # 入口页：/ 商户中心（index.html）、/admin 总后台（admin.html）、/agent 代理面板（agent.html）、/landing 宣传页
+    # 入口页：/ 宣传首页（static/index.html，缺失时兜底商户中心）、/admin 总后台（admin.html）、
+    # /agent 代理面板（agent.html）、/merchant 商户中心（index.html）、/landing 宣传页（兼容旧地址）
+    def _landing() -> FileResponse | JSONResponse:
+        if os.path.exists(landing_path):
+            return FileResponse(landing_path, headers={"Cache-Control": "no-cache"})
+        return _entry("index.html")
+
     @app.get("/")
+    async def home():
+        return _landing()
+
+    @app.get("/merchant")
     async def merchant_entry():
         return _entry("index.html")
 
@@ -102,9 +112,7 @@ def register_frontend(app: FastAPI) -> None:
 
     @app.get("/landing")
     async def landing():
-        if os.path.exists(landing_path):
-            return FileResponse(landing_path, headers={"Cache-Control": "no-cache"})
-        return _entry("index.html")
+        return _landing()
 
     # SPA fallback
     @app.get("/{full_path:path}")
@@ -127,7 +135,8 @@ def register_frontend(app: FastAPI) -> None:
         last_segment = full_path.rsplit("/", 1)[-1]
         if "." in last_segment:
             raise HTTPException(status_code=404, detail="Not Found")
-        # 总后台/代理面板前端（/admin、/agent 深链刷新）；其余（含旧 /merchant 前缀）兜底为商户中心
+        # 总后台/代理面板前端（/admin、/agent 深链刷新）；其余（含 /merchant 及其子路径，
+        # 商户中心入口在 /merchant）兜底为商户中心
         if full_path == "admin" or full_path.startswith("admin/"):
             return _entry("admin.html")
         if full_path == "agent" or full_path.startswith("agent/"):

@@ -8,7 +8,7 @@ import fs from "fs"
 const landingFile = path.resolve(__dirname, "../../static/index.html")
 
 // 开发期入口路径对齐生产（app/core/frontend.py）：
-// /admin[/] → admin.html、/agent[/] → agent.html、/landing[/] → static/index.html。
+// / → static/index.html（宣传首页）、/admin[/] → admin.html、/agent[/] → agent.html。
 // vite 的 html fallback 只对无后缀且不以 / 结尾的路径尝试 *.html，
 // 带尾部斜杠的 /admin/ 会兜底到根 index.html（商户端），拿到错误入口。
 function entryPathPlugin(): Plugin {
@@ -17,6 +17,11 @@ function entryPathPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const pathname = (req.url ?? "").split("?")[0]
+        if (pathname === "/" && fs.existsSync(landingFile)) {
+          res.setHeader("Content-Type", "text/html; charset=utf-8")
+          fs.createReadStream(landingFile).pipe(res)
+          return
+        }
         if (pathname === "/admin" || pathname === "/admin/") req.url = "/admin.html"
         else if (pathname === "/agent" || pathname === "/agent/") req.url = "/agent.html"
         else if (pathname === "/landing" || pathname === "/landing/") {
