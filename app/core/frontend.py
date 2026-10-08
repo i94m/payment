@@ -63,7 +63,7 @@ def register_frontend(app: FastAPI) -> None:
     """注册前端静态资源 + SPA fallback。static/frontend 不存在时自动跳过。"""
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     frontend_dir = os.path.join(base_dir, "static", "frontend")
-    landing_path = os.path.join(base_dir, "resources", "backend", "landing.html")
+    landing_path = os.path.join(base_dir, "static", "index.html")
 
     if not os.path.exists(frontend_dir):
         return

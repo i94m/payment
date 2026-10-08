@@ -10,10 +10,8 @@
 storage/
 .gitignore
 
-# 前端/文档源码不进构建上下文：镜像只取构建产物 static/ 与 landing.html
-resources/docs/
-resources/backend/*
-!resources/backend/landing.html
+# 源码不进构建上下文：镜像只取构建产物 static/ 与后端运行代码
+resources/
 
 # 以下目录从不被 Dockerfile COPY，仅避免进入构建上下文（不影响镜像内容）
 tests/
