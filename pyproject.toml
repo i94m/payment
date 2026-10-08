@@ -1,7 +1,7 @@
 [project]
-name = "epay-next"
+name = "pay-gateway"
 version = "0.1.0"
-description = "聚合支付网关（FastAPI 重写版）：商户开放 API + 插件化上游对接"
+description = "聚合支付网关：商户开放 API + 插件化上游对接"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

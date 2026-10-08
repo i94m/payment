@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 服务器一条命令部署/升级（MySQL、Redis 均为宿主机系统服务，本脚本只管容器侧）：
 #
-#   EPAY_IMAGE=registry.example.com/myns/epay-next:<tag> ./scripts/deploy.sh
+#   PAY_IMAGE=registry.example.com/myns/pay-gateway:<tag> ./scripts/deploy.sh
 #
 # 做的事（可重复执行，幂等）：
 #   1. .env 缺失时自动从 .env.example 生成并在本机写入密钥（提示先填 DB/Redis 再跑一次）
-#   2. EPAY_IMAGE 带仓库前缀时 docker compose pull 拉镜像
+#   2. PAY_IMAGE 带仓库前缀时 docker compose pull 拉镜像
 #   3. docker compose up -d（app×2 + worker）
 #   4. 等待全部容器 healthy
 #   5. 空库自动建表初始化；已有库自动 alembic 增量迁移
@@ -50,7 +50,7 @@ if [ ! -f .env ]; then
 fi
 
 # ---- 2. 拉镜像 ----
-IMAGE="${EPAY_IMAGE:-epay-next:latest}"
+IMAGE="${PAY_IMAGE:-pay-gateway:latest}"
 if [ "$PULL" -eq 1 ] && [ "${IMAGE#*/}" != "$IMAGE" ]; then
   log "拉取镜像 ${IMAGE} ..."
   dc pull app worker

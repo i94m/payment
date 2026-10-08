@@ -2,15 +2,15 @@
 # 一键打包部署镜像：前端构建 → 文档构建 → docker build → 打标签 →（可选）推送仓库
 #
 # 用法：
-#   scripts/build-image.sh                        # 本地镜像 epay-next:<版本>+latest
+#   scripts/build-image.sh                        # 本地镜像 pay-gateway:<版本>+latest
 #   scripts/build-image.sh --push                 # 构建并推送到默认仓库（需先 docker login）
 #   scripts/build-image.sh --registry registry.cn-hangzhou.aliyuncs.com/myns --push
 #   scripts/build-image.sh --tag v1.2.3           # 指定版本标签（默认 日期-git短sha）
 #   scripts/build-image.sh --skip-web             # 跳过前端/文档构建（dist 已是最新时）
 #
 # 服务器侧拉取部署（MySQL 用宿主机实例，见 docker-compose-example.yml / DEPLOY.md）：
-#   EPAY_IMAGE=<仓库>/epay-next:<版本> docker compose pull app worker
-#   EPAY_IMAGE=<仓库>/epay-next:<版本> docker compose up -d
+#   PAY_IMAGE=<仓库>/pay-gateway:<版本> docker compose pull app worker
+#   PAY_IMAGE=<仓库>/pay-gateway:<版本> docker compose up -d
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -59,8 +59,8 @@ if [ -z "$TAG" ]; then
   GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
   TAG="$(date +%Y%m%d-%H%M)-${GIT_SHA}"
 fi
-IMAGE=epay-next
-[ -n "$REGISTRY" ] && IMAGE="${REGISTRY%/}/epay-next"
+IMAGE=pay-gateway
+[ -n "$REGISTRY" ] && IMAGE="${REGISTRY%/}/pay-gateway"
 
 # ---- 3. 构建镜像（Dockerfile 内有入口完整性守护，缺产物直接失败） ----
 log "构建镜像 ${IMAGE}:${TAG} ..."
@@ -77,5 +77,5 @@ if [ "$PUSH" -eq 1 ]; then
 fi
 
 log "完成 ✔  ${IMAGE}:${TAG}"
-[ "$PUSH" -eq 1 ] && log "服务器拉取：EPAY_IMAGE=${IMAGE}:${TAG} docker compose pull app worker && docker compose up -d"
+[ "$PUSH" -eq 1 ] && log "服务器拉取：PAY_IMAGE=${IMAGE}:${TAG} docker compose pull app worker && docker compose up -d"
 exit 0

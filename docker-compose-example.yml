@@ -4,13 +4,13 @@
 #
 # 服务器一条命令部署：scripts/deploy.sh（自动 .env 初始化 / pull / up / 首次建表）。
 # 镜像来源二选一：
-#   仓库拉取（推荐，服务器不装 node/pnpm）：EPAY_IMAGE=<仓库>/epay-next:<tag> ./scripts/deploy.sh
+#   仓库拉取（推荐，服务器不装 node/pnpm）：PAY_IMAGE=<仓库>/pay-gateway:<tag> ./scripts/deploy.sh
 #   本机构建：scripts/build-image.sh（前端/文档构建 + docker build 一条命令）
-# 默认 EPAY_IMAGE=epay-next:latest。
+# 默认 PAY_IMAGE=pay-gateway:latest。
 services:
   app:
     build: .                        # 本机构建入口；服务器拉取部署时不会用到
-    image: ${EPAY_IMAGE:-epay-next:latest}
+    image: ${PAY_IMAGE:-pay-gateway:latest}
     # 多实例负载均衡：不能固定 container_name（扩容会重名冲突），端口改用范围且只绑 127.0.0.1，
     # 由主机 nginx（见 nginx-example.conf）反代 8000-8002 做轮询/least_conn。
     # 启动 N 个实例：docker compose up -d --scale app=3（N ≤ 端口范围大小 3）
@@ -41,8 +41,8 @@ services:
 
   worker:
     build: .
-    image: ${EPAY_IMAGE:-epay-next:latest}
-    container_name: epay-next-worker
+    image: ${PAY_IMAGE:-pay-gateway:latest}
+    container_name: pay-gateway-worker
     # SAQ worker：商户通知阶梯重试 / 掉单主动查单补单 / 过期关单
     # 需要更高吞吐时同样可去掉 container_name 后 --scale worker=N，
     # SAQ 基于 Redis 队列分发，多 worker 并发消费天然安全

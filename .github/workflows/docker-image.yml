@@ -3,7 +3,7 @@
 # 前置说明：dist 不入库（见 .gitignore），与 scripts/build-image.sh 一致，
 # 此处在 CI 现场构建前端与文档产物，再交给 Dockerfile（内含入口完整性守护）。
 #
-# 产物标签（ghcr.io/<owner>/<epay-next 仓库名小写>）：
+# 产物标签（ghcr.io/<owner>/<仓库名小写>）：
 #   push 到 main  → main / latest / sha-xxxxxxx
 #   push tag v1.2.3 → 1.2.3 / 1.2 / sha-xxxxxxx
 #

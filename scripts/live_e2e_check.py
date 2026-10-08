@@ -87,7 +87,7 @@ def create_order(out_trade_no: str, money: str = "10.00", sign_val: str | None =
 
 def db_exec(sql: str, params: tuple = ()):
     """直连测试库。默认本地 sqlite（uvicorn 直跑）；三种后端：
-    - E2E_MYSQL="mysql -u root -N --batch epay"：宿主机 MySQL（如 brew 服务）
+    - E2E_MYSQL="mysql -u root -N --batch pay_test"：宿主机 MySQL（如 brew 服务）
     - E2E_COMPOSE_FILE=xx.yml：docker compose 内的 mysql 服务
     - 其余：本地 sqlite 文件
     """
@@ -126,14 +126,14 @@ def db_exec(sql: str, params: tuple = ()):
     if compose:
         out = subprocess.run(
             ["docker", "compose", "-f", compose, "exec", "-T",
-             "-e", "MYSQL_PWD=epay_test_123", "mysql",
-             "mysql", "-u", "epay", "-N", "--batch", "-e", sql, "epay"],
+             "-e", "MYSQL_PWD=pay_test_123", "mysql",
+             "mysql", "-u", "pay_test", "-N", "--batch", "-e", sql, "pay_test"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         return _parse_rows(out)
 
     import sqlite3
-    conn = sqlite3.connect("/tmp/epay_live_test.db")
+    conn = sqlite3.connect("/tmp/pay_live_test.db")
     # 参数已由上方 replace 内联（与 MySQL CLI 路径共用逻辑），不再传 bindings
     cur = conn.execute(sql)
     rows = cur.fetchall()

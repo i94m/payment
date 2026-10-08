@@ -1,8 +1,8 @@
 {
-  "name": "epay-next-docs",
+  "name": "pay-gateway-docs",
   "version": "1.0.0",
   "private": true,
-  "description": "epay-next 对接文档（VitePress）",
+  "description": "聚合支付网关对接文档（VitePress）",
   "scripts": {
     "dev": "vitepress dev",
     "build": "vitepress build",

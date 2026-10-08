@@ -23,7 +23,7 @@ scripts/build-image.sh --registry registry.example.com/myns --push
 服务器（只需 docker + compose + 宿主机 MySQL/Redis，不装 node/pnpm/python）：
 
 ```shell
-git pull && EPAY_IMAGE=registry.example.com/myns/epay-next:<tag> ./scripts/deploy.sh
+git pull && PAY_IMAGE=registry.example.com/myns/pay-gateway:<tag> ./scripts/deploy.sh
 ```
 
 一条命令完成：`.env` 缺失时自动生成并写入密钥（首次会提示填好 DB/Redis 再跑一次）→
@@ -31,7 +31,7 @@ git pull && EPAY_IMAGE=registry.example.com/myns/epay-next:<tag> ./scripts/deplo
 已有库自动 alembic 增量迁移。可重复执行（升级=换镜像标签再跑一次）；
 `--scale N` 调 app 实例数，`--no-pull` 跳过拉取。
 
-`EPAY_IMAGE` 环境变量决定 compose 用的镜像名（默认 `epay-next:latest`，本机
+`PAY_IMAGE` 环境变量决定 compose 用的镜像名（默认 `pay-gateway:latest`，本机
 `scripts/build-image.sh` 产出的就是它）。服务器上请固定带版本标签拉取，避免 latest 漂移。
 
 ## 一、MySQL 高并发配置
@@ -98,8 +98,8 @@ bind-address = 0.0.0.0          # 或精确绑 docker 网桥 IP（如 172.17.0.1
 
 ```sql
 -- 账号允许容器网段连接（compose 自定义网桥一般是 172.x.0.0/16，docker network inspect 查）
-CREATE USER 'epay'@'172.%' IDENTIFIED BY '强密码';
-GRANT ALL PRIVILEGES ON epay.* TO 'epay'@'172.%';
+CREATE USER 'pay'@'172.%' IDENTIFIED BY '强密码';
+GRANT ALL PRIVILEGES ON pay.* TO 'pay'@'172.%';
 FLUSH PRIVILEGES;
 ```
 
@@ -129,7 +129,7 @@ requirepass 强密码       # 监听非回环必设；对应 .env 的 REDIS_PASS
 ```yaml
   mysql:
     image: mysql:8.0
-    container_name: epay-next-mysql
+    container_name: pay-gateway-mysql
     command:
       - --max_connections=800
       - --innodb_buffer_pool_size=4G
@@ -138,7 +138,7 @@ requirepass 强密码       # 监听非回环必设；对应 .env 的 REDIS_PASS
       - --collation-server=utf8mb4_0900_ai_ci
     environment:
       MYSQL_ROOT_PASSWORD: 改成强密码
-      MYSQL_DATABASE: epay
+      MYSQL_DATABASE: pay
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -169,7 +169,7 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 - `.env`：`DB_POOL_SIZE / DB_MAX_OVERFLOW` 按“连接数预算”收敛；`WORKER_CONCURRENCY` 按 CPU 调
 - 开放 API 下单限流：后台「支付设置 → api_order_rate_limit」运行期可调（次/分钟/来源IP，0=不限，默认 60）
 - 扩 app 实例：`./scripts/deploy.sh --scale 3`（上限 = 端口范围大小，见 compose 注释）
-- nginx：`sudo cp nginx-example.conf /etc/nginx/conf.d/epay-next.conf && sudo nginx -t && sudo systemctl reload nginx`
+- nginx：`sudo cp nginx-example.conf /etc/nginx/conf.d/pay-gateway.conf && sudo nginx -t && sudo systemctl reload nginx`
 
 ## 三、容量速查（架构口径）
 

@@ -18,12 +18,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
 
 # 必须在导入 app 之前设置
-os.environ.setdefault("APP_NAME", "epay-next-test")
+os.environ.setdefault("APP_NAME", "pay-gateway-test")
 os.environ.setdefault("APP_URL", "http://testserver")
 os.environ.setdefault("APP_SECRET_KEY", "test-secret-key-0123456789abcdef")
 os.environ.setdefault("STORAGE_LOCAL_SECRET", "test-storage-secret")
 os.environ.setdefault("DB_SCHEME", "sqlite")
-os.environ.setdefault("DB_DATABASE", str(Path(tempfile.gettempdir()) / "epay_pytest.db"))
+os.environ.setdefault("DB_DATABASE", str(Path(tempfile.gettempdir()) / "pay_pytest.db"))
 os.environ.setdefault("REDIS_HOST", "localhost")
 
 from sqlmodel import SQLModel  # noqa: E402
@@ -156,7 +156,7 @@ def _mock_upstream_handler(request: httpx.Request) -> httpx.Response:
 async def engine():
     # 每个用例独立 DB 文件：Windows 下无法删除仍被占用的 sqlite 文件，
     # 复用同名文件会出现 WinError 32
-    db_file = Path(tempfile.gettempdir()) / f"epay_pytest_{os.getpid()}_{next(_db_counter)}.db"
+    db_file = Path(tempfile.gettempdir()) / f"pay_pytest_{os.getpid()}_{next(_db_counter)}.db"
     eng = create_async_engine(
         f"sqlite+aiosqlite:///{db_file}",
         connect_args={"check_same_thread": False},

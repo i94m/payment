@@ -47,42 +47,10 @@
 money=1.00&name=VIP会员&notify_url=http://www.pay.com/notify_url.php&out_trade_no=20160806151343349&pid=1001&timestamp=1696000000&type=alipay
 ```
 
-## 生成密钥对（三选一）
-
-### 方式一：商户面板一键生成（推荐）
+## 如何获取密钥对
 
 商户后台「安全设置 → 接口密钥」点击**一键生成密钥对**：平台自动生成 RSA-2048 密钥对，
 公钥直接保存到商户资料，**私钥仅此一次展示**——请立即复制并妥善保管（关掉弹窗后无法再次查看）。
-
-### 方式二：OpenSSL
-
-```bash
-# 生成 RSA 私钥（PKCS#8）
-openssl genrsa -out private_key.pem 2048
-openssl pkcs8 -topk8 -inform PEM -in private_key.pem -outform PEM -nocrypt -out private_key_pkcs8.pem
-
-# 导出公钥（填入商户后台）
-openssl rsa -in private_key.pem -pubout -out public_key.pem
-```
-
-### 方式三：代码生成
-
-```python
-import base64
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-
-key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-private_key = base64.b64encode(key.private_bytes(   # 私钥：单行 Base64（PKCS#8），自己保管
-    serialization.Encoding.DER,
-    serialization.PrivateFormat.PKCS8,
-    serialization.NoEncryption(),
-)).decode()
-public_key = key.public_key().public_bytes(          # 公钥：转单行 Base64 后填入商户后台
-    serialization.Encoding.PEM,
-    serialization.PublicFormat.SubjectPublicKeyInfo,
-).decode()
-```
 
 ## 签名代码示例
 
