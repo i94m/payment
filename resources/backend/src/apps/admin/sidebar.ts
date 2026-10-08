@@ -32,10 +32,10 @@ export function getAdminMenu(): MenuSection[] {
       ],
     },
     {
-      label: "支付配置",
+      label: "系统配置",
       items: [
         { title: "支付通道", url: "/pay/channels", icon: IconRoute, permission: "channel.view" },
-        { title: "支付设置", url: "/setting/pay", icon: IconAdjustments, permission: "pay_setting.view" },
+        { title: "站点配置", url: "/setting/pay", icon: IconAdjustments, permission: "pay_setting.view" },
       ],
     },
   ]

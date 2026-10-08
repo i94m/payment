@@ -214,7 +214,7 @@ async def merchant_platform_key(session: SessionDep):
     try:
         return suc({"public_key": derive_public_key(private_raw)})
     except ValueError:
-        return err(-1, "平台RSA私钥配置无效，请前往支付设置检查")
+        return err(-1, "平台RSA私钥配置无效，请前往站点配置检查")
 
 
 @router.get("/{merchant_id}", dependencies=[Depends(PermissionChecker("merchant.view"))])

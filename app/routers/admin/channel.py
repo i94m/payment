@@ -447,10 +447,10 @@ async def channel_testpay(channel_id: int, body: ChannelTestPayRequest, request:
         return err(-1, "请先配置好通道凭证")
 
     if not bool(await get_setting(session, "test_pay_enable", True)):
-        return err(-1, "测试支付未开启，请先在支付设置中开启")
+        return err(-1, "测试支付未开启，请先在站点配置中开启")
     test_pid = await get_int_setting(session, "test_pay_merchant_pid")
     if test_pid <= 0:
-        return err(-1, "请先在支付设置中配置测试商户PID")
+        return err(-1, "请先在站点配置中配置测试商户PID")
     test_merchant = (await session.exec(
         select(Merchant).where(Merchant.pid == test_pid, Merchant.status == 1)
     )).first()

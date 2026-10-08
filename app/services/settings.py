@@ -65,7 +65,7 @@ async def get_all_settings(session: AsyncSession, cache: CacheClient | None = No
 async def ensure_platform_rsa_key(session: AsyncSession) -> bool:
     """平台 RSA 私钥为空时自动生成并落库（对齐老系统 common.php 启动自检）。
 
-    - 已配置（非空）返回 False，不覆盖；非空但非法的值同样保留，由支付设置页提示
+    - 已配置（非空）返回 False，不覆盖；非空但非法的值同样保留，由站点配置页提示
     - 私钥格式与手动生成一致：PKCS#8 DER 的 Base64（platform_rsa_private_key 存储格式）
     - 多实例并发启动时唯一键冲突视为其它实例已生成，回滚后返回 False
     """

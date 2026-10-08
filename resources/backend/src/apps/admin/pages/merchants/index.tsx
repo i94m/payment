@@ -986,7 +986,7 @@ export function MerchantsPage() {
                   </div>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    {"未配置：请在 支付设置 中填写 平台RSA私钥 后自动派生"}
+                    {"未配置：请在 站点配置 中填写 平台RSA私钥 后自动派生"}
                   </p>
                 )}
               </div>

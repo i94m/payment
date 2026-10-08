@@ -73,7 +73,7 @@ PERMISSION_TREE: list[tuple[str, str, list[tuple[str, str]]]] = [
         ]
     ),
     (
-        "支付设置", "pay_setting", [
+        "站点配置", "pay_setting", [
             ("查看", "pay_setting.view"),
             ("更新", "pay_setting.update"),
         ]
@@ -96,6 +96,6 @@ MENU_TREE: list[dict] = [
     {"key": "settle.view", "name": "结算管理", "path": "/settle", "icon": "icon-thumb-up"},
     {"key": "announce.view", "name": "公告管理", "path": "/announces", "icon": "icon-speaker"},
     {"key": "notify_log.view", "name": "回调日志", "path": "/trade/notifylogs", "icon": "icon-file"},
-    {"key": "pay_setting.view", "name": "支付设置", "path": "/setting/pay", "icon": "icon-settings"},
+    {"key": "pay_setting.view", "name": "站点配置", "path": "/setting/pay", "icon": "icon-settings"},
     {"key": "system.admin", "name": "管理员账号", "path": "/system/accounts", "icon": "icon-safe"},
 ]

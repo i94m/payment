@@ -1,4 +1,4 @@
-"""支付设置（运行期 KV，即时生效）。"""
+"""站点配置（运行期 KV，即时生效）。"""
 import base64
 from typing import Any
 

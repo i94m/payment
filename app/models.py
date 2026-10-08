@@ -201,7 +201,7 @@ class Merchant(SQLModel, table=True):
     # 邀请返现：invite_code 对外分发，invited_by=邀请人商户 id（0=无）
     invite_code: Optional[str] = Field(default=None, sa_column=Column(String(16), unique=True))
     invited_by: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))
-    # 消息订阅开关（邮件通道由 支付设置 mail_channel 决定是否实际发信；站内消息始终送达）
+    # 消息订阅开关（邮件通道由 站点配置 mail_channel 决定是否实际发信；站内消息始终送达）
     notify_order: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     notify_settle: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     notify_login: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))

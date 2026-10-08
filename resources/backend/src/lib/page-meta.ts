@@ -43,7 +43,7 @@ const EXTRA_META: Record<string, PageMeta> =
     ? {
         // 菜单无「修改资料」项，/user-center 页签标题用「账号信息」
         "/user-center": { title: "账号信息", parents: [] },
-        "/pay/types": { title: "支付方式", parents: ["支付配置"] },
+        "/pay/types": { title: "支付方式", parents: ["系统配置"] },
         "/system/accounts": { title: "管理员账号", parents: [] },
       }
     : APP_MODULE === "merchant"

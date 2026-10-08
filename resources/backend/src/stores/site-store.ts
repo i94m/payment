@@ -29,7 +29,7 @@ interface SiteState {
   fetchSite: () => Promise<void>
 }
 
-// 站点名称（后台「支付设置-站点名称」）：登录页标题 / 侧边栏品牌 / 浏览器标签页。
+// 站点名称（后台「站点配置-站点名称」）：登录页标题 / 侧边栏品牌 / 浏览器标签页。
 // features：后台菜单显隐开关，商户端侧边栏/⌘K 按其过滤。
 // /site-info 为公开端点（admin-api 与 merchant-api 双前缀挂载），未登录也可读取。
 export const useSiteStore = create<SiteState>((set) => ({
