@@ -67,7 +67,7 @@ def _pay_display_money(order: Order) -> str:
 # 收银台入口：随机金额商户直接拉起支付，其余渲染自选支付方式页面
 # ============================================================
 
-@router.get("/c/{token}", include_in_schema=False)
+@router.get("/cashier/{token}", include_in_schema=False)
 async def cashier_opaque_page(request: Request, token: str,
                               session: SessionDep = None, cache: CacheDep = None,
                               _rl=rate_limit(times=30)):
@@ -96,7 +96,7 @@ async def cashier_opaque_page(request: Request, token: str,
 
 
 def _cashier_page_for(trade_no: str) -> str:
-    """收银台自选页注入已知 trade_no（供 /c/{token} 不透明链接使用）。"""
+    """收银台自选页注入已知 trade_no（供 /cashier/{token} 不透明链接使用）。"""
     return _CASHIER_PAGE.replace(
         "var TRADE_NO = ''; /* 由服务端注入（_cashier_page_for） */",
         f"var TRADE_NO = '{html.escape(trade_no, quote=True)}';", 1)

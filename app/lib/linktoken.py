@@ -1,6 +1,6 @@
-"""不透明链接令牌 — 收银台 /c/ 链接不暴露业务号。
+"""不透明链接令牌 — 收银台 /cashier/ 链接不暴露业务号。
 
-收银台 /c/{token}：Fernet 加密的随机外观串（约 100 字符 URL-safe），
+收银台 /cashier/{token}：Fernet 加密的随机外观串（约 100 字符 URL-safe），
 无状态可逆，无需落库；轮换 APP_SECRET_KEY 即全量失效（派生密钥与
 通道凭证加密相互独立）。
 
@@ -43,8 +43,8 @@ def decode_link_token(token: str) -> str | None:
 
 
 def cashier_url(site: str, trade_no: str) -> str:
-    """收银台不透明链接：{site}/c/{token}。"""
-    return f"{site.rstrip('/')}/c/{encode_link_token(trade_no)}"
+    """收银台不透明链接：{site}/cashier/{token}。"""
+    return f"{site.rstrip('/')}/cashier/{encode_link_token(trade_no)}"
 
 
 def paypage_url(code: str) -> str:

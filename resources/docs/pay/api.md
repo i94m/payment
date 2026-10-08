@@ -35,7 +35,7 @@ URL地址：`{site_url}/api/orders`
 | 二维码链接 | qrcode | String | weixin://wxpay/bizpayurl?pr=04IPMKM | pay_type=qrcode 时返回，根据该url生成二维码 |
 | 小程序跳转url | urlscheme | String | weixin://dl/business/?ticket=xxx | pay_type=scheme 时返回，使用js跳转该url可拉起小程序支付 |
 | 收银台HTML | html | String | &lt;html&gt;... | pay_type=html 时返回，直接输出到页面渲染 |
-| 收银台地址 | cashier_url | String | {site_url}/c/{不透明令牌} | 收银台地址，可引导用户跳转到该页面完成支付（收银台内可更换支付方式） |
+| 收银台地址 | cashier_url | String | {site_url}/cashier/{不透明令牌} | 收银台地址，可引导用户跳转到该页面完成支付（收银台内可更换支付方式） |
 | 订单有效期 | expires_in | Int | 300 | 订单有效期（秒） |
 
 注：`payurl`、`qrcode`、`urlscheme`、`html` 四个参数只会返回其中一个（由 `pay_type` 决定）。
@@ -78,7 +78,7 @@ curl -X POST "{site_url}/api/orders" \
     "out_trade_no": "20160806151343349",
     "pay_type": "qrcode",
     "qrcode": "weixin://wxpay/bizpayurl?pr=04IPMKM",
-    "cashier_url": "{site_url}/c/gAAAAABl...（不透明令牌，长约120字符）",
+    "cashier_url": "{site_url}/cashier/gAAAAABl...（不透明令牌，长约120字符）",
     "expires_in": 300
   }
 }

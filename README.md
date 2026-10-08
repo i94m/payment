@@ -11,8 +11,9 @@
   `GET /api/orders/{trade_no}`（查单）、`POST /api/orders/{trade_no}/refund`（退款，
   支持多次部分退款）、`GET /api/refunds/{refund_no}`（退款查询）；
   pid + RSA2 签名认证（签名在 JSON body 参数内），统一 `{code,message,data}` 包络
-- **收银台**：HTML 页（`/cashier?trade_no=`，自包含单文件）+ 同资源 JSON
-  `/cashier/types|pay|status`（公开 + 限流）
+- **收银台**：HTML 页（`/cashier/{不透明令牌}`，Fernet 加密 trade_no，链接不暴露业务号；
+  自包含单文件，服务端注入 trade_no）+ 同资源 JSON
+  `/cashier/types|pay|status`（页面内部调用，公开 + 限流）
 - **订单**：建单幂等（`UniqueIndex(out_trade_no, merchant_id)`）、金额四线记账
   （申报/实付/商户到账/利润）、多条件查询、手动补单、重发通知、CSV 导出
 - **回调幂等记账三道防线**：唯一索引 / 状态机行锁（FOR UPDATE，只允许 0→1）/ Redis 锁

@@ -88,7 +88,7 @@ async def test_create_order_and_notify_paid(client, seeded):
     assert data["code"] == 0, data
     assert data["data"]["pay_type"] == "jump"
     assert data["data"]["payurl"] == "https://upstream.example/pay/abc123"
-    assert "/c/" in data["data"]["cashier_url"]  # 不透明收银台链接
+    assert "/cashier/" in data["data"]["cashier_url"]  # 不透明收银台链接
     assert order is not None
     assert order.status == 0
     assert order.realmoney == dmoney("100.00")
@@ -358,9 +358,9 @@ async def test_cashier_page_html(client, seeded):
     data, order = await _create_order(client, "CASH-PAGE")
     token = encode_link_token(order.trade_no)
     assert decode_link_token(token) == order.trade_no
-    resp = await client.get(f"/c/{token}")
+    resp = await client.get(f"/cashier/{token}")
     assert resp.status_code == 200
     assert "收银台" in resp.text
     # 无效令牌 → 错误结果页（不是收银台）
-    resp_bad = await client.get("/c/whatever-token")
+    resp_bad = await client.get("/cashier/whatever-token")
     assert "链接无效" in resp_bad.text

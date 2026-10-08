@@ -69,7 +69,7 @@ async def test_direct_redirect_reuses_stored_pay_info(client, seeded, session):
     await _update_order(session, order, extra={"pay_type": "jump", "pay_info": marked})
 
     from app.lib.linktoken import encode_link_token
-    resp = await client.get(f"/c/{encode_link_token(order.trade_no)}",
+    resp = await client.get(f"/cashier/{encode_link_token(order.trade_no)}",
                             follow_redirects=False)
     assert resp.status_code == 302, resp.text[:200]
     assert resp.headers["location"] == marked
@@ -83,7 +83,7 @@ async def test_direct_redirect_launches_when_not_pulled(client, seeded, session)
     await _update_order(session, order, extra={})
 
     from app.lib.linktoken import encode_link_token
-    resp = await client.get(f"/c/{encode_link_token(order.trade_no)}",
+    resp = await client.get(f"/cashier/{encode_link_token(order.trade_no)}",
                             follow_redirects=False)
     assert resp.status_code == 302, resp.text[:200]
     assert resp.headers["location"] == "https://upstream.example/pay/abc123"
@@ -104,7 +104,7 @@ async def test_direct_launch_failure_shows_error_page(client, seeded, session):
     session.add(ch)
     await session.commit()
 
-    resp = await client.get(f"/c/{encode_link_token(order.trade_no)}")
+    resp = await client.get(f"/cashier/{encode_link_token(order.trade_no)}")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     assert "拉起支付失败" in resp.text
@@ -120,7 +120,7 @@ async def test_direct_paid_shows_success_page(client, seeded, session):
     order = await _create_order(client, "CD-PAID")
     await _update_order(session, order, status=1)
 
-    resp = await client.get(f"/c/{encode_link_token(order.trade_no)}")
+    resp = await client.get(f"/cashier/{encode_link_token(order.trade_no)}")
     assert resp.status_code == 200
     assert "支付成功" in resp.text
     # return_url 携带签名参数回跳
@@ -134,7 +134,7 @@ async def test_direct_expired_shows_error_page(client, seeded, session):
     order = await _create_order(client, "CD-EXP")
     await _update_order(session, order, status=3)
 
-    resp = await client.get(f"/c/{encode_link_token(order.trade_no)}")
+    resp = await client.get(f"/cashier/{encode_link_token(order.trade_no)}")
     assert resp.status_code == 200
     assert "订单无法支付" in resp.text
     assert "过期" in resp.text
@@ -151,7 +151,7 @@ async def test_direct_qrcode_renders_qr_page(client, seeded, session):
         realmoney=8,
     )
 
-    resp = await client.get(f"/c/{encode_link_token(order.trade_no)}")
+    resp = await client.get(f"/cashier/{encode_link_token(order.trade_no)}")
     assert resp.status_code == 200
     assert "扫码支付" in resp.text
     assert "<svg" in resp.text and "path" in resp.text
@@ -169,7 +169,7 @@ async def test_direct_scheme_renders_launcher(client, seeded, session):
         extra={"pay_type": "scheme", "pay_info": "alipays://platformapi/startapp?appId=200"},
     )
 
-    resp = await client.get(f"/c/{encode_link_token(order.trade_no)}")
+    resp = await client.get(f"/cashier/{encode_link_token(order.trade_no)}")
     assert resp.status_code == 200
     assert "正在拉起支付" in resp.text
     assert "alipays://platformapi/startapp?appId=200" in resp.text
@@ -185,7 +185,7 @@ async def test_direct_html_rendered_verbatim(client, seeded, session):
                      "</body></html>")
     await _update_order(session, order, extra={"pay_type": "html", "pay_info": upstream_html})
 
-    resp = await client.get(f"/c/{encode_link_token(order.trade_no)}")
+    resp = await client.get(f"/cashier/{encode_link_token(order.trade_no)}")
     assert resp.status_code == 200
     assert "up.example/pay" in resp.text
     assert "document.getElementById" in resp.text
@@ -195,7 +195,7 @@ async def test_direct_html_rendered_verbatim(client, seeded, session):
 async def test_non_random_merchant_gets_cashier_page(client, seeded):
     """非随机金额商户：仍渲染收银台自选支付方式页面。"""
     order = await _create_order(client, "CD-NORMAL")
-    resp = await client.get(f"/c/{encode_link_token(order.trade_no)}")
+    resp = await client.get(f"/cashier/{encode_link_token(order.trade_no)}")
     assert resp.status_code == 200
     assert "收银台" in resp.text
     assert "立即支付" in resp.text
@@ -204,7 +204,7 @@ async def test_non_random_merchant_gets_cashier_page(client, seeded):
 @pytest.mark.asyncio
 async def test_unknown_trade_no_gets_cashier_page(client, seeded):
     """订单不存在：错误结果页（订单不存在或已失效）。"""
-    resp = await client.get(f"/c/{encode_link_token('NOPE')}")
+    resp = await client.get(f"/cashier/{encode_link_token('NOPE')}")
     assert resp.status_code == 200
     assert "订单不存在" in resp.text
 
@@ -248,7 +248,7 @@ async def test_paypage_random_auto_redirect_full_chain(client, seeded, session):
 
     resp2 = await client.get(f"/p/{code}", params={"go": "1"}, follow_redirects=False)
     assert resp2.status_code == 302, resp2.text[:300]
-    assert "/c/" in resp2.headers["location"]
+    assert "/cashier/" in resp2.headers["location"]
 
     resp3 = await client.get(resp2.headers["location"].replace("http://testserver", ""),
                              follow_redirects=False)

@@ -68,7 +68,7 @@ async def test_api_cashier_url_is_opaque(client, seeded):
     data = await _create_order(client)
     url = data["cashier_url"]
     # 默认下发即不透明形态：/c/{长随机串}，不含 trade_no
-    assert re.search(r"/c/[A-Za-z0-9_-]{80,}", url), url
+    assert re.search(r"/cashier/[A-Za-z0-9_-]{80,}", url), url
     assert data["trade_no"] not in url
 
     # 不透明链接可打开收银台（普通商户自选页，trade_no 已注入页面）
@@ -105,7 +105,7 @@ async def test_opaque_cashier_random_merchant_direct_launch(client, seeded, sess
 
 @pytest.mark.asyncio
 async def test_opaque_cashier_invalid_token(client, seeded):
-    resp = await client.get("/c/invalid-token-value-here")
+    resp = await client.get("/cashier/invalid-token-value-here")
     assert resp.status_code == 200
     assert "链接无效" in resp.text
 
@@ -129,7 +129,7 @@ async def test_paypage_opaque_link_flow(client, seeded, session):
     order = await client.post("/paypage/order", json={"token": token, "money": "6.00"})
     obody = order.json()
     assert obody["code"] == 0, obody
-    assert re.search(r"/c/[A-Za-z0-9_-]{80,}", obody["data"]["cashier_url"])
+    assert re.search(r"/cashier/[A-Za-z0-9_-]{80,}", obody["data"]["cashier_url"])
 
     # 非法短码
     bad = await client.get("/paypage/info", params={"token": "broken"})
