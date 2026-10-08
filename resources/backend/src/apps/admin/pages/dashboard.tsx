@@ -357,7 +357,8 @@ export function DashboardPage() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <Input className="h-8 w-24 shrink-0" placeholder={"次/分钟"}
+                      {/* 选「关闭」时无目标通道，次/分钟无意义，禁用（保存仍可用：一键解除全部限速） */}
+                      <Input className="h-8 w-24 shrink-0" placeholder={"次/分钟"} disabled={!rlChannel}
                         value={rlValue} onChange={(e) => setRlValue(e.target.value)} />
                       <Button size="sm" className="h-8 shrink-0" disabled={rlSaving} onClick={saveRatelimit}>
                         {rlSaving ? <Spinner className="size-3.5" /> : "保存"}
@@ -402,13 +403,6 @@ export function DashboardPage() {
                       </div>
                       <Separator />
                       <div className="flex items-center gap-2">
-                        <Input className="h-8 min-w-0 flex-1" placeholder={"最小"} value={form.min}
-                          onChange={(e) => setForm({ min: e.target.value })} />
-                        <span className="text-muted-foreground shrink-0">-</span>
-                        <Input className="h-8 min-w-0 flex-1" placeholder={"最大"} value={form.max}
-                          onChange={(e) => setForm({ max: e.target.value })} />
-                      </div>
-                      <div className="flex items-center gap-2">
                         <Select
                           value={String(form.channel)}
                           onValueChange={(v) => setForm({ channel: Number(v) })}
@@ -428,6 +422,15 @@ export function DashboardPage() {
                           onClick={() => savePayroute(pt.id)}>
                           {routeSaving === pt.id ? <Spinner className="size-3.5" /> : "保存"}
                         </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input className="h-8 min-w-0 flex-1" placeholder={"最小"} value={form.min}
+                          disabled={form.channel === 0}
+                          onChange={(e) => setForm({ min: e.target.value })} />
+                        <span className="text-muted-foreground shrink-0">-</span>
+                        <Input className="h-8 min-w-0 flex-1" placeholder={"最大"} value={form.max}
+                          disabled={form.channel === 0}
+                          onChange={(e) => setForm({ max: e.target.value })} />
                       </div>
                     </div>
                   )
