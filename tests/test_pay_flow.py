@@ -315,9 +315,9 @@ async def test_query_order_api(client, seeded):
     assert body["code"] == 0, body
     assert body["data"]["status"] == 0
     assert body["data"]["refund_status"] == "NONE"
-    assert body["data"]["refunded_amount"] == "0"
+    assert body["data"]["refunded_amount"] == "0.00"
     assert body["data"]["out_trade_no"] == "T1001"
-    assert body["data"]["money"] == "100"  # 去尾零
+    assert body["data"]["money"] == "100.00"  # 固定两位小数
 
     # 错误签名 → 非 0 code
     bad = signed_params({"pid": "1001"})

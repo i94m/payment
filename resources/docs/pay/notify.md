@@ -15,7 +15,7 @@
 | 商户订单号 | out_trade_no | 是 | String | 20160806151343349 | 商户系统内部的订单号 |
 | 支付方式 | type | 是 | String | alipay | [支付方式列表](/appendix/paytype.html) |
 | 商品名称 | name | 是 | String | VIP会员 | |
-| 商品金额 | money | 是 | String | 1.00 | 序列化去尾零（如 `5` 而非 `5.00`），验签请使用收到的参数原值 |
+| 商品金额 | money | 是 | String | 1.00 | 固定两位小数（如 `5.00`），验签请使用收到的参数原值 |
 | 支付状态 | trade_status | 是 | String | TRADE_SUCCESS | 只有TRADE_SUCCESS是成功 |
 | 业务扩展参数 | param | 否 | String | | 下单时传入原样返回，未传时无该字段 |
 | 时间戳 | timestamp | 是 | String | 1696000000 | Unix秒 |
@@ -50,7 +50,7 @@ OK
   "out_trade_no": "20160806151343349",
   "type": "alipay",
   "name": "VIP会员",
-  "money": "1",
+  "money": "1.00",
   "trade_status": "TRADE_SUCCESS",
   "param": "test_param",
   "timestamp": "1696000000",

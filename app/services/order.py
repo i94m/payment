@@ -58,9 +58,8 @@ async def get_order_by_trade_no(session: AsyncSession, trade_no: str) -> Order |
 
 
 def fmt_money(v) -> str:
-    """money 序列化：去尾零（5.00 → 5，5.10 → 5.1）。"""
-    d = Decimal(str(v)).quantize(CENT).normalize()
-    return format(d, "f")
+    """money 序列化：固定两位小数（5 → 5.00，5.1 → 5.10）。"""
+    return format(Decimal(str(v)).quantize(CENT), "f")
 
 
 @dataclass
@@ -754,7 +753,7 @@ async def order_query_payload(order: Order, session: AsyncSession | None = None)
         from app.services.refund import refunded_amount
         refunded = await refunded_amount(session, order.trade_no)
     if deducted or not paid or refunded <= 0:
-        refund_status, refunded_str = "NONE", "0"
+        refund_status, refunded_str = "NONE", "0.00"
     elif order.status == ORDER_REFUNDED or refunded >= refundable_base(order):
         refund_status, refunded_str = "FULL", fmt_money(refunded)
     else:

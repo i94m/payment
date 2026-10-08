@@ -167,7 +167,8 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 
 - 部署/升级统一走 `scripts/deploy.sh`（建表/迁移已内置，无需手工 db init）
 - `.env`：`DB_POOL_SIZE / DB_MAX_OVERFLOW` 按“连接数预算”收敛；`WORKER_CONCURRENCY` 按 CPU 调
-- 开放 API 下单限流：后台「支付设置 → api_order_rate_limit」运行期可调（次/分钟/来源IP，0=不限，默认 60）
+- 开放 API 下单限流：设置键 `api_order_rate_limit`（次/分钟/来源IP，0=不限，默认 60），
+  不在支付设置页展示——直接写 `settings` 表或调 `PATCH /admin-api/setting` 调整
 - 扩 app 实例：`./scripts/deploy.sh --scale 3`（上限 = 端口范围大小，见 compose 注释）
 - nginx：`sudo cp nginx-example.conf /etc/nginx/conf.d/pay-gateway.conf && sudo nginx -t && sudo systemctl reload nginx`
 

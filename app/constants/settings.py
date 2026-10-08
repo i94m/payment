@@ -116,11 +116,12 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
     ]
 }
 
-# 支付设置页可见 key 白名单：站点名称 + API支付开关 + 注册开关 + 扣量 + 结算组（自动结算除外）。
-# 其余项仍由注册表提供默认值供后端业务读取，只是不在设置页展示/编辑。
+# 支付设置页可见 key 白名单：站点名称 + 注册开关 + 扣量 + 结算组（自动结算除外）。
+# api_pay_enable / api_order_rate_limit 不在页面上暴露（仍由注册表提供默认值、
+# 运行期生效，可直接写库或 PATCH 接口调整），其余项同理只是不在设置页展示/编辑。
 ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable"}
 ADMIN_SETTING_KEYS: set[str] = (
-    {"site_name", "api_pay_enable", "api_order_rate_limit", "merchant_reg_open"}
+    {"site_name", "merchant_reg_open"}
     | {k for k in SETTINGS_REGISTRY if k.startswith("deduct_")}
     | {k for k, spec in SETTINGS_REGISTRY.items() if spec.group is SettingGroup.SETTLE}
 ) - ADMIN_SETTING_HIDDEN_KEYS

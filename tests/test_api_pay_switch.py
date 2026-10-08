@@ -118,13 +118,13 @@ async def test_disabled_keeps_paypage_and_cashier(client, session):
 
 
 @pytest.mark.asyncio
-async def test_admin_settings_page_exposes_switch(client, session):
-    """管理端支付设置页可见该开关（可 UI 编辑）。"""
+async def test_admin_settings_page_hides_switch(client, session):
+    """开关不在支付设置页展示（页面白名单收敛），但配置功能保留：PATCH 仍可调、API 照常受控。"""
     resp = await client.get("/admin-api/setting", headers=await _admin_headers(session))
     keys = {i["key"] for i in resp.json()["data"]["items"]}
-    assert "api_pay_enable" in keys
+    assert "api_pay_enable" not in keys
 
-    # 写入走同一校验通道
+    # 写入走同一校验通道（页面隐藏 ≠ 只读）
     resp2 = await client.patch("/admin-api/setting", json={"api_pay_enable": False},
                                headers=await _admin_headers(session))
     assert resp2.json()["code"] == 0
@@ -134,20 +134,18 @@ async def test_admin_settings_page_exposes_switch(client, session):
 
 @pytest.mark.asyncio
 async def test_api_order_rate_limit_configurable(client, session):
-    """下单限流为运行期配置项：默认 60、管理端设置页可见可改、0=不限合法。"""
+    """下单限流为运行期配置项：默认 60、可经 PATCH 调整、0=不限合法；不在设置页展示。"""
     h = await _admin_headers(session)
     resp = await client.get("/admin-api/setting", headers=h)
-    item = next(i for i in resp.json()["data"]["items"]
-                if i["key"] == "api_order_rate_limit")
-    assert item["value"] == 60 and item["type"] == "int"
+    keys = {i["key"] for i in resp.json()["data"]["items"]}
+    assert "api_order_rate_limit" not in keys
 
     resp2 = await client.patch("/admin-api/setting",
                                json={"api_order_rate_limit": 120}, headers=h)
     assert resp2.json()["code"] == 0
-    resp3 = await client.get("/admin-api/setting", headers=h)
-    item3 = next(i for i in resp3.json()["data"]["items"]
-                 if i["key"] == "api_order_rate_limit")
-    assert item3["value"] == 120
+    # PATCH 后从服务层读回（页面 items 不含该键）
+    from app.services.settings import get_int_setting
+    assert await get_int_setting(session, "api_order_rate_limit", 60) == 120
 
     # 0=不限 合法；类型不符整体拒绝
     ok0 = await client.patch("/admin-api/setting",

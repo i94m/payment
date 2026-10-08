@@ -78,7 +78,7 @@ Docker 全链路：`cp docker-compose-example.yml docker-compose.yml && docker c
 - 响应包络：`{"code": 0, "message": "ok", "data": {...}}`；HTTP 状态码语义化（400/401/404）
 - 下单成功 data：`trade_no / pay_type(jump|qrcode|scheme|html) / payurl|qrcode|urlscheme / cashier_url`
 - 商户通知：POST JSON（签名在 body 内，平台私钥 RSA2 签名，商户用平台公钥验签）；
-  `trade_status=TRADE_SUCCESS`；**HTTP 2xx 即送达**；money 去尾零（`5` 而非 `5.00`），
+  `trade_status=TRADE_SUCCESS`；**HTTP 2xx 即送达**；money 固定两位小数（`5.00`），
   验签用收到的原始值拼串
 - 退款：同步模型（上游成功即落库扣余额），可退上限=商户到账金额，`out_refund_no`
   商户侧幂等，退满订单置已退款；平台开关 `api_refund_enable`

@@ -244,14 +244,14 @@ async def test_query_refund_and_order_fields(client, seeded, session):
                           params=signed_params({"pid": "1001"}))
     assert oq.json()["code"] == 0
     assert oq.json()["data"]["refund_status"] == "PARTIAL"
-    assert oq.json()["data"]["refunded_amount"] == "40"
+    assert oq.json()["data"]["refunded_amount"] == "40.00"
 
     # 退满后 → FULL
     await _refund(client, order.trade_no, amount="58.00")
     oq2 = await client.get(f"/api/orders/{order.trade_no}",
                            params=signed_params({"pid": "1001"}))
     assert oq2.json()["data"]["refund_status"] == "FULL"
-    assert oq2.json()["data"]["refunded_amount"] == "98"
+    assert oq2.json()["data"]["refunded_amount"] == "98.00"
 
 
 @pytest.mark.asyncio
