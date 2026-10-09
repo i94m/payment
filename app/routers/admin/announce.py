@@ -67,6 +67,8 @@ async def update_announce(announce_id: int, body: AnnounceRequest, session: Sess
     a.status = 1 if body.status == 1 else 0
     session.add(a)
     await session.commit()
+    # updated_at 带 onupdate，flush 后属性过期，须 refresh 再序列化（否则异步懒加载报 500）
+    await session.refresh(a)
     return suc(_dump(a))
 
 
