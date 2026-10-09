@@ -1,7 +1,8 @@
 """本地模拟上游网关（仅演示用）。
 
-模拟上游网关的两个接口：
-- POST /mapi.php          下单 → 返回 payurl（指向本地模拟收银页）
+模拟上游网关的三个接口：
+- POST /mapi.php          下单 → 返回 payurl（指向本地模拟收银页），订单入台账
+- GET  /api.php           查单（act=order，供平台主动查单补单）/ 退款（act=refund）
 - GET  /paypage/{trade_no} 模拟付款页，点击"模拟支付成功"后，
   由本服务向平台 /callbacks/epay/{trade_no} 发送签名通知，完成闭环。
 
@@ -10,6 +11,7 @@
 import hashlib
 import json
 import os
+import threading
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +19,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 APPKEY = "demo-app-key-123"          # 与演示通道凭证中的 appkey 一致
 PLATFORM = os.environ.get("PLATFORM", "http://127.0.0.1:8000")   # 平台地址（回调目标）
 PORT = int(os.environ.get("PORT", "9000"))
+
+# 上游订单台账：out_trade_no -> {money, type, name, status(0/1), api_trade_no}
+# 平台补单（api.php?act=order）从这里读状态；仅演示用，进程内内存即可
+_LEDGER: dict[str, dict] = {}
+_LEDGER_LOCK = threading.Lock()
 
 
 def _sign(params: dict, key: str) -> str:
@@ -49,6 +56,14 @@ class Handler(BaseHTTPRequestHandler):
                 "type": params.get("type", "alipay"),
                 "name": params.get("name", ""),
             })
+            with _LEDGER_LOCK:
+                _LEDGER[out] = {
+                    "money": params.get("money", ""),
+                    "type": params.get("type", "alipay"),
+                    "name": params.get("name", ""),
+                    "status": 0,
+                    "api_trade_no": "UP" + out[-8:],
+                }
             self._send(json.dumps({
                 "code": 1,
                 "payurl": f"http://127.0.0.1:{PORT}/paypage/{out}?{qs}",
@@ -60,9 +75,21 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         qs = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
         if parsed.path.startswith("/api.php"):
-            # 退款：返回 code=0 表示成功（与上游约定一致）
             if qs.get("act") == "refund":
                 self._send(json.dumps({"code": 0, "msg": "退款成功"}))
+            elif qs.get("act") == "order":
+                # 查单（平台主动补单用）：status 0=未支付 1=已支付
+                out = qs.get("out_trade_no", "") or qs.get("trade_no", "")
+                with _LEDGER_LOCK:
+                    row = _LEDGER.get(out)
+                if row is None:
+                    self._send(json.dumps({"code": -1, "msg": "订单不存在"}))
+                else:
+                    self._send(json.dumps({
+                        "code": 1, "msg": "", "status": row["status"],
+                        "money": row["money"], "trade_no": row["api_trade_no"],
+                        "buyer": "mock-buyer",
+                    }))
             else:
                 self._send(json.dumps({"code": -1, "msg": "unknown"}))
         elif parsed.path.startswith("/paypage/"):
@@ -82,6 +109,14 @@ button{{padding:12px 40px;border:none;border-radius:8px;background:#00b42a;color
 </div></body></html>""", "text/html")
         elif parsed.path.startswith("/mock-pay"):
             out = qs.get("out", "")
+            silent = qs.get("notify", "1") == "0"   # notify=0：上游置已付但不回调（模拟丢回调，测补单）
+            with _LEDGER_LOCK:
+                row = _LEDGER.get(out)
+                if row is not None:
+                    row["status"] = 1
+            if silent:
+                self._send(json.dumps({"code": 1, "msg": "已标记支付（未回调平台，等待补单）"}))
+                return
             params = {
                 "pid": "2001",
                 "name": qs.get("name", "商品"),
