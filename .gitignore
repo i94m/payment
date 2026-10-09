@@ -164,10 +164,10 @@ cython_debug/
 
 Caddyfile
 docker-compose.yml
-resources/backend/node_modules/
+resources/console/node_modules/
 
 # Frontend env
-resources/backend/.env
+resources/console/.env
 .vite/
 .playwright-mcp/
 
@@ -178,6 +178,6 @@ resources/backend/.env
 resources/docs/node_modules/
 resources/docs/.vitepress/cache/
 
-# 构建产物（vite → static/frontend，vitepress → static/docs）：现场构建，不入库
-static/frontend/
+# 构建产物（vite → static/console，vitepress → static/docs）：现场构建，不入库
+static/console/
 static/docs/

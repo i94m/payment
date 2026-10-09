@@ -40,12 +40,12 @@ docker info >/dev/null 2>&1 || die "docker 守护进程未运行"
 # ---- 1. 前端构建（dist 不入库，打包前必须现场构建） ----
 if [ "$SKIP_WEB" -eq 0 ]; then
   command -v pnpm >/dev/null || die "缺少 pnpm 命令（npm i -g pnpm）"
-  log "构建前端 (resources/backend)..."
-  ( cd resources/backend
+  log "构建前端 (resources/console)..."
+  ( cd resources/console
     [ -d node_modules ] || pnpm install --frozen-lockfile
     pnpm build )
-  [ -f static/frontend/index.html ] || die "前端构建产物缺少 index.html（构建失败？）"
-  [ -f static/frontend/admin.html ] || die "前端构建产物缺少 admin.html（构建失败？）"
+  [ -f static/console/index.html ] || die "前端构建产物缺少 index.html（构建失败？）"
+  [ -f static/console/admin.html ] || die "前端构建产物缺少 admin.html（构建失败？）"
 
   log "构建对接文档 (resources/docs)..."
   ( cd resources/docs

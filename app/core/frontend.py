@@ -87,9 +87,9 @@ def register_docs(app: FastAPI) -> None:
 
 
 def register_frontend(app: FastAPI) -> None:
-    """注册前端静态资源 + SPA fallback。static/frontend 不存在时自动跳过。"""
+    """注册前端静态资源 + SPA fallback。static/console 不存在时自动跳过。"""
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    frontend_dir = os.path.join(base_dir, "static", "frontend")
+    frontend_dir = os.path.join(base_dir, "static", "console")
     landing_path = os.path.join(base_dir, "static", "index.html")
     # 管理后台页面路径前缀（ADMIN_PATH_PREFIX 可配，默认 admin；调用期读取便于测试）
     admin_prefix = _admin_prefix()

@@ -4,7 +4,7 @@
 - 平台 http://127.0.0.1:8000（APP_ENV=local，万能验证码 0000）
 - 模拟上游 http://127.0.0.1:9000
 - 种子：admin/123456，demo/demo123456（pid=1001），epay 通道
-- 前端产物 static/frontend 已构建（现场构建，不入库）；/docs 为独立 VitePress 构建，
+- 前端产物 static/console 已构建（现场构建，不入库）；/docs 为独立 VitePress 构建，
   未构建时登录后访问接入文档会 404，故本套件不对其内容做断言
 
 运行：uv run python scripts/e2e_smoke.py

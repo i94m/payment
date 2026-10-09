@@ -46,16 +46,16 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: |
-            resources/backend/pnpm-lock.yaml
+            resources/console/pnpm-lock.yaml
             resources/docs/pnpm-lock.yaml
 
-      - name: 构建前端 (resources/backend → static/frontend)
+      - name: 构建前端 (resources/console → static/console)
         run: |
-          cd resources/backend
+          cd resources/console
           pnpm install --frozen-lockfile
           pnpm build
-          test -f ../../static/frontend/index.html
-          test -f ../../static/frontend/admin.html
+          test -f ../../static/console/index.html
+          test -f ../../static/console/admin.html
 
       - name: 构建对接文档 (resources/docs → static/docs)
         run: |

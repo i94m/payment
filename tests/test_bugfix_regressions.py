@@ -299,8 +299,8 @@ async def test_merchant_prefix_spa_entry(client):
     """/merchant/ 旧前缀可访问且返回商户中心入口 HTML（回归：曾白屏）。"""
     from pathlib import Path
 
-    if not (Path(__file__).resolve().parent.parent / "static" / "frontend" / "index.html").exists():
-        pytest.skip("前端未构建（static/frontend 缺失）")
+    if not (Path(__file__).resolve().parent.parent / "static" / "console" / "index.html").exists():
+        pytest.skip("前端未构建（static/console 缺失）")
     r = await client.get("/merchant/")
     assert r.status_code == 200
     assert "text/html" in r.headers["content-type"]
@@ -315,9 +315,9 @@ def test_merchant_prefix_asset_mounts():
     from pathlib import Path
     from starlette.routing import Mount
 
-    dist = Path(__file__).resolve().parent.parent / "static" / "frontend"
+    dist = Path(__file__).resolve().parent.parent / "static" / "console"
     if not (dist / "assets").exists():
-        pytest.skip("前端未构建（static/frontend 缺失）")
+        pytest.skip("前端未构建（static/console 缺失）")
 
     mounted = {r.path for r in app.routes if isinstance(r, Mount)}
     for sub in ("assets", "css", "images", "audio"):

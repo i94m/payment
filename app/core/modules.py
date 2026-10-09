@@ -10,7 +10,7 @@
 1. 在 MODULES 中添加配置
 2. 创建 app/routers/{module}/ 目录
 3. 在 app/routers/__init__.py 中注册路由
-4. 创建前端入口 HTML + resources/backend/apps/{module}/ 目录
+4. 创建前端入口 HTML + resources/console/apps/{module}/ 目录
 5. security.py 中注册 guard 依赖
 """
 

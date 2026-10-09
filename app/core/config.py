@@ -34,6 +34,8 @@ class Config(BaseSettings):
     APP_CORS_ORIGINS: str = "*"
     SENTRY_DSN: HttpUrl | None = None
     APP_DEBUG: bool = False
+    # 应用日志是否同时输出到 stdout（容器环境推荐开启）
+    LOG_TO_CONSOLE: bool = False
 
     # Web 进程数（uvicorn --workers）：compose env_file 会把它导出为容器环境变量，
     # 镜像 CMD 以 ${WEB_WORKERS:-2} 读取，未配置时默认 2。

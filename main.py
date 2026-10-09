@@ -1,4 +1,6 @@
 import os
+import time
+import uuid
 from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
@@ -13,7 +15,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.core.config import config
 from app.core.frontend import register_docs, register_frontend
-from app.core.logger import logger
+from app.core.logger import logger, request_id_var
 from app.responses import err
 from app.routers import routers
 
@@ -93,6 +95,30 @@ app.add_middleware(
 # 注册路由
 app.include_router(routers)
 
+
+# ============================================================
+# request-id 中间件：透传/生成 X-Request-Id，绑定到日志 contextvar，
+# 并记录每条请求的 method/path/status/duration，便于链路追踪与慢请求定位。
+# ============================================================
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    rid = request.headers.get("X-Request-Id") or uuid.uuid4().hex[:16]
+    token = request_id_var.set(rid)
+    start = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers["X-Request-Id"] = rid
+        return response
+    finally:
+        duration_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "req %s %s status=%s duration_ms=%.1f",
+            request.method, request.url.path, status_code, duration_ms,
+        )
+        request_id_var.reset(token)
+
 # 健康检查
 @app.get("/health")
 async def health():
@@ -101,7 +127,7 @@ async def health():
 # 对接文档（VitePress 静态站点，公开访问）— 必须先于 SPA 兜底路由注册
 register_docs(app)
 
-# 前端静态资源 + SPA fallback（static/frontend 不存在时自动跳过）
+# 前端静态资源 + SPA fallback（static/console 不存在时自动跳过）
 register_frontend(app)
 
 # 挂载 storage

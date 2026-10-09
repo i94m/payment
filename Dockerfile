@@ -29,13 +29,13 @@ COPY alembic/ ./alembic/
 # alembic.ini 必须随镜像：既有库升级（artisan.py migrate upgrade）在容器内执行
 COPY alembic.ini ./alembic.ini
 
-# 复制前端构建产物（vite 输出到 static/frontend，由 CI/build-image.sh 现场构建，不入库）
-COPY static/frontend/ ./static/frontend/
+# 复制前端构建产物（vite 输出到 static/console，由 CI/build-image.sh 现场构建，不入库）
+COPY static/console/ ./static/console/
 # 守护：入口 HTML 缺失（前端构建不完整）直接让镜像构建失败，
 # 避免 SPA 白屏/404 问题被静默打进镜像（曾实测发生过：dist 只剩 admin/agent.html）
-RUN test -f static/frontend/index.html \
-    && test -f static/frontend/admin.html \
-    && test -f static/frontend/agent.html
+RUN test -f static/console/index.html \
+    && test -f static/console/admin.html \
+    && test -f static/console/agent.html
 # 对接文档 VitePress 产物（resources/docs 内 pnpm build 生成，输出到 static/docs）
 COPY static/docs/ ./static/docs/
 # 宣传首页（/landing 由 frontend.py 直接返回该文件，镜像内缺失时会兜底成商户中心 SPA 跳登录）

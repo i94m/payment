@@ -45,7 +45,7 @@ export default defineConfig({
   base: "./",
   plugins: [entryPathPlugin(), react(), tailwindcss()],
   build: {
-    outDir: path.resolve(__dirname, "../../static/frontend"),
+    outDir: path.resolve(__dirname, "../../static/console"),
     emptyOutDir: true,
     manifest: "manifest.json",
     rollupOptions: {

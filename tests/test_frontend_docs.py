@@ -10,7 +10,7 @@ from app.core.frontend import register_docs, register_frontend
 PROJECT_ROOT = frontend.os.path.dirname(frontend.os.path.dirname(frontend.os.path.dirname(
     frontend.os.path.abspath(frontend.__file__))))
 DOCS_DIST = frontend.os.path.join(PROJECT_ROOT, "static", "docs")
-FRONTEND_ENTRY = frontend.os.path.join(PROJECT_ROOT, "static", "frontend", "index.html")
+FRONTEND_ENTRY = frontend.os.path.join(PROJECT_ROOT, "static", "console", "index.html")
 
 
 def _build_app() -> FastAPI:
@@ -64,7 +64,7 @@ async def test_docs_served_when_built():
 async def test_docs_404_hint_when_not_built(monkeypatch):
     """dist 缺失时 /docs/ 显式 404 并附构建提示，其余路径 SPA 兜底不受影响。"""
     if not frontend.os.path.exists(FRONTEND_ENTRY):
-        pytest.skip("前端未构建（static/frontend 缺失）")
+        pytest.skip("前端未构建（static/console 缺失）")
     # 指向一个必然不存在的目录，模拟"未构建"（请求时文件查找失败 → 构建提示）
     monkeypatch.setattr(frontend, "_docs_dist",
                         lambda: frontend.os.path.join(PROJECT_ROOT, "static", "docs_missing"))
