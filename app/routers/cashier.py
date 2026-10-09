@@ -20,6 +20,7 @@ from app.services.order import (
     ORDER_PAID,
     build_signed_return_url,
     get_order_by_trade_no,
+    order_remaining_seconds,
     process_payment,
 )
 from app.services.settings import get_all_settings
@@ -108,7 +109,7 @@ async def launch_payment(request: Request, session: SessionDep, cache: CacheDep,
     if not flow.ok:
         return err(-1, flow.error)
     return suc_data({"pay_type": flow.pay_type, "pay_info": flow.pay_info,
-                     "expires_in": flow.expires_in})
+                     "expires_in": order_remaining_seconds(order)})
 
 
 @router.get("/status")

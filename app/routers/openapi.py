@@ -27,6 +27,7 @@ from app.services.order import (
     create_order,
     get_order_by_trade_no,
     order_query_payload,
+    order_remaining_seconds,
     process_payment,
 )
 from app.services.refund import create_refund, get_refund, refund_query_payload
@@ -101,7 +102,7 @@ async def create_payment_order(request: Request, session: SessionDep, cache: Cac
     if order.status == ORDER_PENDING and stored_type in ("jump", "scheme", "qrcode", "html") \
             and stored_info:
         flow = PayFlowResult(ok=True, pay_type=stored_type, pay_info=stored_info,
-                             expires_in=300)
+                             expires_in=order_remaining_seconds(order))
     else:
         flow = await process_payment(
             order, api.merchant, session, cache,
@@ -117,7 +118,7 @@ async def create_payment_order(request: Request, session: SessionDep, cache: Cac
         "out_trade_no": order.out_trade_no,
         "pay_type": flow.pay_type,
         "cashier_url": build_cashier_url(site, order.trade_no),
-        "expires_in": flow.expires_in,
+        "expires_in": order_remaining_seconds(order),
     }
     if flow.pay_type == "jump":
         data["payurl"] = flow.pay_info

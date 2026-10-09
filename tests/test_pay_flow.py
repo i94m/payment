@@ -89,6 +89,10 @@ async def test_create_order_and_notify_paid(client, seeded):
     assert data["data"]["pay_type"] == "jump"
     assert data["data"]["payurl"] == "https://upstream.example/pay/abc123"
     assert "/cashier/" in data["data"]["cashier_url"]  # 不透明收银台链接
+    # expires_in 反映订单真实有效期（order_expire_minutes），而非固定 300 秒
+    remaining = int((order.expire_at - datetime.now()).total_seconds())
+    assert 0 < data["data"]["expires_in"] <= remaining + 5
+    assert data["data"]["expires_in"] >= remaining - 60
     assert order is not None
     assert order.status == 0
     assert order.realmoney == dmoney("100.00")

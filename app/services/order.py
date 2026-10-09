@@ -62,6 +62,18 @@ def fmt_money(v) -> str:
     return format(Decimal(str(v)).quantize(CENT), "f")
 
 
+def order_remaining_seconds(order: Order) -> int:
+    """支付链接剩余有效秒数：以订单 expire_at 为准。
+
+    插件/流程结果里的 expires_in 只是上游会话参考值，对外响应一律用
+    订单真实有效期（order_expire_minutes 设置），避免商户拿到误导性的
+    固定 300 秒。
+    """
+    if order.expire_at is None:
+        return 0
+    return max(0, int((order.expire_at - datetime.now()).total_seconds()))
+
+
 @dataclass
 class PayFlowResult:
     ok: bool
