@@ -710,7 +710,7 @@ def build_webhook_payload(order: Order, merchant: Merchant, platform_rsa_key: st
     """构建 Webhook JSON body：业务参数 + timestamp + sign（平台私钥 RSA2 签名）。
 
     商户用平台公钥对 body（去 sign/sign_type）做 get_sign_content 拼串验签。
-    money 为申报金额去尾零；param 空则省略键。
+    money 为申报金额固定两位小数（fmt_money）；param 空则省略键。
     """
     data = {
         "pid": str(merchant.pid),

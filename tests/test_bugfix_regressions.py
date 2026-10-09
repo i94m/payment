@@ -341,3 +341,117 @@ def test_local_tz_offset_format():
     sign = "+" if total_min >= 0 else "-"
     h, mm = divmod(abs(total_min), 60)
     assert s == f"{sign}{h:02d}:{mm:02d}"
+
+
+# ============================================================
+# 7. 路由侧 enqueue 关键字传参（回调/重发通知/补单）
+# ============================================================
+
+class SaqLikeEnqueue:
+    """签名对齐 app.worker.enqueue(job_name, **kwargs)：多余位置参数即 TypeError。"""
+
+    def __init__(self):
+        self.calls = []
+
+    async def __call__(self, job_name, **kwargs):
+        self.calls.append((job_name, kwargs))
+        return "job-id"
+
+
+@pytest.mark.asyncio
+async def test_router_enqueue_with_kwargs(client, session, seeded, monkeypatch):
+    """回调/管理端重发/商户端重发均以关键字投递 notify_merchant_job。
+
+    历史缺陷：路由侧 enqueue("notify_merchant_job", trade_no) 位置传参 →
+    TypeError 被 _notify_merchant 兜底吞掉，即时通知从未入队，
+    商户回调只能等 scan_pending_notify 每分钟的兜底（最长延迟 60s）。
+    """
+    import app.routers.admin.order as admin_order_module
+    import app.routers.callbacks as callbacks_module
+    import app.routers.merchant.order as merchant_order_module
+    from app.core.security import issue_token
+
+    fake = SaqLikeEnqueue()
+    monkeypatch.setattr(callbacks_module, "enqueue", fake)
+    monkeypatch.setattr(admin_order_module, "enqueue", fake)
+    monkeypatch.setattr(merchant_order_module, "enqueue", fake)
+
+    m = seeded["merchant"]
+
+    # a) 支付回调路径的投递助手
+    await callbacks_module._notify_merchant("T_REGRESS_1", session)
+    assert fake.calls == [("notify_merchant_job", {"trade_no": "T_REGRESS_1"})]
+
+    # b) 管理端重发通知
+    now = datetime.now()
+    o = Order(
+        trade_no="T_REGRESS_2", merchant_id=m.id, out_trade_no="O_REGRESS_2",
+        payment_type_code="alipay", subject="回归", money=Decimal("1.00"),
+        realmoney=Decimal("1.00"), status=1, created_at=now,
+        expire_at=now + timedelta(minutes=30), paid_at=now,
+        notify_status=1, next_notify_at=now,
+    )
+    session.add(o)
+    await session.commit()
+
+    admin = SystemAdmin(username="enqadmin", name="e",
+                        password=hash_password("x"), is_super_admin=True)
+    session.add(admin)
+    await session.commit()
+    admin_token = await issue_token(guard="admin", user_id=admin.id, session=session)
+
+    fake.calls.clear()
+    r = await client.post("/admin-api/order/notify",
+                          headers={"Authorization": f"Bearer {admin_token.access_token}"},
+                          json={"trade_no": "T_REGRESS_2"})
+    assert r.json()["code"] == 0, r.json()
+    assert fake.calls == [("notify_merchant_job", {"trade_no": "T_REGRESS_2"})]
+
+    # c) 商户端重发通知
+    fake.calls.clear()
+    m_token = await issue_token(guard="merchant", user_id=m.id, session=session)
+    r = await client.post("/merchant-api/order/T_REGRESS_2/notify",
+                          headers={"Authorization": f"Bearer {m_token.access_token}"})
+    assert r.json()["code"] == 0, r.json()
+    assert fake.calls == [("notify_merchant_job", {"trade_no": "T_REGRESS_2"})]
+
+
+@pytest.mark.asyncio
+async def test_notify_once_marks_done_without_url_or_unpaid(session, seeded):
+    """无 notify_url / 非已支付订单：notify_merchant_once 收口 notify_status=0。
+
+    历史缺陷：这些订单 notify_status 恒为 1，scan_pending_notify 每分钟
+    重复投递空任务（僵尸行无限空转）。
+    """
+    from app.services.notify import notify_merchant_once
+
+    m = seeded["merchant"]
+    now = datetime.now()
+
+    def _order(**kw):
+        seq = datetime.now().strftime("%y%m%d%H%M%S%f")
+        base = dict(
+            trade_no=f"T{seq}", merchant_id=m.id, out_trade_no=f"O{seq}",
+            payment_type_code="alipay", subject="回归", money=Decimal("1.00"),
+            realmoney=Decimal("1.00"), status=1, created_at=now,
+            expire_at=now + timedelta(minutes=30), paid_at=now,
+            notify_status=1, next_notify_at=now,
+        )
+        base.update(kw)
+        return Order(**base)
+
+    # a) 已支付但无回调地址（收款页单）→ 立即置 0
+    o1 = _order(notify_url=None)
+    session.add(o1)
+    await session.commit()
+    assert await notify_merchant_once(session, trade_no=o1.trade_no) is True
+    await session.refresh(o1)
+    assert o1.notify_status == 0 and o1.next_notify_at is None
+
+    # b) 已退款单（status=2）遗留 pending → 置 0
+    o2 = _order(status=2, notify_url="http://127.0.0.1:1/notify")
+    session.add(o2)
+    await session.commit()
+    assert await notify_merchant_once(session, trade_no=o2.trade_no) is True
+    await session.refresh(o2)
+    assert o2.notify_status == 0

@@ -52,9 +52,11 @@ async def scan_pending_notify(ctx: Context) -> None:
 
     now = datetime.now()
     async with session_maker() as session:
+        # 含已退款/已过期单：让 notify_merchant_once 的早退分支把遗留的
+        # notify_status>0 收口为 0，否则这些行永远不会再被任何任务触达
         rows = (await session.exec(
             select(Order.trade_no)
-            .where(Order.status == PAID, Order.notify_status > 0)
+            .where(Order.status != PENDING, Order.notify_status > 0)
             .where(Order.next_notify_at.isnot(None), Order.next_notify_at <= now)
             .limit(50)
         )).all()

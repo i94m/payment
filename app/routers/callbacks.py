@@ -79,7 +79,8 @@ async def _parse_params(request: Request) -> dict:
 async def _notify_merchant(trade_no: str, session: SessionDep) -> None:
     """投递商户通知任务；队列不可用兜底为重置重试队列标记。"""
     try:
-        await enqueue("notify_merchant_job", trade_no)
+        # 任务参数必须关键字传参：enqueue 第二个位置参数会 TypeError，被兜底吞掉后只剩 cron 慢路径
+        await enqueue("notify_merchant_job", trade_no=trade_no)
     except Exception:
         try:
             await requeue_notify(session, trade_no)

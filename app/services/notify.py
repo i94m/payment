@@ -37,9 +37,15 @@ async def notify_merchant_once(
 ) -> bool:
     """投递一次商户通知。返回是否成功。"""
     order = await get_order_by_trade_no(session, trade_no)
-    if not order or order.status != ORDER_PAID:
-        return True  # 无需通知（订单不存在/未支付），对调度器表现为已完成
-    if not order.notify_url:
+    if not order:
+        return True  # 订单不存在，对调度器表现为已完成
+    if order.status != ORDER_PAID or not order.notify_url:
+        # 非已支付（待支付/已退款/已过期）或无回调地址（收款页/充值单等）：
+        # 标记完成，否则 notify_status 恒为 1，scan_pending_notify 每分钟重复投递空任务
+        order.notify_status = 0
+        order.next_notify_at = None
+        session.add(order)
+        await session.commit()
         return True
     if order.notify_status == 0:
         return True  # 已成功过，跳过

@@ -180,7 +180,7 @@ async def order_refill(session: SessionDep, cache: CacheDep, body: dict):
         if not await undo_deduct(session, order):
             return err(-1, "扣量补单失败")
         try:
-            await enqueue("notify_merchant_job", trade_no)
+            await enqueue("notify_merchant_job", trade_no=trade_no)
         except Exception:
             pass
         return suc("扣量单已回补入账并通知")
@@ -192,7 +192,7 @@ async def order_refill(session: SessionDep, cache: CacheDep, body: dict):
     if result.status in ("paid", "duplicate"):
         if result.status == "paid":
             try:
-                await enqueue("notify_merchant_job", trade_no)
+                await enqueue("notify_merchant_job", trade_no=trade_no)
             except Exception:
                 pass
         return suc("补单成功")
@@ -208,7 +208,7 @@ async def order_notify(session: SessionDep, body: dict):
     if not await requeue_notify(session, trade_no):
         return err(-1, "订单不存在或未支付")
     try:
-        await enqueue("notify_merchant_job", trade_no)
+        await enqueue("notify_merchant_job", trade_no=trade_no)
     except Exception:
         pass
     return suc("已触发重发通知")

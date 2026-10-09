@@ -160,7 +160,7 @@ async def order_notify(trade_no: str, session: SessionDep, auth: MerchantUser):
     if not await requeue_notify(session, trade_no):
         return err(-1, "订单未支付，无法通知")
     try:
-        await enqueue("notify_merchant_job", trade_no)
+        await enqueue("notify_merchant_job", trade_no=trade_no)
     except Exception:
         pass
     return suc("已触发重发通知")
