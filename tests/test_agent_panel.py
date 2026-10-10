@@ -448,3 +448,47 @@ async def test_agent_dashboard_and_order_list(client, seeded, session):
                            params={"starttime": day, "endtime": day}, headers=h)).json()
     assert o4["data"]["total"] == 1
     assert _money(o4["data"]["items"][0]["money"]) == Decimal("6.00")
+
+
+@pytest.mark.asyncio
+async def test_agent_link_e2e_order_paid_updates_dashboard(client, seeded, session, engine):
+    """端到端串接：代理专属链接下单 → 上游签名回调支付 → 代理业绩/订单实时反映。"""
+    from tests.conftest import pay_code
+    from tests.test_deduct_refill import _refetch
+    from tests.test_pay_flow import _notify_params
+
+    m = seeded["merchant"]
+    a = await _mk_agent(session, m.id, "agent-link-e2e")
+
+    # 走 /p/{code} 专属链接建单，归属代理
+    token = await pay_code(session, 1001, a.id)
+    r = await client.post("/paypage/order", json={"token": token, "money": "10.00"})
+    body = r.json()
+    assert body["code"] == 0, body
+    trade_no = body["data"]["trade_no"]
+
+    order = await _refetch(engine, trade_no)
+    assert order.agent_id == a.id
+
+    # 上游验签回调 → 支付成功
+    resp = await client.post(f"/callbacks/epay/{trade_no}",
+                             params=_notify_params(order, money="10.00", trade_no="UPLINK1"))
+    assert resp.text == "success", resp.text
+
+    # 代理登录面板：今日业绩与订单列表实时反映该单（口径：已支付收款单）
+    login = await client.post("/agent-api/auth/login", json={
+        "username": "agent-link-e2e", "password": "agent123", "captcha_code": "0000"})
+    assert login.json()["code"] == 0, login.json()
+    h = {"Authorization": f"Bearer {login.json()['data']['access_token']}"}
+
+    d = (await client.get("/agent-api/dashboard", headers=h)).json()
+    assert d["code"] == 0, d
+    assert _money(d["data"]["today"]["money"]) == Decimal("10.00")
+    assert d["data"]["today"]["count"] == 1
+    assert _money(d["data"]["total"]["money"]) == Decimal("10.00")
+
+    o = (await client.get("/agent-api/order/list", headers=h)).json()
+    assert o["code"] == 0, o
+    assert o["data"]["total"] == 1
+    assert o["data"]["items"][0]["trade_no"] == trade_no
+    assert _money(o["data"]["items"][0]["money"]) == Decimal("10.00")

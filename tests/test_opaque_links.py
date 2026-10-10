@@ -155,6 +155,44 @@ async def test_paypage_agent_token(client, seeded, session, engine):
 
 
 @pytest.mark.asyncio
+async def test_paypage_agent_disabled_or_deleted_falls_back(client, seeded, session, engine):
+    """停用/软删代理后，旧链接仍可下单，归属静默归 0（订单照常入账商户，业绩不再计入）。"""
+    from datetime import datetime
+
+    from app.models import Agent
+    from tests.test_deduct_refill import _refetch
+
+    m = (await session.exec(select(Merchant).where(Merchant.pid == 1001))).one()
+
+    async def _new_order_agent_id(a: Agent) -> int:
+        token = await pay_code(session, 1001, a.id)
+        r = await client.post("/paypage/order", json={"token": token, "money": "6.00"})
+        assert r.json()["code"] == 0, r.json()
+        o = await _refetch(engine, r.json()["data"]["trade_no"])
+        return o.agent_id
+
+    # 停用：下单不被拦截，归属从代理 id 回退为 0
+    off = Agent(merchant_id=m.id, name="ag-opq-off", password="x", status=1)
+    session.add(off)
+    await session.commit()
+    assert await _new_order_agent_id(off) == off.id
+    off.status = 0
+    session.add(off)
+    await session.commit()
+    assert await _new_order_agent_id(off) == 0
+
+    # 软删（status 置 0 + deleted_at）：走同一回退分支
+    dele = Agent(merchant_id=m.id, name="ag-opq-del", password="x", status=1)
+    session.add(dele)
+    await session.commit()
+    dele.status = 0
+    dele.deleted_at = datetime.now()
+    session.add(dele)
+    await session.commit()
+    assert await _new_order_agent_id(dele) == 0
+
+
+@pytest.mark.asyncio
 async def test_merchant_paypage_settings_link(client, seeded, session):
     """商户端收款链接下发 /p/{code} 短码形态，不含 pid。"""
     from app.core.security import issue_token
