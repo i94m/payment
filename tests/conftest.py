@@ -25,6 +25,8 @@ os.environ.setdefault("STORAGE_LOCAL_SECRET", "test-storage-secret")
 os.environ.setdefault("DB_SCHEME", "sqlite")
 os.environ.setdefault("DB_DATABASE", str(Path(tempfile.gettempdir()) / "pay_pytest.db"))
 os.environ.setdefault("REDIS_HOST", "localhost")
+# 测试依赖 local 万能验证码 0000：显式钉住，不随 .env / config 默认值（prod）漂移
+os.environ.setdefault("APP_ENV", "local")
 
 from sqlmodel import SQLModel  # noqa: E402
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker  # noqa: E402

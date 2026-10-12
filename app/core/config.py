@@ -23,7 +23,9 @@ class Config(BaseSettings):
     # 60 minutes * 24 hours * 8 days = 8 days
     # API端Token有效期[分钟]
     API_ACCESS_TOKEN_TTL: int = 11520
-    APP_ENV: Literal["local", "dev", "prod"] = "local"
+    # local 启用万能验证码 0000（仅供本地开发/测试）；缺省必须 fail-secure 落到 prod，
+    # .env 漏配/留空时生产环境不得退回 local
+    APP_ENV: Literal["local", "dev", "prod"] = "prod"
     SYSTEM_SETTING_ID: int | None = 1
 
     APP_NAME: str

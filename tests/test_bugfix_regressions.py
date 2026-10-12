@@ -5,7 +5,13 @@
 3. 登录/登出/单会话撤销未传 cache → Redis 黑名单未生效（僵尸 token）
 4. 首页「结算总额」误计待处理/已拒绝结算单（应仅 status=1 已打款）
 5. MySQL 会话时区偏移串格式（init_command 用）
+6. 路由侧 enqueue 关键字传参（回调/重发通知/补单）
+7. 无回调地址/已退款单 notify_status 收口为 0（僵尸行空转）
+8. 上游同步回跳跨订单重放拒绝 + 金额比对（P0）
+9. 万能验证码 0000 仅 APP_ENV=local 生效（P0）
+10. /storage 挂载敏感目录拒绝（P0）
 """
+import hashlib
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -24,6 +30,7 @@ from app.core.security import (
     revoke_token,
 )
 from app.models import Order, Settlement, SystemAdmin
+from tests.conftest import UPSTREAM_KEY
 
 
 class FakeRedisCache:
@@ -455,3 +462,145 @@ async def test_notify_once_marks_done_without_url_or_unpaid(session, seeded):
     assert await notify_merchant_once(session, trade_no=o2.trade_no) is True
     await session.refresh(o2)
     assert o2.notify_status == 0
+
+
+# ============================================================
+# 8. 上游同步回跳防跨订单重放（P0）
+# ============================================================
+
+def _sign_epay(data: dict, key: str) -> str:
+    """上游易支付协议 MD5 签名（同插件规则：排除 sign/sign_type 与空串）。"""
+    items = sorted(
+        (k, v) for k, v in data.items()
+        if k not in ("sign", "sign_type") and v is not None and v != ""
+        and not isinstance(v, (list, dict))
+    )
+    raw = "&".join(f"{k}={v}" for k, v in items) + key
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def _epay_return_params(order, money: str, upstream_trade_no: str = "UPRET001") -> dict:
+    """构造上游同步回跳的带签名参数（与真实上游 302 回跳一致）。"""
+    params = {
+        "pid": "2001",
+        "name": "回归",
+        "money": money,
+        "out_trade_no": order.trade_no,
+        "trade_no": upstream_trade_no,
+        "type": "alipay",
+        "trade_status": "TRADE_SUCCESS",
+    }
+    params["sign"] = _sign_epay(params, UPSTREAM_KEY)
+    params["sign_type"] = "MD5"
+    return params
+
+
+async def _mk_pending_order(session, seeded, trade_no: str, amount: str) -> Order:
+    now = datetime.now()
+    o = Order(
+        trade_no=trade_no, merchant_id=seeded["merchant"].id, out_trade_no=f"O{trade_no}",
+        payment_type_code="alipay", subject="回归", money=Decimal(amount),
+        realmoney=Decimal(amount), status=0, channel_id=seeded["channel"].id,
+        notify_url="https://merchant.example/notify",
+        created_at=now, expire_at=now + timedelta(minutes=30),
+    )
+    session.add(o)
+    await session.commit()
+    await session.refresh(o)
+    return o
+
+
+async def _fetch_order(trade_no: str):
+    """从应用使用的同一测试库读取订单（绕过本测试 session 的缓存）。"""
+    from app.core.database import get_db
+    from app.services.order import get_order_by_trade_no
+    override = app.dependency_overrides[get_db]
+    async for s in override():
+        return await get_order_by_trade_no(s, trade_no)
+    return None
+
+
+@pytest.mark.asyncio
+async def test_upstream_return_replay_rejected(client, session, seeded, monkeypatch):
+    """回跳防重放（P0 回归）：签名只覆盖 params、不绑定 URL 订单——
+
+    历史缺陷：B 单支付后的签名回跳参数原样请求 A 单的 /return URL，
+    验签通过且金额比对被跳过（paid_realmoney=None），A 单免金入账。
+    """
+    import app.routers.callbacks as callbacks_module
+
+    fake = SaqLikeEnqueue()
+    monkeypatch.setattr(callbacks_module, "enqueue", fake)
+
+    big = await _mk_pending_order(session, seeded, "TRET_BIG", "100.00")
+    tiny = await _mk_pending_order(session, seeded, "TRET_TINY", "0.01")
+
+    # a) 跨订单重放：tiny 的签名参数打向 big 的回跳 URL → 拒绝记账
+    r = await client.get(f"/callbacks/epay/{big.trade_no}/return",
+                         params=_epay_return_params(tiny, "0.01"))
+    assert r.status_code == 200
+    big_after = await _fetch_order(big.trade_no)
+    assert big_after.status == 0 and big_after.paid_at is None
+
+    # b) 同订单改小金额（参数仍自洽签名）→ 金额比对 mismatch 拒绝
+    r = await client.get(f"/callbacks/epay/{big.trade_no}/return",
+                         params=_epay_return_params(big, "0.01"))
+    assert r.status_code == 200
+    big_after = await _fetch_order(big.trade_no)
+    assert big_after.status == 0 and big_after.paid_at is None
+
+    # c) 正常回跳（订单号 + 金额一致）→ 照常记账 + 投递通知
+    r = await client.get(f"/callbacks/epay/{tiny.trade_no}/return",
+                         params=_epay_return_params(tiny, "0.01"))
+    assert r.status_code == 200
+    tiny_after = await _fetch_order(tiny.trade_no)
+    assert tiny_after.status == 1 and tiny_after.paid_at is not None
+    assert ("notify_merchant_job", {"trade_no": tiny.trade_no}) in fake.calls
+
+
+# ============================================================
+# 9. 万能验证码 0000 仅 APP_ENV=local 生效（P0）
+# ============================================================
+
+@pytest.mark.asyncio
+async def test_captcha_master_code_local_only(session, seeded, monkeypatch):
+    """历史缺陷：config 默认 local，生产漏配 APP_ENV 时 0000 放行所有登录。"""
+    from app.core.config import config
+    from app.lib.captcha import verify_captcha_code
+
+    cache = FakeRedisCache()
+    # 测试环境（conftest 钉住 local）：0000 放行
+    assert await verify_captcha_code(cache, "", "0000") is None
+
+    monkeypatch.setattr(config, "APP_ENV", "prod")
+    assert await verify_captcha_code(cache, "", "0000") == "请输入验证码"
+    # 非万能码仍走正常校验路径（无缓存码 → 过期报错），不受环境切换影响
+    assert await verify_captcha_code(cache, "", "1234") == "请输入验证码"
+
+
+# ============================================================
+# 10. /storage 挂载敏感目录拒绝（P0）
+# ============================================================
+
+def test_storage_static_mount_blocks_sensitive_dirs(tmp_path):
+    """历史缺陷：/storage 无鉴权挂载整个 storage 根，app.log（含收银台令牌
+    路径/jti）公网可读。上传文件（image/… 等）必须照常可访问。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from main import GuardedStaticFiles
+
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "logs" / "app.log").write_text("secret-log", encoding="utf-8")
+    (tmp_path / "image").mkdir()
+    (tmp_path / "image" / "a.txt").write_text("ok", encoding="utf-8")
+    for d in ("private", "certs", "exports", "tmp"):
+        (tmp_path / d).mkdir()
+        (tmp_path / d / "x.txt").write_text("secret", encoding="utf-8")
+
+    fa = FastAPI()
+    fa.mount("/storage", GuardedStaticFiles(directory=tmp_path))
+    with TestClient(fa) as c:
+        assert c.get("/storage/image/a.txt").status_code == 200
+        for d in ("logs", "private", "certs", "exports", "tmp"):
+            assert c.get(f"/storage/{d}/x.txt").status_code == 404, d

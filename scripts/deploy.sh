@@ -44,11 +44,17 @@ if [ ! -f .env ]; then
   cp .env.example .env
   secret=$(openssl rand -hex 32)
   storage=$(openssl rand -hex 32)
-  sed -i.bak "s#^APP_SECRET_KEY=.*#APP_SECRET_KEY=${secret}#; s#^STORAGE_LOCAL_SECRET=.*#STORAGE_LOCAL_SECRET=${storage}#" .env && rm -f .env.bak
-  log "已生成 .env（密钥已写入）。请编辑 .env 填写宿主机 MySQL（DB_DATABASE/"
+  # 生产兜底：即使 .env.example 被改回 local，部署引导也强制 prod（local 会启用万能验证码 0000）
+  sed -i.bak "s#^APP_SECRET_KEY=.*#APP_SECRET_KEY=${secret}#; s#^STORAGE_LOCAL_SECRET=.*#STORAGE_LOCAL_SECRET=${storage}#; s#^APP_ENV=.*#APP_ENV=prod#; s#^APP_DEBUG=.*#APP_DEBUG=false#" .env && rm -f .env.bak
+  log "已生成 .env（密钥已写入，APP_ENV 已强制为 prod）。请编辑 .env 填写宿主机 MySQL（DB_DATABASE/"
   log "DB_USERNAME/DB_PASSWORD）与 Redis（REDIS_PASSWORD），确认 DB_HOST/REDIS_HOST"
   log "由 compose 覆盖为 host.docker.internal，然后重新运行本脚本。"
   exit 3
+fi
+
+# 生产防呆：存量 .env 若是 local（万能验证码 0000 放行登录），提醒但不阻断
+if grep -qE '^APP_ENV=local' .env; then
+  log "警告：.env 为 APP_ENV=local（万能验证码 0000 放行登录验证码），生产环境必须改为 prod"
 fi
 
 # ---- 2. 拉镜像 ----

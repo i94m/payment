@@ -186,11 +186,23 @@ async def upstream_return(plugin_name: str, trade_no: str, request: Request,
         result = None
 
     if result and result.get("status") == "paid" and order.status == ORDER_PENDING:
-        await process_paid_order(
-            trade_no, result.get("api_trade_no", ""), None, "",
-            session, cache,
-        )
-        await _notify_merchant(trade_no, session)
+        # 回跳签名只覆盖 params、不绑定 URL 订单，可跨订单重放：必须校验参数内
+        # 声明的本方订单号与 URL 一致，且把参数金额传入 process_paid_order 统一
+        # 比对（与 notify 路径同口径）。校验不过跳过记账（fail-closed）。
+        claimed_no = str(result.get("out_trade_no") or params.get("out_trade_no") or "")
+        if claimed_no and claimed_no != trade_no:
+            _log.warning("回跳参数订单号与 URL 不符，拒绝记账 trade_no=%s claimed=%s",
+                         trade_no, claimed_no)
+        else:
+            raw_money = result.get("money")
+            if raw_money in (None, ""):
+                raw_money = params.get("money")
+            await process_paid_order(
+                trade_no, result.get("api_trade_no", ""),
+                str(raw_money) if raw_money not in (None, "") else None,
+                "", session, cache,
+            )
+            await _notify_merchant(trade_no, session)
 
     await session.refresh(order)
     if order.return_url:

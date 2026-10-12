@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import PurePosixPath
 
 import redis.asyncio as redis
 from fastapi import FastAPI, Request, status
@@ -64,6 +65,8 @@ async def bootstrap_platform_rsa_key() -> None:
 @asynccontextmanager
 async def lifespan(instance: FastAPI):
     # 应用启动前执行
+    if config.APP_ENV == "local":
+        logger.warning("APP_ENV=local：登录验证码接受万能码 0000，仅供本地开发/测试，生产环境必须设为 prod")
     await rate_limiter()
     await bootstrap_platform_rsa_key()
     yield
@@ -131,10 +134,27 @@ register_docs(app)
 register_frontend(app)
 
 # 挂载 storage
+class GuardedStaticFiles(StaticFiles):
+    """/storage 敏感目录拒绝列表。
+
+    storage 根目录整体挂载（上传 URL 形如 /storage/{key}，key 首级目录任意，
+    如 image/…、public/…），但同根下还有 logs/private/certs/exports 等运维
+    目录——日志含收银台令牌路径、jti 等敏感信息，必须对 HTTP 不可达。
+    """
+
+    DENIED_TOP_DIRS = {"logs", "private", "certs", "exports", "tmp"}
+
+    async def get_response(self, path: str, scope):
+        parts = PurePosixPath(path).parts
+        if parts and parts[0] in self.DENIED_TOP_DIRS:
+            raise StarletteHTTPException(status_code=404)
+        return await super().get_response(path, scope)
+
+
 _base_dir = os.path.dirname(__file__)
 storage_dir = os.path.join(_base_dir, "storage")
 if os.path.exists(storage_dir):
-    app.mount("/storage", StaticFiles(directory=storage_dir), name="storage")
+    app.mount("/storage", GuardedStaticFiles(directory=storage_dir), name="storage")
 
 
 # ============================================================
