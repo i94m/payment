@@ -52,7 +52,7 @@ async def create_order_params(idx: int) -> dict:
     params = {
         "pid": PID, "type": "alipay", "out_trade_no": f"LOAD{int(time.time())}{idx}",
         "notify_url": "https://merchant.example/notify",
-        "return_url": "http://127.0.0.1:8000/landing",
+        "return_url": "http://127.0.0.1:8000/",
         "name": "压测订单", "money": "10.00",
     }
     return signed_params(params)

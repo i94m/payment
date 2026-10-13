@@ -77,7 +77,7 @@ def create_order(out_trade_no: str, money: str = "10.00", sign_val: str | None =
     params = signed_params({
         "pid": PID, "type": "alipay", "out_trade_no": out_trade_no,
         "notify_url": "https://merchant.example/notify",
-        "return_url": BASE + "/landing",
+        "return_url": BASE + "/",
         "name": "全流程实测", "money": money,
     })
     if sign_val is not None:

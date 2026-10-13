@@ -158,8 +158,8 @@ docs/
 - 管理后台：`/admin`（登录验证码、数据看板、订单[补单/重发通知/退款/导出]、商户[密钥重置/余额调整/流水]、
   通道[按插件 inputs 动态凭证表单，Fernet 加密]、插件、支付方式、结算、回调日志、支付设置、RBAC 账号）
 - 商户中心：`/`（概览、订单+重发通知、结算申请、资金流水、密钥/RSA/结算资料、接入文档）
-- 宣传首页：`/`（`static/index.html`，缺失时兜底商户中心；旧地址 `/landing` 保留）；
-  商户中心登录入口：`/merchant`
+- 宣传首页：`/`（`static/index.html`，缺失时兜底商户中心；设置表 `landing_enable`
+  关闭后 `/` 直接 307 跳商户登录页，不在后台页面展示、直接改库生效）；商户中心登录入口：`/merchant`
 - 本地体验：`uv run python scripts/demo.py 10.00` 生成订单 → 收银台支付 → 模拟上游完成闭环
   （`scripts/mock_upstream.py`；本地环境万能验证码 `0000` 仅供自动化测试，`APP_ENV != local` 时自动关闭）
 - 端到端：`uv run python scripts/e2e_smoke.py`（Playwright，23 项：双后台登录/页面/权限、浏览器完整支付闭环）

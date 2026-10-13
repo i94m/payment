@@ -7,12 +7,13 @@ from starlette.responses import FileResponse, JSONResponse, RedirectResponse
 from starlette.staticfiles import StaticFiles
 
 from app.core.config import config
+from app.core.deps import SessionDep
 from app.core.modules import MODULES
 
 # 管理后台页面路径前缀保留字：页面路径改跑这些前缀会撞路由/静态挂载/文档
 _RESERVED_PREFIXES = {
     "admin", "merchant", "agent", "docs", "api", "storage", "static",
-    "assets", "images", "css", "audio", "landing", "paypage", "cashier",
+    "assets", "images", "css", "audio", "paypage", "cashier",
     "orders", "callbacks", "upload", "health", "openapi",
     "admin-api", "merchant-api", "agent-api",
 }
@@ -86,10 +87,16 @@ def register_docs(app: FastAPI) -> None:
     )
 
 
+def _console_dist() -> str:
+    """console 产物目录（独立函数便于测试 monkeypatch 模拟未构建/桩目录）。"""
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    return os.path.join(base_dir, "static", "console")
+
+
 def register_frontend(app: FastAPI) -> None:
     """注册前端静态资源 + SPA fallback。static/console 不存在时自动跳过。"""
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    frontend_dir = os.path.join(base_dir, "static", "console")
+    frontend_dir = _console_dist()
     landing_path = os.path.join(base_dir, "static", "index.html")
     # 管理后台页面路径前缀（ADMIN_PATH_PREFIX 可配，默认 admin；调用期读取便于测试）
     admin_prefix = _admin_prefix()
@@ -116,8 +123,9 @@ def register_frontend(app: FastAPI) -> None:
             app.mount(f"/agent/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-agent-{subdir}")
             app.mount(f"/merchant/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-merchant-{subdir}")
 
-    # 入口页：/ 宣传首页（static/index.html，缺失时兜底商户中心）、/{admin_prefix}/ 总后台（admin.html）、
-    # /agent/ 代理面板（agent.html）、/merchant/ 商户中心（index.html）、/landing 宣传页（兼容旧地址）。
+    # 入口页：/ 宣传首页（static/index.html，缺失时兜底商户中心；landing_enable 关闭时
+    # 307 跳商户登录页）、/{admin_prefix}/ 总后台（admin.html）、
+    # /agent/ 代理面板（agent.html）、/merchant/ 商户中心（index.html）。
     # 无斜杠路径 307 规范化到带斜杠：URL 唯一（收藏/日志/Referer 一致），
     # 且 vite base="./" 的相对资源引用只按带斜杠目录解析一种口径。
     # 注意：SPA fallback 是全量通配，Starlette 自动的 redirect_slashes 永远轮不到，
@@ -139,16 +147,22 @@ def register_frontend(app: FastAPI) -> None:
             return _entry(entry)
 
     @app.get("/")
-    async def home():
+    async def home(session: SessionDep):
+        # 宣传首页开关（settings 表 landing_enable，默认开）。直接查库不走 60s 缓存
+        # （对齐 admin 设置页读法）：/ 是高频公开入口，不挂 CacheDep，避免 Redis
+        # 抖动把静态首页打成 500；读配置异常时按开启兜底，首页保持可用。
+        from app.services.settings import get_setting, setting_enabled
+        try:
+            enabled = setting_enabled(await get_setting(session, "landing_enable"))
+        except Exception:
+            enabled = True
+        if not enabled:
+            return RedirectResponse(url="/merchant/", status_code=307)
         return _landing()
 
     _slash_pair("/merchant", "index.html")
     _slash_pair(f"/{admin_prefix}", "admin.html")
     _slash_pair("/agent", "agent.html")
-
-    @app.get("/landing")
-    async def landing():
-        return _landing()
 
     # SPA fallback
     @app.get("/{full_path:path}")

@@ -129,3 +129,46 @@ async def test_admin_prefix_configurable(monkeypatch):
     assert r.status_code == 307 and _location_path(r) == "/admin/"
     r = await _get(app2, "/docs")
     assert r.status_code == 307  # 文档路由未被遮蔽
+
+
+async def test_landing_toggle_redirect(engine, monkeypatch, tmp_path):
+    """landing_enable：缺行（默认）＝开 → / 返回宣传页 static/index.html；
+    关闭后 / 307 跳商户登录页 /merchant/；旧别名 /landing 已删，落 SPA 兜底为商户中心。"""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from sqlmodel.ext.asyncio.session import AsyncSession
+
+    from app.core.database import get_db
+    from app.services.settings import set_settings
+
+    # 桩 console 产物目录：入口路由不依赖本机是否真的构建过前端
+    console = tmp_path / "console"
+    console.mkdir()
+    for name in ("index.html", "admin.html", "agent.html"):
+        (console / name).write_text(f"stub-entry-{name}", encoding="utf-8")
+    monkeypatch.setattr(frontend, "_console_dist", lambda: str(console))
+
+    maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def _get_db_test():
+        async with maker() as s:
+            yield s
+
+    app = _registered(_build_app())
+    app.dependency_overrides[get_db] = _get_db_test
+
+    # 默认开：/ 返回宣传页（真实 static/index.html，区别于桩商户入口）
+    r = await _get(app, "/")
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"], r.status_code
+    assert "一站式聚合支付管理系统" in r.text
+
+    # 关闭：307 → /merchant/
+    async with maker() as s:
+        await set_settings(s, {"landing_enable": False})
+    r = await _get(app, "/")
+    assert r.status_code == 307 and _location_path(r) == "/merchant/", r.status_code
+
+    # 旧别名已删：/landing 无专属路由，SPA 兜底为商户中心入口
+    r = await _get(app, "/landing")
+    assert r.status_code == 200 and "stub-entry-index.html" in r.text, r.status_code
+
+    app.dependency_overrides.clear()

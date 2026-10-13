@@ -8,7 +8,8 @@ import fs from "fs"
 const landingFile = path.resolve(__dirname, "../../static/index.html")
 
 // 开发期入口路径对齐生产（app/core/frontend.py）：
-// / → static/index.html（宣传首页）、/admin[/] → admin.html、/agent[/] → agent.html。
+// / → static/index.html（宣传首页；landing_enable 开关为后端 DB 设置，dev 一律返回宣传页）、
+// /admin[/] → admin.html、/agent[/] → agent.html。
 // vite 的 html fallback 只对无后缀且不以 / 结尾的路径尝试 *.html，
 // 带尾部斜杠的 /admin/ 会兜底到根 index.html（商户端），拿到错误入口。
 function entryPathPlugin(): Plugin {
@@ -24,16 +25,6 @@ function entryPathPlugin(): Plugin {
         }
         if (pathname === "/admin" || pathname === "/admin/") req.url = "/admin.html"
         else if (pathname === "/agent" || pathname === "/agent/") req.url = "/agent.html"
-        else if (pathname === "/landing" || pathname === "/landing/") {
-          if (fs.existsSync(landingFile)) {
-            res.setHeader("Content-Type", "text/html; charset=utf-8")
-            fs.createReadStream(landingFile).pipe(res)
-          } else {
-            res.statusCode = 404
-            res.end("landing 未找到：static/index.html")
-          }
-          return
-        }
         next()
       })
     },

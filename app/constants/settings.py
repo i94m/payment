@@ -104,6 +104,8 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
                     "自动结算开关（开启后 cron 按商户 auto_settle 标记批量发起）"),
         # ---- site ----
         SettingSpec("paypage_enable", SettingType.BOOL, True, SettingGroup.SITE, "聚合收款页开关"),
+        SettingSpec("landing_enable", SettingType.BOOL, True, SettingGroup.SITE, "宣传首页开关",
+                    description="关闭后站点根路径 / 直接 307 跳转商户登录页 /merchant"),
         SettingSpec("api_pay_enable", SettingType.BOOL, True, SettingGroup.SITE,
                     "下游API支付接口开关（关闭后开放API拒绝下单/查单，商户端隐藏「API信息」菜单）"),
         SettingSpec("api_refund_enable", SettingType.BOOL, True, SettingGroup.SITE,
@@ -118,8 +120,9 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
 }
 
 # 站点配置页可见 key 白名单：站点名称 + 扣量 + 结算组（自动结算 / D+1 除外）。
-# 注册开关、api_pay_enable / api_order_rate_limit 等不在页面上暴露（仍由注册表提供默认值、
-# 运行期生效，可直接写库或 PATCH 接口调整），其余项同理只是不在设置页展示/编辑。
+# 注册开关、api_pay_enable / landing_enable / api_order_rate_limit 等不在页面上暴露
+# （仍由注册表提供默认值、运行期生效，可直接写库或 PATCH 接口调整），
+# 其余项同理只是不在设置页展示/编辑。
 ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable", "settle_d1_enable"}
 ADMIN_SETTING_KEYS: set[str] = (
     {"site_name"}
