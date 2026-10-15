@@ -1,9 +1,10 @@
+import html
 import os
 import re
 
 from fastapi import FastAPI, HTTPException
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import FileResponse, JSONResponse, RedirectResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from starlette.staticfiles import StaticFiles
 
 from app.core.config import config
@@ -124,7 +125,7 @@ def register_frontend(app: FastAPI) -> None:
             app.mount(f"/merchant/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-merchant-{subdir}")
 
     # 入口页：/ 宣传首页（static/index.html，缺失时兜底商户中心；landing_enable 关闭时
-    # 307 跳商户登录页）、/{admin_prefix}/ 总后台（admin.html）、
+    # 返回居中站点标题的极简页，不跳转）、/{admin_prefix}/ 总后台（admin.html）、
     # /agent/ 代理面板（agent.html）、/merchant/ 商户中心（index.html）。
     # 无斜杠路径 307 规范化到带斜杠：URL 唯一（收藏/日志/Referer 一致），
     # 且 vite base="./" 的相对资源引用只按带斜杠目录解析一种口径。
@@ -134,6 +135,28 @@ def register_frontend(app: FastAPI) -> None:
         if os.path.exists(landing_path):
             return FileResponse(landing_path, headers={"Cache-Control": "no-cache"})
         return _entry("index.html")
+
+    def _site_title_page(site_name: str) -> HTMLResponse:
+        """landing_enable 关闭时的极简占位页：站点标题（settings 的 site_name）居中。"""
+        name = html.escape(site_name)
+        return HTMLResponse(
+            f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{name}</title>
+<style>
+  html, body {{ margin: 0; height: 100%; }}
+  body {{ display: flex; align-items: center; justify-content: center;
+         font: 500 28px/1.4 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+         color: #1f2329; background: #fff; }}
+</style>
+</head>
+<body>{name}</body>
+</html>""",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     def _slash_pair(path: str, entry: str):
         """注册 /{path} → 307 /{path}/ 与 /{path}/ → 入口页 的成对路由。"""
@@ -157,7 +180,12 @@ def register_frontend(app: FastAPI) -> None:
         except Exception:
             enabled = True
         if not enabled:
-            return RedirectResponse(url="/merchant/", status_code=307)
+            # 关闭宣传首页：不跳商户登录，改居中展示站点标题的极简页
+            try:
+                site_name = str(await get_setting(session, "site_name") or "聚合支付")
+            except Exception:
+                site_name = "聚合支付"
+            return _site_title_page(site_name)
         return _landing()
 
     _slash_pair("/merchant", "index.html")

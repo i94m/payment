@@ -131,9 +131,10 @@ async def test_admin_prefix_configurable(monkeypatch):
     assert r.status_code == 307  # 文档路由未被遮蔽
 
 
-async def test_landing_toggle_redirect(engine, monkeypatch, tmp_path):
+async def test_landing_toggle(engine, monkeypatch, tmp_path):
     """landing_enable：缺行（默认）＝开 → / 返回宣传页 static/index.html；
-    关闭后 / 307 跳商户登录页 /merchant/；旧别名 /landing 已删，落 SPA 兜底为商户中心。"""
+    关闭后 / 返回居中站点标题的极简页（200 不跳转，标题来自 site_name）；
+    旧别名 /landing 已删，落 SPA 兜底为商户中心。"""
     from sqlalchemy.ext.asyncio import async_sessionmaker
     from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -161,11 +162,13 @@ async def test_landing_toggle_redirect(engine, monkeypatch, tmp_path):
     assert r.status_code == 200 and "text/html" in r.headers["content-type"], r.status_code
     assert "一站式聚合支付管理系统" in r.text
 
-    # 关闭：307 → /merchant/
+    # 关闭：居中站点标题的极简页（200 不跳转，标题来自 site_name 设置）
     async with maker() as s:
-        await set_settings(s, {"landing_enable": False})
+        await set_settings(s, {"landing_enable": False, "site_name": "测试站点XYZ"})
     r = await _get(app, "/")
-    assert r.status_code == 307 and _location_path(r) == "/merchant/", r.status_code
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"], r.status_code
+    assert "测试站点XYZ" in r.text and "stub-entry" not in r.text, r.text
+    assert "location" not in r.headers, r.headers.get("location")
 
     # 旧别名已删：/landing 无专属路由，SPA 兜底为商户中心入口
     r = await _get(app, "/landing")
