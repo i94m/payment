@@ -97,6 +97,9 @@ def main() -> None:
     cmd = build_ext(dist)
     cmd.inplace = True  # .so 落回源码树原位：app/services/order.cpython-312-*.so
     cmd.ensure_finalized()
+    # 并行 gcc（distutils 线程池编译多个 Extension，子进程不吃 GIL）：模块上百个、
+    # 每个一文件，串行编译占镜像构建大头；parallel=核数约 4 倍提速（GH runner 4 vCPU）
+    cmd.parallel = os.cpu_count() or 4
     cmd.run()
 
     # 自检：逐模块验证 .so 已生成，缺失则中止（不删源码，安全失败）
