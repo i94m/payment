@@ -1,0 +1,48 @@
+# 服务器部署编排（host 网络模式）：容器共享宿主机网络栈，MySQL/Redis 直连
+# 127.0.0.1（宿主机服务可继续只绑回环，无需对容器网段开放监听）。
+# 配置统一在 .env 维护（单点配置，app/worker 共用）：host 模式下 ports 映射无效，
+# app 监听宿主机 127.0.0.1:${APP_PORT:-8000}（.env 的 APP_PORT 可改，改后
+# nginx-site.conf 的 upstream 需手动同步，nginx 读不到 .env），
+# 只能单实例（扩并发靠 .env 的 WEB_WORKERS）。
+services:
+  app:
+    image: ${PAY_IMAGE:-ghcr.io/i94m/payment:latest}
+    platform: linux/amd64
+    network_mode: host
+    command: ["/bin/sh", "-c", "mkdir -p storage/logs storage/public storage/exports storage/private && uvicorn main:app --host 127.0.0.1 --port \"${APP_PORT:-8000}\" --workers \"${WEB_WORKERS:-2}\" --access-log"]
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=${DB_HOST_CONTAINER:-127.0.0.1}
+      - DB_PORT=${DB_PORT_CONTAINER:-3306}
+      - REDIS_HOST=${REDIS_HOST_CONTAINER:-127.0.0.1}
+      - REDIS_PORT=${REDIS_PORT_CONTAINER:-6379}
+      - TZ=Asia/Shanghai
+      - FORWARDED_ALLOW_IPS=127.0.0.1    # 仅信任本机 nginx 传来的 X-Forwarded-*
+    volumes:
+      - ./storage:/app/storage
+      - ./.env:/app/.env:ro
+
+  worker:
+    image: ${PAY_IMAGE:-ghcr.io/i94m/payment:latest}
+    platform: linux/amd64
+    network_mode: host
+    command: ["python", "-m", "saq", "app.worker.settings"]
+    # 镜像 HEALTHCHECK 探 :8000（app 专用）；worker 不监听端口，改探 SAQ 进程存活（slim 镜像无 ps，扫 /proc）
+    healthcheck:
+      test: ["CMD", "python", "-c", "import glob,sys; sys.exit(0 if any('app.worker.settings' in open(p,'rb').read().decode(errors='replace') for p in glob.glob('/proc/[0-9]*/cmdline')) else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=${DB_HOST_CONTAINER:-127.0.0.1}
+      - DB_PORT=${DB_PORT_CONTAINER:-3306}
+      - REDIS_HOST=${REDIS_HOST_CONTAINER:-127.0.0.1}
+      - REDIS_PORT=${REDIS_PORT_CONTAINER:-6379}
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./storage:/app/storage
+      - ./.env:/app/.env:ro

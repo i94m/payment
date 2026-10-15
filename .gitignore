@@ -166,6 +166,9 @@ Caddyfile
 docker-compose.yml
 resources/console/node_modules/
 
+# prod 服务器部署编排入库（真实 prod/.env 含密钥仍忽略，模板见 prod/.env.example）
+!prod/docker-compose.yml
+
 # Frontend env
 resources/console/.env
 .vite/
