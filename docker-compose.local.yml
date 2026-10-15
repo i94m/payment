@@ -1,0 +1,92 @@
+# 本地生产模拟编排:应用侧与 docker-compose.production.yml 完全同构
+# (app×2 + worker,同镜像、healthcheck、挂载方式),数据层差异:
+#   - MySQL:直接复用仓库根 .env 的远程测试库(坐标已同步进 deploy-local/.env)
+#   - Redis:本机 DBngin 实例经测不可用(TCP accept 后不应答,重启无效),
+#     改用本地已缓存镜像 redis:8-alpine 起容器(勿 pull,docker.io 不通);
+#     同生产要求 requirepass。若日后修好宿主 Redis,改 deploy-local/.env
+#     的 REDIS_HOST=host.docker.internal 并删掉本文件 redis 服务即可
+#
+# 用法(与生产部署脚本同流程,一条命令完成 up/等 healthy/建表):
+#   scripts/build-image.sh                                  # 先构建 pay-gateway:latest
+#   COMPOSE_FILE=docker-compose.local.yml PAY_IMAGE=pay-gateway:latest \
+#     ./scripts/deploy.sh --no-pull
+# 或手动:docker compose -f docker-compose.local.yml up -d
+#
+# 入口:127.0.0.1:8000-8002(生产由宿主 nginx 轮询反代,本地直连任一端口即可);
+# 排查可直连 127.0.0.1:16379(Redis),仅绑回环。
+services:
+  redis:
+    image: redis:8-alpine                     # 本地已有,勿 pull
+    platform: linux/amd64
+    container_name: pay-local-redis
+    # 生产形态要求:监听非回环必须 requirepass(对应 .env 的 REDIS_PASSWORD)
+    command: ["redis-server", "--requirepass", "pay-local-redis-2026"]
+    ports:
+      - "127.0.0.1:16379:6379"     # 仅本机排查用
+    volumes:
+      - pay_local_redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a pay-local-redis-2026 --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - app-net
+
+  app:
+    image: ${PAY_IMAGE:-pay-gateway:latest}
+    platform: linux/amd64
+    deploy:
+      replicas: 2                   # 与生产默认一致;--scale app=N 可覆盖(N ≤ 3)
+    ports:
+      - "127.0.0.1:8000-8002:8000"  # 同生产:仅绑回环,端口范围供多实例
+    env_file:
+      - deploy-local/.env           # 生产模拟配置(DB 指宿主机,Redis 指本 compose 服务)
+    environment:
+      - TZ=Asia/Shanghai
+      - FORWARDED_ALLOW_IPS=*
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # 同生产:容器访问宿主机 MySQL
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./deploy-local/storage:/app/storage   # 与 dev 的 ./storage 隔离
+      - ./deploy-local/.env:/app/.env:ro
+    networks:
+      - app-net
+
+  worker:
+    image: ${PAY_IMAGE:-pay-gateway:latest}
+    platform: linux/amd64
+    container_name: pay-gateway-worker
+    command: ["python", "-m", "saq", "app.worker.settings"]
+    # 同生产:镜像 HEALTHCHECK 探 :8000,worker 不监听端口,改探 SAQ 进程存活
+    healthcheck:
+      test: ["CMD", "python", "-c", "import glob,sys; sys.exit(0 if any('app.worker.settings' in open(p,'rb').read().decode(errors='replace') for p in glob.glob('/proc/[0-9]*/cmdline')) else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    env_file:
+      - deploy-local/.env
+    environment:
+      - TZ=Asia/Shanghai
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./deploy-local/storage:/app/storage
+      - ./deploy-local/.env:/app/.env:ro
+    networks:
+      - app-net
+
+volumes:
+  pay_local_redis:
+
+networks:
+  app-net:
+    driver: bridge
