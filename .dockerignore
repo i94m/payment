@@ -16,6 +16,8 @@ resources/
 # 授权签发私钥与插件打包产物：绝不进构建上下文
 license_private.pem
 dist/
+# prod/：服务器部署编排与真实密钥 prod/.env（不入镜像，仅 git 版本管理）
+prod/
 
 # 以下目录从不被 Dockerfile COPY，仅避免进入构建上下文（不影响镜像内容）
 tests/
