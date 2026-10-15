@@ -151,8 +151,6 @@ requirepass 强密码       # 监听非回环必设；对应 .env 的 REDIS_PASS
       interval: 5s
       timeout: 3s
       retries: 10
-    networks:
-      - app-net
 
 volumes:
   mysql_data:

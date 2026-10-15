@@ -1,72 +1,38 @@
-# 唯一编排文件（生产 & 本地测试共用）：app×N + worker 容器化；
-# MySQL 与 Redis 均用宿主机系统服务（非容器），容器统一经 host.docker.internal
-# 访问 —— Linux 由 extra_hosts 的 host-gateway 映射到宿主机，macOS Docker
-# Desktop 自带该域名。宿主机服务接入要点见 DEPLOY.md。
-#
-# 镜像由 .github/workflows/docker-image.yml 自动构建发布（ghcr.io/i94m/payment）：
-#   push 到 main  → main / latest / sha-xxxxxxx
-#   push tag v1.2.3 → 1.2.3 / 1.2 / sha-xxxxxxx
-#
-# 数据库/Redis 指向默认宿主机服务（host.docker.internal），本地测试等场景
-# 在 .env 里覆盖（compose 变量插值读 .env，环境变量优先于容器内 env_file）：
-#   DB_HOST_CONTAINER=106.55.182.210     # 例：远程测试库
-#   DB_PORT_CONTAINER=33806
-#   REDIS_HOST_CONTAINER / REDIS_PORT_CONTAINER 同理（缺省 host.docker.internal:6379）
-#
-# 用法：
-#   服务器一条命令（自动 .env 初始化 / pull / up / 建表迁移）：
-#     ./scripts/deploy.sh                # 默认就是本文件；固定版本加 PAY_IMAGE=ghcr.io/i94m/payment:sha-xxxxxxx
-#   本地测试 / 手动：
-#     docker compose -f docker-compose.production.yml up -d
-#   本机构建镜像（无仓库场景，scripts/build-image.sh 产出 pay-gateway:latest）：
-#     PAY_IMAGE=pay-gateway:latest docker compose -f docker-compose.production.yml up -d
+# 生产编排：app×N + worker；MySQL/Redis 用宿主机服务（host.docker.internal，
+# Linux 由 extra_hosts 的 host-gateway 映射）。镜像由 CI 自动构建发布（ghcr.io/i94m/payment）。
+# 部署走 ./scripts/deploy.sh，详见 DEPLOY.md；本机构建镜像用 scripts/build-image.sh 产出
+# pay-gateway:latest 后配 PAY_IMAGE 使用。
+# .env 可覆盖（compose 插值读取）：PAY_IMAGE / APP_REPLICAS（app 实例数，默认 3）/
+# APP_PORT_RANGE（app 宿主端口范围，默认 8000-8002）/ DB_HOST_CONTAINER / DB_PORT_CONTAINER /
+# REDIS_HOST_CONTAINER / REDIS_PORT_CONTAINER（改指远程库）。
+# 不定义固定网络，使用 compose 默认网络，支持多套编排同机并存。
 services:
   app:
     image: ${PAY_IMAGE:-ghcr.io/i94m/payment:latest}
-    # 镜像仅构建 amd64（生产 x86）；Apple Silicon 本地测试由 Docker Desktop
-    # Rosetta 模拟运行，固定 platform 保证 pull/up 选中 amd64 变体
     platform: linux/amd64
-    # 多实例负载均衡：不能固定 container_name（扩容会重名冲突），端口改用范围且只绑 127.0.0.1，
-    # 由主机 nginx（见 nginx-example.conf）反代 8000-8002 做轮询/least_conn。
-    # 启动 N 个实例：docker compose up -d --scale app=3（N ≤ 端口范围大小 3）
     deploy:
-      replicas: 2                     # 默认 2 个实例；--scale app=N 可覆盖
-    # 单容器 Web 进程数走 .env 的 WEB_WORKERS（镜像 CMD 读 ${WEB_WORKERS:-2}，默认 2）；
-    # 容器级扩展另用 --scale app=N（端口 8000-8002，N ≤ 3）
+      replicas: ${APP_REPLICAS:-3}
     ports:
-      - "127.0.0.1:8000-8002:8000"    # 只绑本机回环：外部流量必须走主机 nginx，也避免绕过限流
+      - "127.0.0.1:${APP_PORT_RANGE:-8000-8002}:8000"
     env_file:
       - .env
     environment:
-      # 宿主机 MySQL / Redis（systemd 等系统服务，非容器）：容器内解析到宿主机。
-      # 要求两服务监听 0.0.0.0 或 docker 网桥 IP、账号允许容器网段连接（见 DEPLOY.md）；
-      # Redis 监听非回环必须 requirepass，对应 .env 的 REDIS_PASSWORD。
-      # *_CONTAINER 变量在 .env 覆盖即可改指远程库（见文件头注释）。
       - DB_HOST=${DB_HOST_CONTAINER:-host.docker.internal}
       - DB_PORT=${DB_PORT_CONTAINER:-3306}
       - REDIS_HOST=${REDIS_HOST_CONTAINER:-host.docker.internal}
       - REDIS_PORT=${REDIS_PORT_CONTAINER:-6379}
       - TZ=Asia/Shanghai
-      - FORWARDED_ALLOW_IPS=*          # 信任主机 nginx 传来的 X-Forwarded-*，
-                                       # 让 request.client.host 也是真实 IP（端口已仅绑 127.0.0.1，安全）
+      - FORWARDED_ALLOW_IPS=*
     extra_hosts:
-      - "host.docker.internal:host-gateway"   # Linux 上把该域名映射到宿主机网关
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./storage:/app/storage
       - ./.env:/app/.env:ro
-    networks:
-      - app-net
 
   worker:
     image: ${PAY_IMAGE:-ghcr.io/i94m/payment:latest}
     platform: linux/amd64
-    container_name: pay-gateway-worker
-    # SAQ worker：商户通知阶梯重试 / 掉单主动查单补单 / 过期关单
-    # 需要更高吞吐时同样可去掉 container_name 后 --scale worker=N，
-    # SAQ 基于 Redis 队列分发，多 worker 并发消费天然安全
     command: ["python", "-m", "saq", "app.worker.settings"]
-    # 镜像 HEALTHCHECK 探的是 :8000 HTTP（app 专用）；worker 跑 SAQ 不监听端口，
-    # 不覆盖会永远 unhealthy —— 改探 SAQ 进程存活（slim 镜像无 ps/pgrep，用 /proc 扫描）
     healthcheck:
       test: ["CMD", "python", "-c", "import glob,sys; sys.exit(0 if any('app.worker.settings' in open(p,'rb').read().decode(errors='replace') for p in glob.glob('/proc/[0-9]*/cmdline')) else 1)"]
       interval: 30s
@@ -86,10 +52,3 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./.env:/app/.env:ro
-      # 支付插件已随镜像 Cython 编译固化（.so），不支持目录挂载热更新；加插件需重建镜像
-    networks:
-      - app-net
-
-networks:
-  app-net:
-    driver: bridge

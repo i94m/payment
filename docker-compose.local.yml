@@ -31,14 +31,12 @@ services:
       timeout: 3s
       retries: 20
       start_period: 5s
-    networks:
-      - app-net
 
   app:
     image: ${PAY_IMAGE:-pay-gateway:latest}
     platform: linux/amd64
     deploy:
-      replicas: 2                   # 与生产默认一致;--scale app=N 可覆盖(N ≤ 3)
+      replicas: ${APP_REPLICAS:-3}  # 同生产读同一变量;--scale app=N 可覆盖(本地端口 8000-8002,N ≤ 3)
     ports:
       - "127.0.0.1:8000-8002:8000"  # 同生产:仅绑回环,端口范围供多实例
     env_file:
@@ -54,13 +52,10 @@ services:
     volumes:
       - ./deploy-local/storage:/app/storage   # 与 dev 的 ./storage 隔离
       - ./deploy-local/.env:/app/.env:ro
-    networks:
-      - app-net
 
   worker:
     image: ${PAY_IMAGE:-pay-gateway:latest}
     platform: linux/amd64
-    container_name: pay-gateway-worker
     command: ["python", "-m", "saq", "app.worker.settings"]
     # 同生产:镜像 HEALTHCHECK 探 :8000,worker 不监听端口,改探 SAQ 进程存活
     healthcheck:
@@ -81,12 +76,6 @@ services:
     volumes:
       - ./deploy-local/storage:/app/storage
       - ./deploy-local/.env:/app/.env:ro
-    networks:
-      - app-net
 
 volumes:
   pay_local_redis:
-
-networks:
-  app-net:
-    driver: bridge
