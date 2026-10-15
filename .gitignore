@@ -182,3 +182,6 @@ resources/docs/.vitepress/cache/
 static/console/
 static/docs/
 dist/
+
+# 授权签发私钥（仅作者本机，绝不入库/进镜像）
+license_private.pem

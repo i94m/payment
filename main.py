@@ -16,6 +16,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.core.config import config
 from app.core.frontend import register_docs, register_frontend
+from app.core.license import describe
 from app.core.logger import logger, request_id_var
 from app.responses import err
 from app.routers import routers
@@ -68,6 +69,8 @@ async def lifespan(instance: FastAPI):
     # 应用启动前执行
     if config.APP_ENV == "local":
         logger.warning("APP_ENV=local：登录验证码接受万能码 0000，仅供本地开发/测试，生产环境必须设为 prod")
+    # 授权信息展示（仅可读描述；强制校验在 config 导入期已完成）
+    logger.info(f"授权信息: {describe()}")
     # 启动即强刷插件注册表（与后台「已安装插件」刷新同源），不等首次使用或手动点击
     PluginRegistry.reload()
     logger.info(f"支付插件注册表已刷新: {', '.join(PluginRegistry.payment_names()) or '无'}")

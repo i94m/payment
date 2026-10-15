@@ -177,6 +177,22 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 - 扩 app 实例：`./scripts/deploy.sh --scale 3`（上限 = 端口范围大小，见 compose 注释）
 - nginx：`sudo cp nginx-example.conf /etc/nginx/conf.d/pay-gateway.conf && sudo nginx -t && sudo systemctl reload nginx`
 
+### 授权码（AUTH_CODE）
+
+编译镜像启动时强制校验 `.env` 中的 `AUTH_CODE`（校验完全离线，不访问网络；本地源码运行不校验）。
+缺失或无效时容器启动失败，`docker logs` 可见具体原因，常见报错对照：
+
+| 报错（原因：…） | 处理 |
+| --- | --- |
+| 授权码为空 | `.env` 未填 `AUTH_CODE=`，向作者索取后填入 |
+| 格式不正确 / 编码不正确 / 载荷… | 码被截断或改坏（一行完整复制，勿加引号外字符） |
+| 签名无效 | 码不是本系统签发或被篡改，重新索取 |
+| 授权已于 … 过期 | 向作者续期（换码） |
+| 未内置授权公钥 | 镜像构建遗漏公钥（作者侧构建问题） |
+
+- **续期**：换新码后 `docker compose up -d` 重建（或 `docker compose restart app worker`，`.env` 为 bind 挂载，重启即重读）
+- **限制**：有效期只在启动时校验，长期运行的容器过期后需重启才拦截
+
 ## 三、容量速查（架构口径）
 
 单实例（2 进程）约 1-2k QPS 下单、几百回调/s；水平扩展近似线性；

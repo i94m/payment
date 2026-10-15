@@ -9,6 +9,8 @@ from pydantic_core import MultiHostUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing_extensions import Self
 
+from app.core.license import enforce
+
 
 class Config(BaseSettings):
     model_config = SettingsConfigDict(
@@ -19,6 +21,9 @@ class Config(BaseSettings):
         env_file_encoding="utf-8"
     )
     APP_SECRET_KEY: str = ""
+    # 授权码（作者离线签发的 Ed25519 签名授权码）。仅编译镜像（.so 部署）启动时
+    # 强制校验，本地源码运行/pytest 自动跳过（见 app/core/license.py）；空=未授权
+    AUTH_CODE: str = ""
     JWT_ALGORITHM: str = "HS256"
     # 60 minutes * 24 hours * 8 days = 8 days
     # API端Token有效期[分钟]
@@ -244,4 +249,9 @@ class Config(BaseSettings):
 
 
 config = Config()  # type: ignore
+
+# 启动授权门禁：uvicorn / SAQ worker / 容器内 artisan、alembic 每个入口进程都会
+# 导入本模块，在导入期统一拦截；仅编译形态强制。此刻日志系统尚未初始化，
+# 失败信息由 license 模块直接写 stderr，进程以码 1 退出
+enforce(config.AUTH_CODE)
 
