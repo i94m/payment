@@ -28,8 +28,10 @@ class Config(BaseSettings):
     APP_ENV: Literal["local", "dev", "prod"] = "prod"
     SYSTEM_SETTING_ID: int | None = 1
 
-    APP_NAME: str
-    APP_URL: str
+    # 仅用作 OpenAPI 文档标题；给缺省值避免 worker 等进程因 .env 漏配而启动失败
+    APP_NAME: str = "聚合支付"
+    # 预留字段，当前代码未实际读取；同上
+    APP_URL: str = "http://localhost:8000"
     # 管理后台页面路径前缀（默认 admin）：改掉可隐藏后台入口，如 "console-x9"。
     # 仅约束页面路径；管理 API 固定为 /admin-api，不受影响。
     ADMIN_PATH_PREFIX: str = "admin"
