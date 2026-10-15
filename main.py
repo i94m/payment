@@ -19,6 +19,7 @@ from app.core.frontend import register_docs, register_frontend
 from app.core.logger import logger, request_id_var
 from app.responses import err
 from app.routers import routers
+from app.services.plugin import PluginRegistry
 
 
 async def rate_limiter() -> None:
@@ -67,6 +68,9 @@ async def lifespan(instance: FastAPI):
     # 应用启动前执行
     if config.APP_ENV == "local":
         logger.warning("APP_ENV=local：登录验证码接受万能码 0000，仅供本地开发/测试，生产环境必须设为 prod")
+    # 启动即强刷插件注册表（与后台「已安装插件」刷新同源），不等首次使用或手动点击
+    PluginRegistry.reload()
+    logger.info(f"支付插件注册表已刷新: {', '.join(PluginRegistry.payment_names()) or '无'}")
     await rate_limiter()
     await bootstrap_platform_rsa_key()
     yield

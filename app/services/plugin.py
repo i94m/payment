@@ -8,9 +8,11 @@
 """
 import asyncio
 import importlib
+import importlib.machinery
 import importlib.util
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Optional
 
@@ -32,6 +34,8 @@ async def maybe_await(result: Any) -> Any:
 
 
 class PluginRegistry:
+    # 后台上传插件的安装目录（storage 持久卷，容器重建不丢；payment 专属）
+    UPLOAD_ROOT = Path("storage") / "plugins"
     _payment: dict[str, type[BasePayment]] = {}
     _sms: dict[str, type[BaseSms]] = {}
     _mail: dict[str, type[BaseMail]] = {}
@@ -50,15 +54,32 @@ class PluginRegistry:
             return
         for plugin_type, (attr, base_cls, pkg) in cls.TYPE_MAP.items():
             registry = getattr(cls, attr)
-            type_dir = Path(pkg.replace(".", "/"))
-            if not type_dir.exists():
+            dirs = [(Path(pkg.replace(".", "/")), pkg, True)]
+            if plugin_type == "payment":
+                # 额外扫描后台上传目录（不在包路径上，按文件位置导入）
+                dirs.append((cls.UPLOAD_ROOT, "", False))
+            for type_dir, pkg_name, from_pkg in dirs:
+                cls._scan_type_dir(type_dir, base_cls, pkg_name, from_pkg, registry)
+        cls._loaded = True
+
+    @classmethod
+    def _scan_type_dir(cls, type_dir: Path, base_cls, pkg: str, from_pkg: bool, registry: dict):
+        if not type_dir.exists():
+            return
+        for d in sorted(type_dir.iterdir()):
+            if not d.is_dir():
                 continue
-            for d in sorted(type_dir.iterdir()):
-                if not d.is_dir():
-                    continue
-                if d.name.startswith("_"):
-                    # `_` 前缀目录是模板/示例（如 _example），不注册、不在后台展示
-                    continue
+            if d.name.startswith("_"):
+                # `_` 前缀目录是模板/示例（如 _example），不注册、不在后台展示
+                continue
+            info_file = d / "info.json"
+            info = {}
+            if info_file.exists():
+                try:
+                    info = json.loads(info_file.read_text())
+                except Exception:
+                    info = {}
+            if from_pkg:
                 # 编译镜像里插件已是 .so，不再存在 plugin.py；
                 # 按 import 系统后缀表探测模块是否存在（.py 与 .so 通用）
                 try:
@@ -66,28 +87,78 @@ class PluginRegistry:
                         continue
                 except (ImportError, ValueError):
                     continue
-                info_file = d / "info.json"
-                info = {}
-                if info_file.exists():
-                    try:
-                        info = json.loads(info_file.read_text())
-                    except Exception:
-                        info = {}
                 try:
                     mod = importlib.import_module(f"{pkg}.{d.name}.plugin")
-                    for name in dir(mod):
-                        obj = getattr(mod, name)
-                        if isinstance(obj, type) and issubclass(obj, base_cls) and obj is not base_cls:
-                            plugin_id = info.get("id", d.name)
-                            registry[plugin_id] = obj
-                            break
                 except Exception as e:
                     _log.warning(f"加载插件失败 {d.name}: {e}")
-        cls._loaded = True
+                    continue
+            else:
+                # 上传目录只允许编译后的 .so（安全限制：不接受 .py 源码）
+                so_path = cls._find_plugin_module(d)
+                if so_path is None:
+                    continue
+                try:
+                    mod = cls._import_upload(d.name, so_path)
+                except Exception as e:
+                    _log.warning(f"加载插件失败 {d.name}: {e}")
+                    continue
+            for name in dir(mod):
+                obj = getattr(mod, name)
+                if isinstance(obj, type) and issubclass(obj, base_cls) and obj is not base_cls:
+                    plugin_id = info.get("id", d.name)
+                    registry[plugin_id] = obj
+                    break
+
+    @classmethod
+    def _find_plugin_module(cls, d: Path) -> Optional[Path]:
+        """找插件主模块 plugin*.so（上传目录不含 .py）。
+
+        先按本机 import 后缀表精确匹配（生产容器内的规范产物名）；
+        未命中再通配 plugin*.so 兜底（包可能是其他平台/ABI 编译的，
+        真正能否加载由导入时的异常兜底）。
+        """
+        for suffix in importlib.machinery.EXTENSION_SUFFIXES:
+            p = d / f"plugin{suffix}"
+            if p.is_file():
+                return p
+        for p in sorted(d.glob("plugin*.so")):
+            if p.is_file():
+                return p
+        return None
+
+    @classmethod
+    def _import_upload(cls, name: str, so_path: Path):
+        """以正常包语义导入上传的插件 .so。
+
+        上传目录不在包路径上，构造虚拟包 plugins_upload / plugins_upload.<name>
+        （__path__ 指向真实目录），使相对/绝对包内导入与镜像内插件行为一致；
+        sys.modules 由 reload() 清理，保证重扫能加载到更新后的 .so。
+        """
+        cls._ensure_virtual_pkg("plugins_upload", str(cls.UPLOAD_ROOT))
+        parent = f"plugins_upload.{name}"
+        cls._ensure_virtual_pkg(parent, str(so_path.parent))
+        spec = importlib.util.spec_from_file_location(f"{parent}.plugin", so_path)
+        assert spec and spec.loader
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[f"{parent}.plugin"] = mod
+        spec.loader.exec_module(mod)
+        return mod
+
+    @staticmethod
+    def _ensure_virtual_pkg(fullname: str, path: str) -> None:
+        if fullname in sys.modules:
+            return
+        pkg = importlib.util.module_from_spec(
+            importlib.util.spec_from_loader(fullname, loader=None, is_package=True))
+        pkg.__path__ = [path]
+        sys.modules[fullname] = pkg
 
     @classmethod
     def reload(cls):
-        """强制重新扫描（admin 刷新插件列表）。"""
+        """强制重新扫描（admin 刷新插件列表 / 上传安装后）。"""
+        # 上传插件按文件导入会写 sys.modules，重扫前清掉才能加载到新代码
+        for k in [k for k in sys.modules if k.startswith("plugins_upload.")]:
+            del sys.modules[k]
         cls._loaded = False
         cls._payment.clear()
         cls._sms.clear()
@@ -108,6 +179,12 @@ class PluginRegistry:
             cls.reload()
             obj = registry.get(name)
         return obj
+
+    @classmethod
+    def payment_names(cls) -> list[str]:
+        """已注册支付插件名列表（启动日志 / admin 展示用）。"""
+        cls.discover()
+        return sorted(cls._payment)
 
     @classmethod
     def get_payment(cls, plugin_name: str, channel: dict) -> Optional[BasePayment]:
@@ -133,12 +210,13 @@ class PluginRegistry:
     @classmethod
     def _info_json(cls, plugin_name: str) -> dict:
         """读插件目录的 info.json（取不到返回空 dict）。"""
-        info_path = Path("plugins") / plugin_name / "info.json"
-        if info_path.exists():
-            try:
-                return json.loads(info_path.read_text())
-            except Exception:
-                pass
+        for info_path in (Path("plugins") / plugin_name / "info.json",
+                          cls.UPLOAD_ROOT / plugin_name / "info.json"):
+            if info_path.exists():
+                try:
+                    return json.loads(info_path.read_text())
+                except Exception:
+                    pass
         return {}
 
     @classmethod

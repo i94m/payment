@@ -28,7 +28,7 @@ import {
 } from "@/components/data-list/"
 import type { ActionItem } from "@/components/data-list/"
 import {
-  IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconFlask, IconCopy, IconList,
+  IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconFlask, IconCopy, IconList, IconUpload,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -123,6 +123,9 @@ export function ChannelsPage() {
   const [testDebug, setTestDebug] = React.useState<ChannelTestDebug | null>(null)
   // 插件同步（插件目录扫描，同步后刷新插件下拉与通道列表）
   const [syncing, setSyncing] = React.useState(false)
+  // 上传安装编译后的插件包（zip：build_plugin.sh 产物，仅 .so + info.json）
+  const [uploading, setUploading] = React.useState(false)
+  const uploadRef = React.useRef<HTMLInputElement>(null)
 
   const fetchStats = React.useCallback(() => {
     payApi.channelStats().then(setStats).catch(() => {})
@@ -161,6 +164,24 @@ export function ChannelsPage() {
       toast.error((err as { message?: string })?.message || "操作失败")
     } finally {
       setSyncing(false)
+    }
+  }
+
+  // 上传插件包：安装到 storage/plugins/（持久卷）并刷新注册表与插件列表
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ""   // 允许重复选择同一文件
+    if (!f) return
+    setUploading(true)
+    try {
+      await payApi.uploadPlugin(f)
+      toast.success("上传成功")
+      payApi.plugins().then(setPlugins).catch(() => {})
+      refresh()
+    } catch (err) {
+      toast.error((err as { message?: string })?.message || "上传失败")
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -524,6 +545,12 @@ export function ChannelsPage() {
                 <IconRefresh className={`size-4 ${syncing ? "animate-spin" : ""}`} />
                 {`已安装插件（${plugins.length}）`}
               </Button>
+              <Button size="sm" variant="outline" onClick={() => uploadRef.current?.click()}
+                      disabled={uploading} title="上传编译后的插件包（zip：build_plugin.sh 产物，仅 .so + info.json）">
+                <IconUpload className={`size-4 ${uploading ? "animate-pulse" : ""}`} />
+                {uploading ? "上传中…" : "上传插件"}
+              </Button>
+              <input ref={uploadRef} type="file" accept=".zip" className="hidden" onChange={handleUpload} />
               <Button size="sm" onClick={openCreate}>
                 <IconPlus className="size-4" />
                 {"新增通道"}

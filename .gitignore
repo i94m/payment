@@ -181,3 +181,4 @@ resources/docs/.vitepress/cache/
 # 构建产物（vite → static/console，vitepress → static/docs）：现场构建，不入库
 static/console/
 static/docs/
+dist/

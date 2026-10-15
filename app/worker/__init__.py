@@ -13,6 +13,8 @@ SAQ Worker 设置
 from saq import Queue
 
 from app.core.config import config
+from app.core.logger import logger
+from app.services.plugin import PluginRegistry
 
 # ============================================================
 # 任务函数注册 — 新增任务后在这里导入并加入列表
@@ -63,6 +65,12 @@ async def enqueue(job_name: str, **kwargs) -> str:
     return await queue.enqueue(job_name, **kwargs)
 
 
+async def _startup(ctx: dict) -> None:
+    """worker 启动钩子：强刷支付插件注册表（通知重试/查单补单依赖插件类）。"""
+    PluginRegistry.reload()
+    logger.info(f"支付插件注册表已刷新: {', '.join(PluginRegistry.payment_names()) or '无'}")
+
+
 def settings() -> dict:
     """SAQ CLI 入口（python -m saq app.worker.settings）——返回配置 dict。"""
     return {
@@ -70,4 +78,5 @@ def settings() -> dict:
         "functions": functions,
         "cron_jobs": cron_jobs,
         "concurrency": config.WORKER_CONCURRENCY,
+        "startup": _startup,
     }

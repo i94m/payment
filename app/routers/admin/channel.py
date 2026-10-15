@@ -5,10 +5,15 @@
 """
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+import io
+import json
 import re
+import shutil
+import uuid
+import zipfile
 from typing import Optional
 
-from fastapi import Depends, APIRouter, Query, Request
+from fastapi import Depends, APIRouter, Query, Request, UploadFile
 from pydantic import BaseModel
 from sqlmodel import col, func, select
 
@@ -68,6 +73,108 @@ async def plugin_sync(session: SessionDep):
             ))
     await session.commit()
     return suc(f"已同步 {len(metas)} 个插件")
+
+
+# 上传插件包大小上限
+_UPLOAD_MAX_SIZE = 10 * 1024 * 1024
+
+
+@router.post("/plugins/upload", dependencies=[Depends(PermissionChecker("channel.update"))])
+async def plugin_upload(file: UploadFile, session: SessionDep):
+    """上传安装编译后的插件包（zip）。
+
+    包结构 = scripts/build_plugin.sh 产物目录直接压缩：
+      <插件名>/plugin.cpython-312-x86_64-linux-gnu.so
+      <插件名>/info.json
+    仅接受 .so 编译产物（含 .py 一律拒绝，与镜像源码保护口径一致）；安装到
+    storage/plugins/<插件名>/（持久卷随 storage 备份，容器重建不丢），安装后
+    立即刷新注册表并同步 Plugin 表。多 worker/多副本部署时其他进程需重启生效。
+    """
+    data = await file.read()
+    if len(data) > _UPLOAD_MAX_SIZE:
+        return err(-1, "插件包不能超过 10MB")
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile:
+        return err(-1, "无效的 zip 文件")
+
+    entries = [i for i in zf.infolist() if not i.is_dir()]
+    if not entries:
+        return err(-1, "压缩包为空")
+    if any(i.filename.endswith(".py") for i in entries):
+        return err(-1, "安全限制：仅允许编译后的 .so 插件包，不接受 .py 源码")
+
+    # 定位主模块 plugin*.so（取层级最浅的），其所在目录即插件内容。
+    # 包是 linux 平台编译产物，本机 EXTENSION_SUFFIXES 不一定含其 ABI 后缀
+    #（如 cpython-312-x86_64-linux-gnu），按文件名 plugin*.so 匹配即可，
+    # 真正的平台兼容性由下方导入失败回滚兜底
+    main_entries = [i for i in entries
+                    if i.filename.rsplit("/", 1)[-1].startswith("plugin")
+                    and i.filename.endswith(".so")]
+    if not main_entries:
+        return err(-1, "压缩包中未找到 plugin.so（请用 scripts/build_plugin.sh 打包）")
+    main = min(main_entries, key=lambda i: i.filename.count("/"))
+    prefix = main.filename[: -len(main.filename.split("/")[-1])]  # 含尾随 /
+
+    # 插件名：info.json 的 id 优先，缺省用 zip 内目录名
+    info = {}
+    try:
+        info = json.loads(zf.read(prefix + "info.json"))
+    except Exception:
+        pass
+    default_name = prefix.rstrip("/").rsplit("/", 1)[-1] if prefix \
+        else (file.filename or "plugin").rsplit(".", 1)[0]
+    name = str(info.get("id") or "").strip() or default_name
+    if not re.fullmatch(r"[a-z][a-z0-9_]{0,49}", name):
+        return err(-1, f"插件名不合法：{name}（需小写字母开头，仅含小写字母/数字/下划线）")
+
+    # 先解包到暂存目录，校验通过后原子替换（zip-slip 防护：越界路径直接拒绝）
+    upload_root = PluginRegistry.UPLOAD_ROOT
+    upload_root.mkdir(parents=True, exist_ok=True)
+    stage = upload_root.parent / f".upload_{uuid.uuid4().hex}"
+    stage.mkdir()
+    try:
+        for i in entries:
+            if not i.filename.startswith(prefix):
+                continue
+            target = stage / i.filename[len(prefix):]
+            if not target.resolve().is_relative_to(stage.resolve()):
+                return err(-1, "压缩包包含非法路径")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(zf.read(i))
+        target_dir = upload_root / name
+        if target_dir.exists():
+            shutil.rmtree(target_dir)
+        stage.rename(target_dir)
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+    # 立即刷新注册表；导入失败（ABI 不符/坏包）不保留半成品
+    PluginRegistry.reload()
+    if PluginRegistry.get_payment_class(name) is None:
+        shutil.rmtree(upload_root / name, ignore_errors=True)
+        PluginRegistry.reload()
+        return err(-1, "插件导入失败：.so 与运行环境不兼容或缺少 BasePayment 子类")
+
+    meta = PluginRegistry.plugin_meta(name)
+    showname = meta.showname if meta else name
+    types = ",".join(meta.types) if meta else ""
+    inputs = meta.inputs if meta else []
+    version = (str(info.get("version") or ""))[:16] or None
+
+    # 同步 Plugin 表，让「已安装插件」列表立即可见（plugin_sync 同款最小集）
+    row = await session.get(Plugin, name)
+    if row:
+        row.showname = showname
+        row.supported_types = types
+        row.inputs_schema = inputs
+        row.version = version
+    else:
+        session.add(Plugin(name=name, showname=showname, supported_types=types,
+                           inputs_schema=inputs, version=version, is_enabled=True))
+    await session.commit()
+    return suc({"name": name, "showname": showname,
+                "note": "多进程/多副本部署时，其他进程需重启后生效"})
 
 
 # ============================================================
