@@ -47,9 +47,14 @@ if [ ! -f .env ]; then
   # 生产兜底：即使 .env.example 被改回 local，部署引导也强制 prod（local 会启用万能验证码 0000）
   sed -i.bak "s#^APP_SECRET_KEY=.*#APP_SECRET_KEY=${secret}#; s#^STORAGE_LOCAL_SECRET=.*#STORAGE_LOCAL_SECRET=${storage}#; s#^APP_ENV=.*#APP_ENV=prod#; s#^APP_DEBUG=.*#APP_DEBUG=false#" .env && rm -f .env.bak
   log "已生成 .env（密钥已写入，APP_ENV 已强制为 prod）。请编辑 .env 填写宿主机 MySQL（DB_DATABASE/"
-  log "DB_USERNAME/DB_PASSWORD）与 Redis（REDIS_PASSWORD），确认 DB_HOST/REDIS_HOST"
-  log "由 compose 覆盖为 host.docker.internal，然后重新运行本脚本。"
+  log "DB_USERNAME/DB_PASSWORD）与 Redis（REDIS_PASSWORD），并向作者获取授权码填入 AUTH_CODE=，"
+  log "确认 DB_HOST/REDIS_HOST 由 compose 覆盖为 host.docker.internal，然后重新运行本脚本。"
   exit 3
+fi
+
+# 授权码预检：编译镜像启动即强制校验，缺码会卡在健康检查且日志晦涩，提前拦截
+if ! grep -qE '^AUTH_CODE=..' .env; then
+  die "未配置授权码：请向作者获取后填入 .env 的 AUTH_CODE=，再重新运行本脚本"
 fi
 
 # 生产防呆：存量 .env 若是 local（万能验证码 0000 放行登录），提醒但不阻断

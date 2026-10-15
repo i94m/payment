@@ -53,19 +53,29 @@ RUN mkdir -p storage/logs storage/public storage/exports storage/private
 RUN SO_COMPILE=1 /opt/cybuild/bin/python compile_backend.py
 
 # 5) 编译后构建期冒烟（坏镜像出不了 builder）：
+#    先真实 import app.core.license —— 校验授权门禁 .so 本身可加载、公钥已内置
+#    （构建期没有可校验的授权码，随后用进程内桩模块顶替授权门禁再 import main；
+#    桩只存在于本条 RUN 的进程内，不落盘、无环境开关，运行时无法触达）
 #    import main —— FastAPI include_router 即解析全部端点签名，内省损坏当场失败
 #    PluginRegistry.discover() —— 插件 .so 全量可导入（find_spec 探测）
 #    settings() —— SAQ worker 配置可加载（任务函数与定时任务全量）
 #    必填密钥用环境变量注入（pydantic-settings 环境变量优先于 env_file）
 RUN APP_SECRET_KEY=build-smoke STORAGE_LOCAL_SECRET=build-smoke \
-    /app/.venv/bin/python -c "import main, artisan; \
+    /app/.venv/bin/python -c "import app.core.license; \
+    assert app.core.license.PUBLIC_KEY_B64, '镜像未内置授权公钥：请先在 app/core/license.py 填入 PUBLIC_KEY_B64'; \
+    import sys, types; _stub = types.ModuleType('app.core.license'); \
+    _stub.enforce = lambda code: None; _stub.current = None; _stub.describe = lambda: 'build-smoke'; \
+    sys.modules['app.core.license'] = _stub; \
+    import main, artisan; \
     from app.services.plugin import PluginRegistry; PluginRegistry.discover(); \
     from app.worker import settings; s = settings(); \
     print('routes:', len(main.app.routes), '| payment:', len(PluginRegistry._payment), \
           '| worker functions:', len(s['functions']), '| cron_jobs:', len(s['cron_jobs']))"
 
-# 6) 守护：app/ 与 plugins/ 下不允许残留 .py（_example 插件开发模板除外）
+# 6) 守护：app/ 与 plugins/ 下不允许残留 .py（_example 插件开发模板除外），
+#    main.py 已随编译清单纳入（uvicorn 字符串导入 .so），镜像内不得有明文装配源码
 RUN test -z "$(find app plugins -name '*.py' -not -path 'plugins/_example/*')" \
+        && test ! -f main.py \
     || { echo '残留 .py 源码，编译不完整'; exit 1; }
 
 # ---------- Stage 2: runtime —— 只含编译产物，无业务源码 ----------
@@ -80,7 +90,9 @@ ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/app/ ./app/
 COPY --from=builder /app/plugins/ ./plugins/
-COPY --from=builder /app/main.py /app/artisan.py ./
+# main.py 已随 app/ 编译为 .so（uvicorn main:app 字符串导入照常解析）；
+# 入口仅保留 artisan.py（deploy.sh 以脚本方式直接执行，无法用 .so）
+COPY --from=builder /app/artisan.py ./
 COPY --from=builder /app/alembic/ ./alembic/
 COPY --from=builder /app/alembic.ini ./alembic.ini
 COPY --from=builder /app/static/ ./static/

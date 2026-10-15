@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cython 源码保护编译：app/ + plugins/ → 机器码 .so，并删除 .py 源码。
+"""Cython 源码保护编译：app/ + plugins/ + main.py → 机器码 .so，并删除 .py 源码。
 
 运行环境（见 Dockerfile builder 阶段）：
   - 解释器带 cython + setuptools（独立 venv /opt/cybuild）
@@ -7,8 +7,7 @@
   - gcc 可用（python:slim 自带 CPython 头文件，无需 python3-dev）
 
 不编译（保留原样）：
-  - main.py / artisan.py：入口纯装配。artisan.py 须能 `python artisan.py` 直接执行
-    （deploy.sh 依赖），main.py 供 `uvicorn main:app` 字符串导入
+  - artisan.py：入口纯装配，须能 `python artisan.py` 直接执行（deploy.sh 依赖）
   - alembic/**：迁移脚本按文件路径动态加载（不走包导入），且 migrate init 会在
     容器内覆写 env.py；迁移脚本=表结构，敏感度低
   - plugins/_example/**：插件开发模板，保持可读（发现逻辑按 `_` 前缀天然跳过）
@@ -51,10 +50,13 @@ EXCLUDE_DIRS = {
     ROOT / "alembic",
     ROOT / "plugins" / "_example",
 }
+# 包目录之外的单文件：main.py 纳入编译（uvicorn main:app 字符串导入对 .so 同样生效；
+# 镜像内不保留可读装配源码），artisan.py 除外（deploy.sh 按脚本直接执行）
+EXTRA_FILES = (ROOT / "main.py",)
 
 
 def collect_targets() -> list[Path]:
-    targets = []
+    targets = [p for p in EXTRA_FILES if p.is_file()]
     for top in TOP_DIRS:
         base = ROOT / top
         if not base.is_dir():
@@ -123,6 +125,7 @@ def main() -> None:
         for p in (ROOT / top).rglob("*.py")
         if "_example" not in p.parts
     ]
+    leftover += [str(p) for p in EXTRA_FILES if p.is_file()]
     if leftover:
         sys.exit(f"残留 .py：{leftover}")
     print(f"OK：{len(sources)} 个模块已编译为扩展并删除源码")
