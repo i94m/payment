@@ -88,7 +88,7 @@ Docker 全链路：`docker compose -f docker-compose.production.yml up -d`（镜
 
 ```
 app/
-  models.py                 # 9 类核心表 + RBAC 框架表（MySQL8 规范设计，全 Decimal/Numeric(12,2)）
+  models.py                 # 9 类核心表 + RBAC 框架表（MySQL 8 优先、兼容 5.7，全 Decimal/Numeric(12,2)）
   core/                     # config(.env) / database(异步引擎+连接池) / security(JWT+RBAC) / cache(Redis 锁)
   services/
     order.py                # 建单幂等 / 拉起支付 / process_paid_order 幂等记账漏斗
@@ -132,9 +132,9 @@ docs/
   appendix/                 # 支付方式列表 / 补单机制
 ```
 
-## 数据库设计规范（MySQL 8）
+## 数据库设计规范（MySQL 8，兼容 5.7）
 
-- 引擎/字符集：InnoDB + utf8mb4（utf8mb4_0900_ai_ci），建表由 ORM 统一声明
+- 引擎/字符集：InnoDB + utf8mb4（utf8mb4_unicode_ci，兼容 MySQL 5.7；0900 排序规则为 8.0 专属，勿用），建表由 ORM 统一声明
 - **代理主键**：全部 BIGINT AUTO_INCREMENT 顺序主键（对聚簇索引友好，避免随机字符串主键导致页分裂）；
   业务键 trade_no/refund_no/settle_no 及 (out_trade_no, merchant_id) 幂等键用唯一索引承载
 - 金额一律 `DECIMAL(12,2)`，应用层全链路 Decimal，禁止 float

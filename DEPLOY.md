@@ -6,7 +6,7 @@
 |---|---|---|
 | app × N | 容器（`--scale app=N`，端口 `127.0.0.1:8000-8002`） | `docker-compose.production.yml` |
 | worker | 容器（SAQ：通知重试/补单/过期关单，可 `--scale worker=N`） | 同上 |
-| MySQL 8.0 | **宿主机系统服务（非容器）**；容器化仅为备选 | 本文·一 |
+| MySQL 8.0（兼容 5.7） | **宿主机系统服务（非容器）**；容器化仅为备选 | 本文·一 |
 | Redis | **宿主机系统服务（非容器）**（队列/限流/锁/扣量计数） | 本文·一之 3 |
 | nginx | **宿主机**（非容器），轮询上游 8000-8002 | `nginx-example.conf` |
 
@@ -37,6 +37,10 @@ GitHub Actions 自动构建发布；本机 `scripts/build-image.sh` 产出 `pay-
 
 ## 一、MySQL 高并发配置
 
+> **优先 MySQL 8.0，兼容 5.7**：建表/迁移/种子在 5.7.44 实测通过，代码无 CTE/窗口函数等
+> 8.0 专属特性，排序规则统一 `utf8mb4_unicode_ci`（`utf8mb4_0900_ai_ci` 为 8.0 专属，
+> 配置勿用）。5.7 已过官方 EOL（2023-10），条件允许优先 8.0。
+
 ### 1. 连接数预算（先算这个，扩容前必看）
 
 每个进程（app 的每个 uvicorn worker、每个 SAQ worker）各持有一个连接池：
@@ -53,7 +57,7 @@ GitHub Actions 自动构建发布；本机 `scripts/build-image.sh` 产出 `pay-
 - **调大 MySQL**：`max_connections = 800`（每连接内存开销 ~256KB-1MB，8G 机器可承受）
 - **收敛应用侧**：`.env` 改 `DB_POOL_SIZE=10`、`DB_MAX_OVERFLOW=10` → 7 进程 × 20 = 140
 
-### 2. my.cnf 示例（MySQL 8.0，4C8G 起步）
+### 2. my.cnf 示例（MySQL 8.0，兼容 5.7；4C8G 起步）
 
 ```ini
 [mysqld]
@@ -68,7 +72,7 @@ max_allowed_packet     = 64M
 innodb_buffer_pool_size = 4G
 
 # ---- 写入吞吐（支付库的事务 fsync 是物理天花板）----
-# redo 容量加大，减少检查点刷盘抖动（8.0.30+ 用该参数；旧版用 innodb_log_file_size = 512M）
+# redo 容量加大，减少检查点刷盘抖动（8.0.30+ 用该参数；5.7 改用 innodb_log_file_size = 512M）
 innodb_redo_log_capacity = 1G
 # 1 = 每事务落盘不丢（默认，支付场景保持）；2 = 每秒刷，最多丢 1s 事务，换约 2-5 倍写吞吐
 innodb_flush_log_at_trx_commit = 1
@@ -83,7 +87,7 @@ slow_query_log_file     = /var/log/mysql/slow.log
 
 # ---- 字符集 ----
 character-set-server    = utf8mb4
-collation-server        = utf8mb4_0900_ai_ci
+collation-server        = utf8mb4_unicode_ci   # 与建表排序规则一致（0900 为 8.0 专属，勿用）
 ```
 
 ### 3. 宿主机 MySQL 供容器访问（默认形态）
@@ -129,14 +133,14 @@ requirepass 强密码       # 监听非回环必设；对应 .env 的 REDIS_PASS
 
 ```yaml
   mysql:
-    image: mysql:8.0
+    image: mysql:8.0              # 5.7 亦可（下方参数已兼容）
     container_name: pay-gateway-mysql
     command:
       - --max_connections=800
       - --innodb_buffer_pool_size=4G
-      - --innodb_redo_log_capacity=1G
+      - --innodb_log_file_size=512M
       - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_0900_ai_ci
+      - --collation-server=utf8mb4_unicode_ci
     environment:
       MYSQL_ROOT_PASSWORD: 改成强密码
       MYSQL_DATABASE: pay
