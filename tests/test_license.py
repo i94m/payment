@@ -167,6 +167,36 @@ async def test_empty_baked_key_fails_secure(monkeypatch, capsys):
 
 
 # ============================================================
+# expired（运行时软锁）与请求中间件
+# ============================================================
+
+async def test_expired_flags(monkeypatch):
+    """未加载（源码运行）恒 False；过期布尔排除、边界为过期。"""
+    assert lic.expired() is False
+    monkeypatch.setattr(lic, "current", {"exp": int(time.time()) + 3600})
+    assert lic.expired() is False
+    monkeypatch.setattr(lic, "current", {"exp": int(time.time())})
+    assert lic.expired() is True
+    monkeypatch.setattr(lic, "current", {"exp": int(time.time()) - 1})
+    assert lic.expired() is True
+    monkeypatch.setattr(lic, "current", {"sub": "no-exp"})
+    assert lic.expired() is False
+
+
+async def test_soft_lock_middleware(client, monkeypatch):
+    """过期后业务 API 即刻 503，/health 豁免保持监控可用。"""
+    # 未过期（current 为 None）：放行
+    assert (await client.get("/health")).status_code == 200
+    assert (await client.get("/admin-api/pay/channels")).status_code != 503
+    # 过期：业务路径断流，健康检查照常
+    monkeypatch.setattr(lic, "current", {"exp": int(time.time()) - 1})
+    r = await client.get("/admin-api/pay/channels")
+    assert r.status_code == 503
+    assert "过期" in r.json()["message"]
+    assert (await client.get("/health")).status_code == 200
+
+
+# ============================================================
 # describe
 # ============================================================
 

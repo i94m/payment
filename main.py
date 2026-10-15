@@ -16,7 +16,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.core.config import config
 from app.core.frontend import register_docs, register_frontend
-from app.core.license import describe
+from app.core.license import describe, expired as license_expired
 from app.core.logger import logger, request_id_var
 from app.responses import err
 from app.routers import routers
@@ -104,6 +104,20 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(routers)
+
+
+# ============================================================
+# 授权软锁中间件：逐请求比对已验签授权的过期时间（纯内存比较）。
+# 启动校验（config 导入期）保证加载时有效；此处在有效期过后让 API 即刻
+# 断流返回 503，堵住「有效期内启动、过期后长期不重启」的口子。
+# /health 豁免：容器健康检查保持可用，运维可见「服务在但未授权」。
+# 源码运行（授权未加载）恒放行，本地开发不受影响。
+# ============================================================
+@app.middleware("http")
+async def license_soft_lock_middleware(request: Request, call_next):
+    if request.url.path != "/health" and license_expired():
+        return err(-1, "授权已过期，请联系作者续期后重启服务", http_status=503)
+    return await call_next(request)
 
 
 # ============================================================

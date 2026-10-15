@@ -135,6 +135,16 @@ def enforce(code: str) -> None:
         raise SystemExit(1) from None
 
 
+def expired() -> bool:
+    """运行时软锁判断：已加载的授权是否已过有效期。
+
+    供 main.py 请求中间件逐请求比对（纯内存时间比较，无加密运算）；
+    源码运行（current 未加载）恒为 False，本地开发不受影响。
+    """
+    exp = (current or {}).get("exp")
+    return isinstance(exp, int) and not isinstance(exp, bool) and exp <= time.time()
+
+
 def describe() -> str:
     """已加载授权的可读描述（启动日志展示用；未加载时给出提示语）。"""
     if not current:

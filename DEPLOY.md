@@ -191,7 +191,7 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 | 未内置授权公钥 | 镜像构建遗漏公钥（作者侧构建问题） |
 
 - **续期**：换新码后 `docker compose up -d` 重建（或 `docker compose restart app worker`，`.env` 为 bind 挂载，重启即重读）
-- **限制**：有效期只在启动时校验，长期运行的容器过期后需重启才拦截
+- **运行中拦截**：API 逐请求比对有效期（内存比较，过期即刻 503 断流，回调同步断流；`/health` 保留供监控）；SAQ worker 与容器本身需重启后由启动校验拦截。续期 = 换码 + 重启
 
 ## 三、容量速查（架构口径）
 
