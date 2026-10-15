@@ -20,7 +20,7 @@ RUN uv sync --frozen --no-dev
 RUN uv venv /opt/cybuild \
     && uv pip install --python /opt/cybuild/bin/python "cython==3.3.*" setuptools
 
-# 3) 源码 + 编译脚本 + 前端产物（顺序保持缓存友好）
+# 3) 源码 + 编译脚本（前端/文档产物在编译之后再 COPY：产物变更不触发 Cython 重编）
 COPY scripts/compile_backend.py ./compile_backend.py
 COPY app/ ./app/
 COPY main.py ./artisan.py ./
@@ -28,25 +28,6 @@ COPY plugins/ ./plugins/
 COPY alembic/ ./alembic/
 # alembic.ini 必须随镜像：既有库升级（artisan.py migrate upgrade）在容器内执行
 COPY alembic.ini ./alembic.ini
-
-# 复制前端构建产物（vite 输出到 static/console，由 CI/build-image.sh 现场构建，不入库）
-COPY static/console/ ./static/console/
-# 守护：入口 HTML 缺失（前端构建不完整）直接让镜像构建失败，
-# 避免 SPA 白屏/404 问题被静默打进镜像（曾实测发生过：dist 只剩 admin/agent.html）
-RUN test -f static/console/index.html \
-    && test -f static/console/admin.html \
-    && test -f static/console/agent.html
-# 对接文档 VitePress 产物（resources/docs 内 pnpm build 生成，输出到 static/docs）
-COPY static/docs/ ./static/docs/
-# 宣传首页（/ 由 frontend.py 直接返回该文件，settings landing_enable 关闭时 / 跳商户登录页；
-# 镜像内缺失时会兜底成商户中心 SPA 跳登录）
-COPY static/index.html ./static/index.html
-
-# 复制 .env.example 作为运行时 .env（实际值通过 docker-compose env_file 注入）
-COPY .env.example .env
-
-# 创建 storage 目录结构
-RUN mkdir -p storage/logs storage/public storage/exports storage/private
 
 # 4) Cython 编译 app/ + plugins/ → .so，并删除 .py（脚本内含自检：失败不删源码；
 #    SO_COMPILE=1 是脚本安全守卫 —— 仅容器构建编译，本地开发永远直接跑源码）
@@ -78,6 +59,26 @@ RUN APP_SECRET_KEY=build-smoke STORAGE_LOCAL_SECRET=build-smoke \
 RUN test -z "$(find app plugins -name '*.py' -not -path 'plugins/_example/*')" \
         && test ! -f main.py \
     || { echo '残留 .py 源码，编译不完整'; exit 1; }
+
+# 7) 前端/文档产物（置于编译与冒烟之后：其变更只重做 COPY，层缓存跳过整个编译链）
+# 复制前端构建产物（vite 输出到 static/console，由 CI/build-image.sh 现场构建，不入库）
+COPY static/console/ ./static/console/
+# 守护：入口 HTML 缺失（前端构建不完整）直接让镜像构建失败，
+# 避免 SPA 白屏/404 问题被静默打进镜像（曾实测发生过：dist 只剩 admin/agent.html）
+RUN test -f static/console/index.html \
+    && test -f static/console/admin.html \
+    && test -f static/console/agent.html
+# 对接文档 VitePress 产物（resources/docs 内 pnpm build 生成，输出到 static/docs）
+COPY static/docs/ ./static/docs/
+# 宣传首页（/ 由 frontend.py 直接返回该文件，settings landing_enable 关闭时 / 跳商户登录页；
+# 镜像内缺失时会兜底成商户中心 SPA 跳登录）
+COPY static/index.html ./static/index.html
+
+# 复制 .env.example 作为运行时 .env（实际值通过 docker-compose env_file 注入）
+COPY .env.example .env
+
+# 创建 storage 目录结构
+RUN mkdir -p storage/logs storage/public storage/exports storage/private
 
 # ---------- Stage 2: runtime —— 只含编译产物，无业务源码 ----------
 FROM python:3.12-slim AS runtime

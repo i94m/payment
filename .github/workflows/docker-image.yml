@@ -49,20 +49,44 @@ jobs:
             resources/console/pnpm-lock.yaml
             resources/docs/pnpm-lock.yaml
 
-      - name: 构建前端 (resources/console → static/console)
-        run: |
-          cd resources/console
-          pnpm install --frozen-lockfile
-          pnpm build
-          test -f ../../static/console/index.html
-          test -f ../../static/console/admin.html
+      # 产物（static/console、static/docs）按源码哈希缓存：只改后端的 push 直接恢复
+      # 产物、跳过 pnpm 构建；未命中时两个构建后台并行（各自捕获失败，wait 后汇总退出码）
+      - uses: actions/cache@v4
+        id: console-cache
+        with:
+          path: static/console
+          key: console-${{ hashFiles('resources/console/**') }}
 
-      - name: 构建对接文档 (resources/docs → static/docs)
+      - uses: actions/cache@v4
+        id: docs-cache
+        with:
+          path: static/docs
+          key: docs-${{ hashFiles('resources/docs/**') }}
+
+      - name: 构建前端与文档（缓存未命中时并行）
         run: |
-          cd resources/docs
-          pnpm install --frozen-lockfile
-          pnpm build
-          test -f ../../static/docs/guide/protocol.html
+          pids=()
+          if [ "${{ steps.console-cache.outputs.cache-hit }}" != "true" ]; then
+            (cd resources/console && pnpm install --frozen-lockfile && pnpm build) &
+            pids+=($!)
+          fi
+          if [ "${{ steps.docs-cache.outputs.cache-hit }}" != "true" ]; then
+            (cd resources/docs && pnpm install --frozen-lockfile && pnpm build) &
+            pids+=($!)
+          fi
+          # 裸 wait 不回传后台失败码（且 "|| fail=1 &" 的赋值发生在子 shell）：逐 PID wait 汇总
+          fail=0
+          for pid in "${pids[@]}"; do
+            wait "$pid" || fail=1
+          done
+          exit $fail
+
+      - name: 前端/文档产物完整性守护
+        run: |
+          test -f static/console/index.html
+          test -f static/console/admin.html
+          test -f static/console/agent.html
+          test -f static/docs/guide/protocol.html
 
       # ---- Docker 构建 & 推送 ghcr.io（仅 amd64）----
       # 生产服务器为 x86；arm64 需 QEMU 模拟构建（慢 5-20 倍，Cython 编译是大头），
@@ -96,6 +120,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # attestation manifest 对此镜像无用途，关闭以减少 push 体积与时间
+          provenance: false
 
       - name: 输出镜像地址
         run: |
