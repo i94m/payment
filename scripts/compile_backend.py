@@ -80,7 +80,10 @@ def main() -> None:
         sys.exit("没有找到可编译的 .py 文件")
 
     exts = cythonize(
-        [Extension(module_name(p), [str(p)]) for p in sources],
+        # -Wno-unused-function：Cython 注入的 __Pyx_* 工具函数按模块特性条件引用，
+        # 未用到的报 unused 告警，属标准噪音（官方推荐做法）；其余告警保持可见
+        [Extension(module_name(p), [str(p)], extra_compile_args=["-Wno-unused-function"])
+         for p in sources],
         compiler_directives={
             "language_level": "3",
             "annotation_typing": False,
