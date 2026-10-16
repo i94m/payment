@@ -29,6 +29,11 @@ COPY alembic/ ./alembic/
 # alembic.ini 必须随镜像：既有库升级（artisan.py migrate upgrade）在容器内执行
 COPY alembic.ini ./alembic.ini
 
+# .env.example 烤作运行时 .env（实际值经 docker-compose env_file 注入覆盖）；
+# 同时供下方冒烟导入 Config：DB_HOST/DB_DATABASE/DB_USERNAME 为必填字段，
+# 缺 .env 时 pydantic 直接 ValidationError（两个密钥由冒烟环境变量注入）
+COPY .env.example .env
+
 # 4) Cython 编译 app/ + plugins/ → .so，并删除 .py（脚本内含自检：失败不删源码；
 #    SO_COMPILE=1 是脚本安全守卫 —— 仅容器构建编译，本地开发永远直接跑源码）
 RUN SO_COMPILE=1 /opt/cybuild/bin/python compile_backend.py
@@ -73,9 +78,6 @@ COPY static/docs/ ./static/docs/
 # 宣传首页（/ 由 frontend.py 直接返回该文件，settings landing_enable 关闭时 / 跳商户登录页；
 # 镜像内缺失时会兜底成商户中心 SPA 跳登录）
 COPY static/index.html ./static/index.html
-
-# 复制 .env.example 作为运行时 .env（实际值通过 docker-compose env_file 注入）
-COPY .env.example .env
 
 # 创建 storage 目录结构
 RUN mkdir -p storage/logs storage/public storage/exports storage/private
