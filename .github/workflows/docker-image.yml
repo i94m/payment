@@ -88,6 +88,17 @@ jobs:
           test -f static/console/agent.html
           test -f static/docs/guide/protocol.html
 
+      # ---- ccache：跨 run 复用 Cython 目标码（经 context 拷入 builder，见 Dockerfile）----
+      # 失败/取消的 run 不保存（actions/cache post 默认 success() 才执行）；首次冷启全量编译
+      - uses: actions/cache@v4
+        id: ccache-cache
+        with:
+          path: .ci-ccache
+          key: ccache-${{ github.sha }}
+          restore-keys: ccache-
+      # 冷启时目录不存在，builder 的 context COPY 需要它存在
+      - run: mkdir -p .ci-ccache
+
       # ---- Docker 构建 & 推送 ghcr.io（仅 amd64）----
       # 生产服务器为 x86；arm64 需 QEMU 模拟构建（慢 5-20 倍，Cython 编译是大头），
       # 已砍掉。Apple Silicon 本地测试由 Docker Desktop 的 Rosetta 模拟运行 amd64
@@ -122,6 +133,15 @@ jobs:
           cache-to: type=gha,mode=max
           # attestation manifest 对此镜像无用途，关闭以减少 push 体积与时间
           provenance: false
+
+      # 从 builder 提取更新后的 ccache 回写 workspace（ccache-export 阶段只含缓存
+      # 目录本身）；builder 各层全部命中本机 buildkit 缓存，仅导出耗时。actions/cache
+      # 的 post 步骤负责保存。cp 覆盖旧内容即可，ccache 自带容量淘汰
+      - name: 导出 ccache 供下次构建复用
+        run: |
+          docker buildx build --target ccache-export --output type=local,dest=/tmp/ccache-out .
+          mkdir -p .ci-ccache
+          cp -a /tmp/ccache-out/ccache/. .ci-ccache/
 
       - name: 输出镜像地址
         run: |

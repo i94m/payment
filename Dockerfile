@@ -4,7 +4,7 @@
 # C/Rust 扩展）全部走 wheel 安装无需重编；python:slim 自带 CPython 头文件。
 FROM python:3.12-slim AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential ccache \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -33,6 +33,15 @@ COPY alembic.ini ./alembic.ini
 # 同时供下方冒烟导入 Config：DB_HOST/DB_DATABASE/DB_USERNAME 为必填字段，
 # 缺 .env 时 pydantic 直接 ValidationError（两个密钥由冒烟环境变量注入）
 COPY .env.example .env
+
+# ccache：CI 把上次的编译目标码经 context 拷入（.ci-ccache → /opt/ccache）跨 run
+# 复用 —— Cython 每次生成内容相同的 C 文件，ccache 按内容哈希命中，未变更模块的
+# gcc 阶段从 ~200s 降到秒级。目录内容仅在发生过后端编译时变化：纯前端/文档 push
+# 该层字节不变，编译层缓存照常命中（层序解耦不受影响）。本地构建走
+# scripts/build-image.sh（会创建空目录；直接 docker build 缺目录会报 COPY 错）。
+ENV CCACHE_DIR=/opt/ccache CCACHE_MAXSIZE=512M
+ENV CC="ccache gcc"
+COPY .ci-ccache/ /opt/ccache/
 
 # 4) Cython 编译 app/ + plugins/ → .so，并删除 .py（脚本内含自检：失败不删源码；
 #    SO_COMPILE=1 是脚本安全守卫 —— 仅容器构建编译，本地开发永远直接跑源码）
@@ -112,3 +121,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # WEB_WORKERS 经 compose env_file / docker run -e 导出为容器环境变量；未配置默认 2
 CMD ["/bin/sh", "-c", "mkdir -p storage/logs storage/public storage/exports storage/private && uvicorn main:app --host 0.0.0.0 --port 8000 --workers \"${WEB_WORKERS:-2}\" --access-log"]
+
+# ---------- ccache 导出阶段：CI 构建后提取更新后的编译缓存（仅 --target 用，不进镜像） ----------
+FROM scratch AS ccache-export
+COPY --from=builder /opt/ccache/ /ccache/

@@ -188,3 +188,6 @@ dist/
 
 # 授权签发私钥（仅作者本机，绝不入库/进镜像）
 license_private.pem
+
+# CI ccache 目录（构建上下文中转，不入库；内容仅编译目标码）
+.ci-ccache/

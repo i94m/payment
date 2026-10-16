@@ -36,6 +36,7 @@ if os.environ.get("SO_COMPILE") != "1":
 
 import importlib.machinery  # noqa: E402
 import shutil  # noqa: E402
+import subprocess  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 from Cython.Build import cythonize  # noqa: E402
@@ -135,6 +136,9 @@ def main() -> None:
     if leftover:
         sys.exit(f"残留 .py：{leftover}")
     print(f"OK：{len(sources)} 个模块已编译为扩展并删除源码")
+    # ccache 命中统计（CI 观测缓存效果；本地无 ccache 时静默跳过）
+    if shutil.which("ccache"):
+        subprocess.run(["ccache", "-s"], check=False)
 
 
 if __name__ == "__main__":

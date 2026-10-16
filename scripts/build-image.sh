@@ -64,6 +64,8 @@ IMAGE=pay-gateway
 
 # ---- 3. 构建镜像（Dockerfile 内有入口完整性守护，缺产物直接失败） ----
 log "构建镜像 ${IMAGE}:${TAG} ..."
+# ccache 目录：Dockerfile builder 的 COPY 需要（CI 由 actions/cache 恢复；本地为空目录，仅保构建不报错）
+mkdir -p .ci-ccache
 docker build -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" .
 
 # ---- 4. 推送 ----
