@@ -612,4 +612,5 @@ async def merchant_sso(merchant_id: int, session: SessionDep, cache: CacheDep):
         await cache.set(f"sso:merchant:{token}", str(m.id), ex=60)
     except Exception:
         return err(-1, "缓存服务不可用，无法生成登录凭证")
-    return suc({"url": f"/#/sso-login?token={token}"})
+    # 商户中心挂在 /merchant/（站点根 / 是宣传首页，落到根拿不到商户端 SPA）
+    return suc({"url": f"/merchant/#/sso-login?token={token}"})

@@ -58,7 +58,9 @@ async def test_sso_does_not_revoke_existing_merchant_sessions(client, seeded, se
         body = resp.json()
         assert body["code"] == 0, body
 
-        # 落地地址是 /#/sso-login?token=...（商户中心挂在 / 下），参数在 hash fragment 中。
+        # 落地地址是 /merchant/#/sso-login?token=...（商户中心挂在 /merchant/，
+        # 站点根 / 是宣传首页），参数在 hash fragment 中。
+        assert body["data"]["url"].startswith("/merchant/#/sso-login?token="), body["data"]["url"]
         fragment_query = urlparse(body["data"]["url"]).fragment.split("?", 1)[1]
         sso_token = parse_qs(fragment_query)["token"][0]
         sso_resp = await client.post("/merchant-api/auth/sso", json={"token": sso_token})
