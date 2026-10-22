@@ -150,13 +150,17 @@ class Config(BaseSettings):
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if not value:
             raise ValueError(
-                f"{var_name} 未配置，请先运行: uv run python artisan.py key generate"
+                f"{var_name} 未配置：不会自动生成，请显式填入 .env"
+                "（openssl rand -hex 32 生成，或 uv run python artisan.py key generate）"
             )
 
     @model_validator(mode="after")
     def _enforce_non_default_secrets(self) -> Self:
         self._check_default_secret("APP_SECRET_KEY", self.APP_SECRET_KEY)
-        self._check_default_secret("STORAGE_LOCAL_SECRET", self.STORAGE_LOCAL_SECRET)
+        # STORAGE_LOCAL_SECRET 可不配：回退到 APP_SECRET_KEY。它只用于本地存储
+        # 上传策略的 HMAC 签发/验签，签与验同在本服务内，回退不影响互操作。
+        if not self.STORAGE_LOCAL_SECRET:
+            self.STORAGE_LOCAL_SECRET = self.APP_SECRET_KEY
         # self._check_default_secret("DB_PASSWORD", self.DB_PASSWORD)
 
         return self

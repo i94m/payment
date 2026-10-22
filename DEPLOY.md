@@ -26,7 +26,9 @@ scripts/build-image.sh --registry registry.example.com/myns --push
 git pull && PAY_IMAGE=registry.example.com/myns/pay-gateway:<tag> ./scripts/deploy.sh
 ```
 
-一条命令完成：`.env` 缺失时自动生成并写入密钥（首次会提示填好 DB/Redis 再跑一次）→
+一条命令完成：`.env` 缺失时从 `.env.example` 复制并列出必填项后退出（密钥
+**不自动生成**，`APP_SECRET_KEY` 缺配直接报错；`STORAGE_LOCAL_SECRET` 可选，
+留空默认取 `APP_SECRET_KEY`）→
 拉镜像 → `up -d`（app×2 + worker）→ 等全部 healthy → 空库自动建表初始化 /
 已有库自动 alembic 增量迁移。可重复执行（升级=换镜像标签再跑一次）；
 `--scale N` 调 app 实例数，`--no-pull` 跳过拉取。
