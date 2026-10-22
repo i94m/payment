@@ -91,6 +91,14 @@ COPY static/index.html ./static/index.html
 # 创建 storage 目录结构
 RUN mkdir -p storage/logs storage/public storage/exports storage/private
 
+# ---------- ccache 导出阶段：CI 构建后提取更新后的编译缓存（仅 --target 用，不进镜像） ----------
+# ⚠️ 必须放在 runtime 之前：不带 --target 的 docker build / build-push-action 默认构建
+# Dockerfile 的【最后一个阶段】。此阶段若居末位，发布出去的就是这个 scratch 缓存包
+# 而非应用镜像（2026-10-16 起连续多版 latest 被发布成 49MB 纯 ccache 镜像即此因）。
+# runtime 因此必须保持为最后一个阶段。
+FROM scratch AS ccache-export
+COPY --from=builder /opt/ccache/ /ccache/
+
 # ---------- Stage 2: runtime —— 只含编译产物，无业务源码 ----------
 FROM python:3.12-slim AS runtime
 
@@ -121,7 +129,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # WEB_WORKERS 经 compose env_file / docker run -e 导出为容器环境变量；未配置默认 2
 CMD ["/bin/sh", "-c", "mkdir -p storage/logs storage/public storage/exports storage/private && uvicorn main:app --host 0.0.0.0 --port 8000 --workers \"${WEB_WORKERS:-2}\" --access-log"]
-
-# ---------- ccache 导出阶段：CI 构建后提取更新后的编译缓存（仅 --target 用，不进镜像） ----------
-FROM scratch AS ccache-export
-COPY --from=builder /opt/ccache/ /ccache/
