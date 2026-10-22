@@ -111,8 +111,11 @@ ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/app/ ./app/
 COPY --from=builder /app/plugins/ ./plugins/
-# main.py 已随 app/ 编译为 .so（uvicorn main:app 字符串导入照常解析）；
-# 入口仅保留 artisan.py（deploy.sh 以脚本方式直接执行，无法用 .so）
+# main.py 的编译产物 main.*.so 落在 /app 根目录（不在 app/ 内，不会随上面 app/ 的
+# 拷贝带进来），必须单独拷入 —— uvicorn main:app 字符串导入的就是它；
+# 曾漏拷导致容器启动即 "Could not import module main"、子进程反复重启
+COPY --from=builder /app/main.*.so ./
+# 入口仅保留 artisan.py 源码（deploy.sh 以脚本方式直接执行，无法用 .so）
 COPY --from=builder /app/artisan.py ./
 COPY --from=builder /app/alembic/ ./alembic/
 COPY --from=builder /app/alembic.ini ./alembic.ini
@@ -121,6 +124,15 @@ COPY --from=builder /app/.env ./.env
 
 # 创建 storage 目录结构
 RUN mkdir -p storage/logs storage/public storage/exports storage/private
+
+# runtime 阶段复检冒烟：builder 的冒烟只证明编译产物在 builder 里可导入，
+# 最终镜像必须自证可启动（曾发生 main.*.so 漏拷进 runtime：builder 冒烟全绿、
+# 容器一启动就 Could not import main）。桩模块同 builder 冒烟，只在本 RUN 进程内
+RUN APP_SECRET_KEY=runtime-smoke STORAGE_LOCAL_SECRET=runtime-smoke \
+    python -c "import sys, types; _stub = types.ModuleType('app.core.license'); \
+    _stub.enforce = lambda code: None; _stub.current = None; _stub.describe = lambda: 'runtime-smoke'; \
+    _stub.expired = lambda: False; sys.modules['app.core.license'] = _stub; \
+    import main; print('runtime smoke ok:', len(main.app.routes), 'routes')"
 
 EXPOSE 8000
 
