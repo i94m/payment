@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client"
 import "@/index.css"
 import App from "@/App.tsx"
 import { routes } from "./routes"
-import { getMerchantMenu, filterMerchantMenu } from "./sidebar"
+import { getMerchantMenu, filterMenu } from "./sidebar"
 import { useSiteStore } from "@/stores/site-store"
 
 createRoot(document.getElementById("root")!).render(
@@ -12,7 +12,7 @@ createRoot(document.getElementById("root")!).render(
         fetchSite 落新对象后 getMenu 重新求值拿到新菜单 */}
     <App
       routes={routes}
-      getMenu={() => filterMerchantMenu(getMerchantMenu(), useSiteStore.getState().features)}
+      getMenu={() => filterMenu(getMerchantMenu(), useSiteStore.getState().features)}
     />
   </StrictMode>,
 )

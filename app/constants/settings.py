@@ -114,6 +114,8 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
                     "开放API下单限流（次/分钟/来源IP，0=不限）"),
         # ---- 商户端菜单显隐 ----
         SettingSpec("agent_enable", SettingType.BOOL, True, SettingGroup.SITE, "下级代理开关（商户端「下级代理」菜单整组）"),
+        SettingSpec("announce_enable", SettingType.BOOL, True, SettingGroup.SITE, "商户公告开关",
+                    description="关闭后商户端用户中心不展示公告，管理端也不提供发布入口；仅可在数据库/接口修改"),
         SettingSpec("site_qq_group", SettingType.STRING, "", SettingGroup.SITE, "产品QQ群链接（商户端菜单外链，留空隐藏）"),
         SettingSpec("site_app_url", SettingType.STRING, "", SettingGroup.SITE, "APP下载链接（商户端菜单外链，留空隐藏）"),
     ]
@@ -133,7 +135,7 @@ ADMIN_SETTING_KEYS: set[str] = (
 # /site-info 公开下发的功能开关白名单（商户端菜单显隐、注册入口显隐）。
 # 仅布尔入口开关 + 两条外链字符串，敏感配置绝不入列。
 PUBLIC_FEATURE_KEYS: list[str] = [
-    "agent_enable",
+    "agent_enable", "announce_enable",
     "recharge_enable", "paypage_enable", "api_pay_enable", "merchant_reg_open",
     "site_qq_group", "site_app_url",
 ]

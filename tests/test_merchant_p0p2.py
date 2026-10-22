@@ -379,6 +379,54 @@ async def test_announcements_admin_crud_and_dashboard(client, seeded, session):
     assert r4.json()["code"] == 0
 
 
+@pytest.mark.asyncio
+async def test_announce_enable_switch(client, seeded, session):
+    """announce_enable 开关（默认开启，仅库内可改）：关闭后商户端不展示、后台无发布入口/接口拒绝。"""
+    from app.services.settings import set_settings
+
+    adm = await _admin_headers(session)
+    mch = await _mch_headers(session)
+
+    # 默认开启：/site-info 下发 true，发布与展示都正常
+    features = (await client.get("/admin-api/site-info")).json()["data"]["features"]
+    assert features["announce_enable"] is True
+    r = await client.post("/admin-api/announce", headers=adm, json={"content": "开关测试", "status": 1})
+    assert r.json()["code"] == 0, r.json()
+
+    # 不在后台「站点配置」页展示（需求：库内修改，不需要总后台配置）
+    keys = {i["key"] for i in (await client.get("/admin-api/setting", headers=adm)).json()["data"]["items"]}
+    assert "announce_enable" not in keys
+
+    # 库里关闭
+    await set_settings(session, {"announce_enable": False})
+
+    features = (await client.get("/admin-api/site-info")).json()["data"]["features"]
+    assert features["announce_enable"] is False
+
+    # 商户端概览不再返回公告
+    data = (await client.get("/merchant-api/dashboard", headers=mch)).json()["data"]
+    assert data["announcements"] == []
+
+    # 管理端发布/列表接口统一拒绝（前端入口同时隐藏）
+    for method, path, body in [
+        ("post", "/admin-api/announce", {"content": "不应创建", "status": 1}),
+        ("post", "/admin-api/announce/list", {}),
+        ("put", "/admin-api/announce/1", {"content": "不应更新", "status": 1}),
+        ("delete", "/admin-api/announce/1", None),
+    ]:
+        resp = await getattr(client, method)(path, headers=adm, **(dict(json=body) if body is not None else {}))
+        assert resp.status_code == 403, (method, path, resp.text)
+        assert resp.json()["code"] == -1
+
+    # 原有公告数据保留（仅隐藏，不删除）
+    assert (await session.exec(select(Announcement))).first() is not None
+
+    # 重新开启后恢复
+    await set_settings(session, {"announce_enable": True})
+    r = await client.post("/admin-api/announce/list", headers=adm, json={})
+    assert r.json()["code"] == 0
+
+
 # ============================================================
 # 域名白名单
 # ============================================================

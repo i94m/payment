@@ -41,7 +41,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const sections = getMenu().map((section) => ({
     ...section,
-    items: section.items.filter((item) => hasPermission(item.permission)),
+    // hidden 为静态隐藏（功能开关关闭），权限过滤之外再剔除一次
+    items: section.items.filter((item) => !item.hidden && hasPermission(item.permission)),
   }))
 
   return (

@@ -5,6 +5,7 @@ import apiClient from "@/lib/api-client"
 // fetch 前用 DEFAULT_SITE_FEATURES（全量渲染），避免菜单闪空。
 export interface SiteFeatures {
   agent_enable: boolean
+  announce_enable: boolean
   recharge_enable: boolean
   paypage_enable: boolean
   api_pay_enable: boolean
@@ -15,6 +16,7 @@ export interface SiteFeatures {
 
 export const DEFAULT_SITE_FEATURES: SiteFeatures = {
   agent_enable: true,
+  announce_enable: true,
   recharge_enable: true,
   paypage_enable: true,
   api_pay_enable: true,
@@ -26,6 +28,8 @@ export const DEFAULT_SITE_FEATURES: SiteFeatures = {
 interface SiteState {
   siteName: string
   features: SiteFeatures
+  /** /site-info 是否已拉取（含失败）：路由级开关判定前先等它，避免默认值闪现已关闭的功能 */
+  loaded: boolean
   fetchSite: () => Promise<void>
 }
 
@@ -35,6 +39,7 @@ interface SiteState {
 export const useSiteStore = create<SiteState>((set) => ({
   siteName: "",
   features: DEFAULT_SITE_FEATURES,
+  loaded: false,
   fetchSite: async () => {
     try {
       const res = await apiClient.get("/site-info") as {
@@ -45,9 +50,11 @@ export const useSiteStore = create<SiteState>((set) => ({
       set({
         siteName: (res.site_name || "").trim(),
         features: { ...DEFAULT_SITE_FEATURES, ...(res.features ?? {}) },
+        loaded: true,
       })
     } catch {
       // 静默失败：展示层用默认名兜底，菜单按默认全量渲染
+      set({ loaded: true })
     }
   },
 }))
