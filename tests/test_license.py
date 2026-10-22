@@ -33,9 +33,10 @@ def _seg(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def make_code(payload: dict | None = None, *, key=_priv, prefix: str = "PAY1",
+def make_code(payload: dict | None = None, *, key=_priv, prefix: str = "",
               tamper: bool = False) -> str:
-    """按正式格式构造授权码；tamper 篡改载荷首字符（保持可解码、破坏签名）。"""
+    """按正式格式构造授权码（默认裸码两段；prefix="PAY1" 构造旧版三段码）；
+    tamper 篡改载荷首字符（保持可解码、破坏签名）。"""
     if payload is None:
         payload = {"exp": int(time.time()) + 3600, "iat": int(time.time()), "sub": "测试客户"}
     payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
@@ -44,7 +45,8 @@ def make_code(payload: dict | None = None, *, key=_priv, prefix: str = "PAY1",
     if tamper:
         # 先签后改：模拟内容被篡改（保持可解码、破坏签名匹配）
         seg = ("B" if seg[0] != "B" else "C") + seg[1:]
-    return f"{prefix}.{seg}.{_seg(sig)}"
+    body = f"{seg}.{_seg(sig)}"
+    return f"{prefix}.{body}" if prefix else body
 
 
 # ============================================================
@@ -57,6 +59,11 @@ async def test_verify_valid_code():
     assert lic.current == payload
 
 
+async def test_verify_legacy_prefix_still_accepted():
+    """旧版 PAY1. 三段码（历史已签发的）继续可验。"""
+    assert lic.verify(make_code(prefix=lic.CODE_PREFIX))["sub"] == "测试客户"
+
+
 async def test_verify_ignores_unknown_keys():
     """未知扩展键忽略（前向兼容）。"""
     payload = make_code({"exp": int(time.time()) + 60, "sub": "x", "edition": "pro"})
@@ -66,9 +73,11 @@ async def test_verify_ignores_unknown_keys():
 @pytest.mark.parametrize("code", [
     "",                       # 空
     "garbage",                # 无分隔
+    "a.b.c",                  # 裸码段数过多
+    "a",                      # 裸码段数不够
     "PAY2.a.b",               # 前缀不对
-    "PAY1.a",                 # 段数不够
-    "PAY1.a.b.c",             # 段数过多
+    "PAY1.a",                 # 旧版码段数不够
+    "PAY1.a.b.c",             # 旧版码段数过多
     "PAY1.!!!.!!!",           # 非 base64url
 ])
 async def test_verify_bad_format(code):
@@ -164,6 +173,17 @@ async def test_empty_baked_key_fails_secure(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         lic.enforce(make_code())
     assert "公钥" in capsys.readouterr().err
+
+
+# ============================================================
+# 内置公钥（唯一来源，编译进 .so）：异常一律 fail-secure
+# ============================================================
+
+async def test_baked_invalid_error_mentions_builtin(monkeypatch):
+    """内置公钥非法：报错指明内置一路，fail-secure。"""
+    monkeypatch.setattr(lic, "PUBLIC_KEY_B64", "not-base64!!")
+    with pytest.raises(lic.LicenseKeyError, match="PUBLIC_KEY_B64"):
+        lic.verify(make_code())
 
 
 # ============================================================

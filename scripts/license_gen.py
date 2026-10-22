@@ -3,7 +3,8 @@
 私钥 license_private.pem 只存作者本机（已 gitignore），绝不入库/进镜像/外发。
 签发流程：
   1. uv run python scripts/license_gen.py keygen        # 首次：生成密钥对
-  2. 把打印出的公钥粘贴进 app/core/license.py 的 PUBLIC_KEY_B64（需重建镜像生效）
+  2. 把打印出的公钥粘贴进 app/core/license.py 的 PUBLIC_KEY_B64（唯一公钥来源，
+     随 Cython 编译进镜像 .so；换钥需重建镜像并让各部署重新拉取）
   3. uv run python scripts/license_gen.py issue --until 2027-12-31 --note 客户A
   4. 把打印出的一行授权码交给对方，填入其 .env 的 AUTH_CODE
 
@@ -20,7 +21,6 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 KEY_PATH = Path(__file__).resolve().parent.parent / "license_private.pem"
-CODE_PREFIX = "PAY1"
 
 app = typer.Typer(help="授权码签发（作者专用）", no_args_is_help=True)
 
@@ -73,7 +73,8 @@ def pubkey():
 
 def _print_pubkey(key: Ed25519PrivateKey) -> None:
     pub = _pubkey_b64(key)
-    typer.secho("\n公钥（粘贴到 app/core/license.py 的 PUBLIC_KEY_B64，重建镜像后生效）：\n",
+    typer.secho("\n公钥（唯一用法）：粘贴到 app/core/license.py 的 PUBLIC_KEY_B64，\n"
+                "随 Cython 编译进镜像 .so（换钥需重建镜像并让各部署重新拉取）\n",
                 fg="cyan")
     typer.echo(pub)
     typer.secho('\nPUBLIC_KEY_B64: str = "%s"' % pub, dim=True)
@@ -103,7 +104,8 @@ def issue(
     payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     payload_seg = _seg(payload_json)
     sig = _load_private_key().sign(payload_seg.encode("ascii"))
-    code = f"{CODE_PREFIX}.{payload_seg}.{_seg(sig)}"
+    # 裸码两段（载荷.签名），无前缀；旧版 PAY1. 前缀码校验侧仍兼容
+    code = f"{payload_seg}.{_seg(sig)}"
 
     typer.secho("\n授权码（填入 .env 的 AUTH_CODE=）：\n", fg="cyan")
     typer.echo(code)

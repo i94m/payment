@@ -6,7 +6,7 @@
 #   PAY_IMAGE=registry.example.com/myns/pay-gateway:<tag> ./scripts/deploy.sh
 #
 # 做的事（可重复执行，幂等）：
-#   1. .env 缺失时自动从 .env.example 生成并在本机写入密钥（提示先填 DB/Redis 再跑一次）
+#   1. .env 缺失时从 .env.example 复制并退出，列出必填项（密钥不自动生成，缺配直接报错）
 #   2. PAY_IMAGE 带仓库前缀时 docker compose pull 拉镜像
 #   3. docker compose up -d（app×2 + worker）
 #   4. 等待全部容器 healthy
@@ -40,17 +40,25 @@ dc() { docker compose -f "$COMPOSE_FILE" "$@"; }
 
 # ---- 1. .env ----
 if [ ! -f .env ]; then
-  log "未发现 .env：从 .env.example 初始化，并本机生成密钥 ..."
+  log "未发现 .env：已从 .env.example 复制，请填写以下必填项后重新运行本脚本 ..."
   cp .env.example .env
-  secret=$(openssl rand -hex 32)
-  storage=$(openssl rand -hex 32)
-  # 生产兜底：即使 .env.example 被改回 local，部署引导也强制 prod（local 会启用万能验证码 0000）
-  sed -i.bak "s#^APP_SECRET_KEY=.*#APP_SECRET_KEY=${secret}#; s#^STORAGE_LOCAL_SECRET=.*#STORAGE_LOCAL_SECRET=${storage}#; s#^APP_ENV=.*#APP_ENV=prod#; s#^APP_DEBUG=.*#APP_DEBUG=false#" .env && rm -f .env.bak
-  log "已生成 .env（密钥已写入，APP_ENV 已强制为 prod）。请编辑 .env 填写宿主机 MySQL（DB_DATABASE/"
-  log "DB_USERNAME/DB_PASSWORD）与 Redis（REDIS_PASSWORD），并向作者获取授权码填入 AUTH_CODE=，"
-  log "确认 DB_HOST/REDIS_HOST 由 compose 覆盖为 host.docker.internal，然后重新运行本脚本。"
+  log "必填项（密钥一律手动生成，脚本不自动写入）："
+  log "  APP_SECRET_KEY：openssl rand -hex 32 生成（或 uv run python artisan.py key generate）"
+  log "  STORAGE_LOCAL_SECRET：可选，不填默认取 APP_SECRET_KEY；要独立密钥则 openssl rand -hex 32 另生成"
+  log "  AUTH_CODE：向作者获取授权码填入"
+  log "  DB_DATABASE / DB_USERNAME / DB_PASSWORD：宿主机 MySQL 接入"
+  log "  REDIS_PASSWORD：宿主机 Redis 密码"
+  log "另确认 APP_ENV=prod（local 会启用万能验证码 0000）。"
   exit 3
 fi
+
+# 取 .env 中某键的值（去引号/空白；多行取最后一条）
+env_val() { sed -n "s/^$1=//p" .env | tail -1 | tr -d '"'"'"' '; }
+
+# 密钥预检：不自动生成，缺配直接报错（APP_SECRET_KEY 兼作通道凭证加密根密钥，
+# 自动生成会让运维误以为已正确配置，换钥/漏配事故难以察觉；STORAGE_LOCAL_SECRET
+# 不填由应用侧回退到 APP_SECRET_KEY，不在此强制）
+[ -n "$(env_val "APP_SECRET_KEY")" ] || die "APP_SECRET_KEY 未配置：请生成后填入 .env（openssl rand -hex 32），再重新运行本脚本"
 
 # 授权码预检：编译镜像启动即强制校验，缺码会卡在健康检查且日志晦涩，提前拦截
 if ! grep -qE '^AUTH_CODE=..' .env; then
