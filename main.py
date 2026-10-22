@@ -1,3 +1,4 @@
+import html
 import os
 import time
 import uuid
@@ -11,12 +12,12 @@ from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_limiter import FastAPILimiter
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 
 from app.core.config import config
 from app.core.frontend import register_docs, register_frontend
-from app.core.license import describe, expired as license_expired
+from app.core.license import describe, lock_reason as license_lock_reason
 from app.core.logger import logger, request_id_var
 from app.responses import err
 from app.routers import routers
@@ -69,8 +70,12 @@ async def lifespan(instance: FastAPI):
     # 应用启动前执行
     if config.APP_ENV == "local":
         logger.warning("APP_ENV=local：登录验证码接受万能码 0000，仅供本地开发/测试，生产环境必须设为 prod")
-    # 授权信息展示（仅可读描述；强制校验在 config 导入期已完成）
-    logger.info(f"授权信息: {describe()}")
+    # 授权信息展示（强制校验在 config 导入期已完成；失败不退出，进未授权软锁）
+    lock = license_lock_reason()
+    if lock:
+        logger.warning(f"授权未生效（{lock}）：业务接口已软锁，Web 页面展示未授权提示")
+    else:
+        logger.info(f"授权信息: {describe()}")
     # 启动即强刷插件注册表（与后台「已安装插件」刷新同源），不等首次使用或手动点击
     PluginRegistry.reload()
     logger.info(f"支付插件注册表已刷新: {', '.join(PluginRegistry.payment_names()) or '无'}")
@@ -106,17 +111,44 @@ app.add_middleware(
 app.include_router(routers)
 
 
+def _unauthorized_page() -> str:
+    """未授权软锁提示页（自包含内联样式，浏览器直访任意页面均见此内容）。
+
+    面向公众只提示「无效的授权码」：不透露具体原因（空码/坏码/过期）与
+    配置方法，细节留在启动 stderr（docker logs）给运维。
+    """
+    return """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>无效的授权码</title>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body { display: flex; align-items: center; justify-content: center;
+         font: 500 28px/1.4 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+         color: #1f2329; background: #fff; }
+</style>
+</head>
+<body>无效的授权码</body>
+</html>"""
+
+
 # ============================================================
-# 授权软锁中间件：逐请求比对已验签授权的过期时间（纯内存比较）。
-# 启动校验（config 导入期）保证加载时有效；此处在有效期过后让 API 即刻
-# 断流返回 503，堵住「有效期内启动、过期后长期不重启」的口子。
-# /health 豁免：容器健康检查保持可用，运维可见「服务在但未授权」。
-# 源码运行（授权未加载）恒放行，本地开发不受影响。
+# 授权软锁中间件：启动校验失败（空码/坏码）或已加载授权过期时拦截
+# 业务请求（均为纯内存判断）。浏览器页面请求（Accept: text/html）返回
+# 自包含的「无效的授权码」提示页；其余（API/回调/静态资源）返回 503 JSON
+# （对外一律只提示「无效的授权码」，不区分原因）。堵住「有效期内启动、
+# 过期后长期不重启」的口子。/health 豁免：容器健康检查保持可用，
+# 运维可见「服务在但未授权」。源码运行恒放行，本地开发不受影响。
 # ============================================================
 @app.middleware("http")
 async def license_soft_lock_middleware(request: Request, call_next):
-    if request.url.path != "/health" and license_expired():
-        return err(-1, "授权已过期，请联系作者续期后重启服务", http_status=503)
+    lock = license_lock_reason()
+    if request.url.path != "/health" and lock:
+        if "text/html" in (request.headers.get("accept") or ""):
+            return HTMLResponse(_unauthorized_page(), status_code=503)
+        return err(-1, "无效的授权码", http_status=503)
     return await call_next(request)
 
 

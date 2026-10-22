@@ -13,7 +13,7 @@ SAQ Worker 设置
 from saq import Queue
 
 from app.core.config import config
-from app.core.license import describe
+from app.core.license import describe, lock_reason
 from app.core.logger import logger
 from app.services.plugin import PluginRegistry
 
@@ -70,8 +70,12 @@ async def _startup(ctx: dict) -> None:
     """worker 启动钩子：强刷支付插件注册表（通知重试/查单补单依赖插件类）。"""
     PluginRegistry.reload()
     logger.info(f"支付插件注册表已刷新: {', '.join(PluginRegistry.payment_names()) or '无'}")
-    # 授权信息展示（仅可读描述；强制校验在 config 导入期已完成）
-    logger.info(f"授权信息: {describe()}")
+    # 授权信息展示（强制校验在 config 导入期已完成；失败不退出，进未授权软锁）
+    lock = lock_reason()
+    if lock:
+        logger.warning(f"授权未生效（{lock}）：业务接口已软锁，Web 页面展示未授权提示")
+    else:
+        logger.info(f"授权信息: {describe()}")
 
 
 def settings() -> dict:

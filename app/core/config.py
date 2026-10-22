@@ -256,6 +256,7 @@ config = Config()  # type: ignore
 
 # 启动授权门禁：uvicorn / SAQ worker / 容器内 artisan、alembic 每个入口进程都会
 # 导入本模块，在导入期统一拦截；仅编译形态强制。此刻日志系统尚未初始化，
-# 失败信息由 license 模块直接写 stderr，进程以码 1 退出
+# 失败信息由 license 模块直接写 stderr；码为空/无效不退出进程，转未授权软锁
+# （运行期由 main.py 中间件拦截业务请求，Web 页面展示「无效的授权码」）
 enforce(config.AUTH_CODE)
 

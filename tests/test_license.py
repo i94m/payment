@@ -24,9 +24,10 @@ SO_FILE = "/app/app/core/license.cpython-312-x86_64-linux-gnu.so"
 
 @pytest.fixture(autouse=True)
 def _patch_key(monkeypatch):
-    """每个用例都换成测试公钥并清空已加载授权，避免串扰。"""
+    """每个用例都换成测试公钥并清空已加载授权/启动失败态，避免串扰。"""
     monkeypatch.setattr(lic, "PUBLIC_KEY_B64", TEST_PUB_B64)
     monkeypatch.setattr(lic, "current", None)
+    monkeypatch.setattr(lic, "startup_error", None)
 
 
 def _seg(data: bytes) -> str:
@@ -129,33 +130,34 @@ async def test_verify_exp_boundary_is_expired():
 
 
 # ============================================================
-# enforce：源码跳过 / 编译强制
+# enforce：源码跳过 / 编译强制（失败不退出，转未授权软锁）
 # ============================================================
 
 async def test_source_run_skips_enforce():
     """源码运行（默认 __file__ 为 .py）：即使空码也直接放行。"""
     assert lic.enforce("") is None
+    assert lic.startup_error is None
 
 
-async def test_enforce_compiled_empty_code_exits(monkeypatch, capsys):
+async def test_enforce_compiled_empty_code_soft_locks(monkeypatch, capsys):
+    """空码不退出进程：记录 startup_error 转软锁，stderr 给运维完整提示。"""
     monkeypatch.setattr(lic, "__file__", SO_FILE)
-    with pytest.raises(SystemExit) as ei:
-        lic.enforce("")
-    assert ei.value.code == 1
+    lic.enforce("")
+    assert lic.startup_error and "无效的授权码" in lic.startup_error and "为空" in lic.startup_error
     assert "授权" in capsys.readouterr().err
 
 
-async def test_enforce_compiled_bad_sig_exits(monkeypatch, capsys):
+async def test_enforce_compiled_bad_sig_soft_locks(monkeypatch, capsys):
     monkeypatch.setattr(lic, "__file__", SO_FILE)
-    with pytest.raises(SystemExit):
-        lic.enforce(make_code(tamper=True))
+    lic.enforce(make_code(tamper=True))
+    assert lic.startup_error and "签名" in lic.startup_error
     assert "签名" in capsys.readouterr().err
 
 
-async def test_enforce_compiled_expired_exits(monkeypatch, capsys):
+async def test_enforce_compiled_expired_soft_locks(monkeypatch, capsys):
     monkeypatch.setattr(lic, "__file__", SO_FILE)
-    with pytest.raises(SystemExit):
-        lic.enforce(make_code({"exp": int(time.time()) - 10}))
+    lic.enforce(make_code({"exp": int(time.time()) - 10}))
+    assert lic.startup_error and "过期" in lic.startup_error
     assert "过期" in capsys.readouterr().err
 
 
@@ -163,11 +165,13 @@ async def test_enforce_compiled_valid_passes(monkeypatch, capsys):
     monkeypatch.setattr(lic, "__file__", SO_FILE)
     lic.enforce(make_code())
     assert lic.current is not None
+    assert lic.startup_error is None
+    assert lic.lock_reason() is None
     assert capsys.readouterr().err == ""
 
 
 async def test_empty_baked_key_fails_secure(monkeypatch, capsys):
-    """内置公钥为空（镜像构建遗漏）：拒绝启动而非跳过校验。"""
+    """内置公钥为空（镜像构建遗漏，部署方无法自修）：仍拒绝启动。"""
     monkeypatch.setattr(lic, "PUBLIC_KEY_B64", "")
     monkeypatch.setattr(lic, "__file__", SO_FILE)
     with pytest.raises(SystemExit):
@@ -187,33 +191,53 @@ async def test_baked_invalid_error_mentions_builtin(monkeypatch):
 
 
 # ============================================================
-# expired（运行时软锁）与请求中间件
+# lock_reason（运行时软锁）与请求中间件
 # ============================================================
 
-async def test_expired_flags(monkeypatch):
-    """未加载（源码运行）恒 False；过期布尔排除、边界为过期。"""
-    assert lic.expired() is False
+async def test_lock_reason_flags(monkeypatch):
+    """未加载且无启动失败（源码运行）恒 None；过期判定含边界、布尔排除。"""
+    assert lic.lock_reason() is None
     monkeypatch.setattr(lic, "current", {"exp": int(time.time()) + 3600})
-    assert lic.expired() is False
+    assert lic.lock_reason() is None
     monkeypatch.setattr(lic, "current", {"exp": int(time.time())})
-    assert lic.expired() is True
+    assert "过期" in lic.lock_reason()
     monkeypatch.setattr(lic, "current", {"exp": int(time.time()) - 1})
-    assert lic.expired() is True
+    assert "过期" in lic.lock_reason()
     monkeypatch.setattr(lic, "current", {"sub": "no-exp"})
-    assert lic.expired() is False
+    assert lic.lock_reason() is None
+    # 启动失败优先于过期判定
+    monkeypatch.setattr(lic, "startup_error", "无效的授权码：授权码为空")
+    assert "为空" in lic.lock_reason()
 
 
 async def test_soft_lock_middleware(client, monkeypatch):
-    """过期后业务 API 即刻 503，/health 豁免保持监控可用。"""
-    # 未过期（current 为 None）：放行
+    """未授权后业务 API 即刻 503（对外只提示「无效的授权码」），/health 豁免。"""
+    # 未授权（current 为 None 且无启动失败）：放行
     assert (await client.get("/health")).status_code == 200
     assert (await client.get("/admin-api/pay/channels")).status_code != 503
-    # 过期：业务路径断流，健康检查照常
+    # 过期：业务路径断流，健康检查照常；对外不区分原因
     monkeypatch.setattr(lic, "current", {"exp": int(time.time()) - 1})
     r = await client.get("/admin-api/pay/channels")
     assert r.status_code == 503
-    assert "过期" in r.json()["message"]
+    assert r.json()["message"] == "无效的授权码"
     assert (await client.get("/health")).status_code == 200
+
+
+async def test_soft_lock_middleware_html_page(client, monkeypatch):
+    """浏览器页面请求（Accept: text/html）返回自包含「无效的授权码」提示页，
+    不泄露原因与配置方法；启动失败与过期同样只出该提示。"""
+    for lock_state in (
+        {"startup_error": "无效的授权码：授权码为空"},
+        {"current": {"exp": int(time.time()) - 1}},
+    ):
+        monkeypatch.setattr(lic, "startup_error", lock_state.get("startup_error"))
+        monkeypatch.setattr(lic, "current", lock_state.get("current"))
+        r = await client.get("/", headers={"accept": "text/html"})
+        assert r.status_code == 503
+        assert "无效的授权码" in r.text
+        # 公开页面不泄露原因/配置细节
+        assert "为空" not in r.text and ".env" not in r.text and "过期" not in r.text
+        assert "text/html" in r.headers["content-type"]
 
 
 # ============================================================

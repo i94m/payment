@@ -6,13 +6,16 @@
 - 强制范围：仅本模块自身 __file__ 后缀非 .py（即镜像内 Cython 编译产物）时
   强制；本地源码运行 / pytest 一律跳过 —— 环境变量无法把 .so 伪装回 .py
 - 在 config 导入期执行，此刻日志系统尚未初始化，失败信息直接写 stderr
+- 授权码为空/无效不退出进程：记录 startup_error，进入「未授权软锁」——
+  Web 页面展示「无效的授权码」，业务请求由 main.py 中间件一律 503，
+  /health 豁免供容器监控（页面可访问、业务全断，比启动失败更好排障）
 - 授权码格式：<b64url(payload_json)>.<b64url(ed25519签名)>（两段），
   payload 形如 {"exp":<unix秒>,"iat":<unix秒>,"sub":"<客户备注>"}，
   签名覆盖 payload 段的原始 ASCII 字节；旧版码前的 "PAY1." 前缀兼容可验
 - 公钥唯一来源：内置 PUBLIC_KEY_B64，随 Cython 编译进镜像 .so 的常量
   （不提供环境变量/配置覆盖 —— 不给部署方"换公钥 + 自签授权码"留口子；
-  换钥 = 改此处后重建并重发镜像）。内置为空/格式非法一律 LicenseKeyError
-  拒绝启动（fail-secure，绝不静默跳过校验）
+  换钥 = 改此处后重建并重发镜像）。内置为空/格式非法属镜像构建问题
+  （部署方无法自修），仍 LicenseKeyError 退出（fail-secure，绝不静默跳过校验）
 """
 import base64
 import json
@@ -33,6 +36,10 @@ PUBLIC_KEY_B64: str = "+pQsryoUV5Zhf6zMPBzT3jXjglZg2M5aMqVO3belhSw="
 
 # 最近一次校验成功的 payload（main.py lifespan / worker 启动日志展示用）
 current: dict | None = None
+
+# 启动校验失败原因（仅编译镜像且码为空/无效时置位；None=授权有效或源码运行）。
+# 置位后进程不退出，main.py 软锁中间件据 lock_reason() 逐请求拦截。
+startup_error: str | None = None
 
 
 class LicenseError(Exception):
@@ -121,38 +128,61 @@ def verify(code: str) -> dict:
 
 
 def enforce(code: str) -> None:
-    """启动门禁：源码运行直接放行；编译镜像校验失败则写 stderr 并退出。
+    """启动门禁：源码运行直接放行；编译镜像校验失败不退出，转未授权软锁。
+
+    码为空/无效：记录 startup_error（lock_reason 据此软锁，页面展示
+    「无效的授权码」，业务请求 503），容器保持运行便于排障；
+    内置公钥缺失/损坏属镜像构建问题（部署方无法自修），仍写 stderr 退出。
 
     config 导入期调用（此刻 app 日志尚未初始化），所有入口
     （uvicorn / SAQ worker / 容器内 artisan、alembic）统一经此拦截。
     """
+    global startup_error
+    startup_error = None
     if not _is_compiled():
         return  # 本地源码运行 / pytest：不校验
     try:
         verify(code)
-    except LicenseError as e:
+    except LicenseKeyError as e:
         sys.stderr.write(
             "\n"
             "==========================================================\n"
-            "启动失败：授权码校验未通过\n"
+            "启动失败：授权公钥不可用（镜像构建问题，fail-secure 退出）\n"
             f"原因：{e}\n"
-            f"当前 AUTH_CODE：{(code or '').strip()[:12] or '（空）'}\n"
-            "处理：获取有效授权码后填入 .env 的 AUTH_CODE=，重建容器\n"
-            "     （docker compose up -d）。校验完全离线，不会访问网络\n"
+            "处理：由作者修复 PUBLIC_KEY_B64 后重建并重发镜像\n"
             "==========================================================\n"
         )
         sys.stderr.flush()
         raise SystemExit(1) from None
+    except LicenseError as e:
+        startup_error = f"无效的授权码：{e}"
+        sys.stderr.write(
+            "\n"
+            "==========================================================\n"
+            "授权码校验未通过，服务将以未授权模式启动（进程不退出）\n"
+            f"原因：{e}\n"
+            f"当前 AUTH_CODE：{(code or '').strip()[:12] or '（空）'}\n"
+            "处理：获取有效授权码后填入 .env 的 AUTH_CODE=，重启容器\n"
+            "     （docker compose up -d）。校验完全离线，不会访问网络\n"
+            "未授权期间：Web 页面展示「无效的授权码」，业务接口全部 503\n"
+            "==========================================================\n"
+        )
+        sys.stderr.flush()
 
 
-def expired() -> bool:
-    """运行时软锁判断：已加载的授权是否已过有效期。
+def lock_reason() -> str | None:
+    """运行时软锁判断：未授权原因（None=放行）。
 
-    供 main.py 请求中间件逐请求比对（纯内存时间比较，无加密运算）；
-    源码运行（current 未加载）恒为 False，本地开发不受影响。
+    两种来源：启动校验失败（startup_error，空码/坏码）或已加载授权
+    过期（逐请求纯内存时间比对，无加密运算）。供 main.py 请求中间件
+    使用；源码运行两者皆不成立恒为 None，本地开发不受影响。
     """
+    if startup_error:
+        return startup_error
     exp = (current or {}).get("exp")
-    return isinstance(exp, int) and not isinstance(exp, bool) and exp <= time.time()
+    if isinstance(exp, int) and not isinstance(exp, bool) and exp <= time.time():
+        return f"授权已于 {time.strftime('%Y-%m-%d %H:%M', time.localtime(exp))} 过期，请向作者续期后重启服务"
+    return None
 
 
 def describe() -> str:
