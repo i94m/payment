@@ -2,29 +2,36 @@
 
 设计要点：
 - 授权码由作者用离线私钥签发（scripts/license_gen.py，私钥只存作者本机），
-  本模块只内置公钥，校验纯离线（签名 + 有效期），不访问任何网络
+  本模块内置默认公钥，校验纯离线（签名 + 有效期），不访问任何网络
 - 强制范围：仅本模块自身 __file__ 后缀非 .py（即镜像内 Cython 编译产物）时
   强制；本地源码运行 / pytest 一律跳过 —— 环境变量无法把 .so 伪装回 .py
 - 在 config 导入期执行，此刻日志系统尚未初始化，失败信息直接写 stderr
-- 授权码格式：PAY1.<b64url(payload_json)>.<b64url(ed25519签名)>，
+- 授权码格式：<b64url(payload_json)>.<b64url(ed25519签名)>（两段），
   payload 形如 {"exp":<unix秒>,"iat":<unix秒>,"sub":"<客户备注>"}，
-  签名覆盖 payload 段的原始 ASCII 字节
-- 公钥必须编译进本模块（PUBLIC_KEY_B64），严禁改为从环境变量/.env 读取
-  （可被替换即等于无校验）
+  签名覆盖 payload 段的原始 ASCII 字节；旧版码前的 "PAY1." 前缀兼容可验
+- 公钥解析优先级：环境变量 LICENSE_PUBLIC_KEY（32 字节原始公钥的标准
+  base64，44 字符纯字符串；docker-compose 的 environment: 或 env_file 注入
+  均可）→ 未设置/留空时回退内置 PUBLIC_KEY_B64。两者都空或格式非法一律
+  LicenseKeyError 拒绝启动（fail-secure，绝不静默跳过校验）
 """
 import base64
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-# 授权码前缀（换算法/换钥时递增，旧码自然失效）
+# 旧版授权码前缀（v1 码形如 PAY1.载荷.签名；新签发的码不再带前缀，校验兼容两种）
 CODE_PREFIX = "PAY1"
 
-# ← 作者把 scripts/license_gen.py keygen 输出的公钥粘贴到这里（32 字节
-#   原始公钥的标准 base64，44 字符）。留空时镜像内启动直接拒绝（fail-secure）。
+# 公钥环境变量名（覆盖内置公钥；compose environment: / .env 经 env_file 注入）
+PUBLIC_KEY_ENV = "LICENSE_PUBLIC_KEY"
+
+# ← 内置默认公钥（scripts/license_gen.py keygen/pubkey 输出的 32 字节原始
+#   公钥的标准 base64，44 字符）。可被环境变量 LICENSE_PUBLIC_KEY 覆盖
+#   （换钥免重建镜像）；两者都留空时镜像内启动直接拒绝（fail-secure）。
 PUBLIC_KEY_B64: str = "+pQsryoUV5Zhf6zMPBzT3jXjglZg2M5aMqVO3belhSw="
 
 # 最近一次校验成功的 payload（main.py lifespan / worker 启动日志展示用）
@@ -66,25 +73,36 @@ def _b64url_decode(seg: str) -> bytes:
 
 
 def _load_public_key() -> Ed25519PublicKey:
-    """惰性解析内置公钥（空/坏 → LicenseKeyError，绝不静默跳过校验）。"""
-    if not PUBLIC_KEY_B64:
-        raise LicenseKeyError("未内置授权公钥（PUBLIC_KEY_B64 为空）")
+    """惰性解析公钥：环境变量 LICENSE_PUBLIC_KEY 优先，回退内置默认。
+
+    空/坏 → LicenseKeyError（指明是哪一路配置的问题），绝不静默跳过校验。
+    """
+    env_key = os.environ.get(PUBLIC_KEY_ENV, "").strip()
+    key_b64 = env_key or PUBLIC_KEY_B64.strip()
+    source = f"环境变量 {PUBLIC_KEY_ENV}" if env_key else "内置 PUBLIC_KEY_B64"
+    if not key_b64:
+        raise LicenseKeyError(f"授权公钥未配置（{source} 为空）")
     try:
-        return Ed25519PublicKey.from_public_bytes(base64.b64decode(PUBLIC_KEY_B64))
+        return Ed25519PublicKey.from_public_bytes(base64.b64decode(key_b64, validate=True))
     except Exception:
-        raise LicenseKeyError("内置授权公钥格式不正确") from None
+        raise LicenseKeyError(f"授权公钥格式不正确（{source}，应为 32 字节原始公钥的标准 base64）") from None
 
 
 def verify(code: str) -> dict:
-    """校验授权码，返回 payload；失败抛 LicenseError 子类。"""
+    """校验授权码，返回 payload；失败抛 LicenseError 子类。
+
+    接受两段裸码（载荷.签名）；旧版三段码（PAY1.载荷.签名）兼容可验。
+    """
     global current
     code = (code or "").strip()
     if not code:
         raise LicenseFormatError("授权码为空")
     parts = code.split(".")
-    if len(parts) != 3 or parts[0] != CODE_PREFIX:
-        raise LicenseFormatError(f"格式不正确（应为 {CODE_PREFIX}.载荷.签名 三段）")
-    payload_seg, sig_seg = parts[1], parts[2]
+    if parts[0] == CODE_PREFIX:
+        parts = parts[1:]
+    if len(parts) != 2:
+        raise LicenseFormatError("格式不正确（应为 载荷.签名 两段；旧版 PAY1. 前缀码亦可）")
+    payload_seg, sig_seg = parts
     payload_bytes = _b64url_decode(payload_seg)
     sig = _b64url_decode(sig_seg)
     try:

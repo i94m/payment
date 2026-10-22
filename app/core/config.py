@@ -150,7 +150,8 @@ class Config(BaseSettings):
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if not value:
             raise ValueError(
-                f"{var_name} 未配置，请先运行: uv run python artisan.py key generate"
+                f"{var_name} 未配置：不会自动生成，请显式填入 .env"
+                "（openssl rand -hex 32 生成，或 uv run python artisan.py key generate）"
             )
 
     @model_validator(mode="after")
