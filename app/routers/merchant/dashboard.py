@@ -9,10 +9,11 @@ from fastapi import APIRouter
 from sqlalchemy import func
 from sqlmodel import col, select
 
-from app.core.deps import SessionDep
+from app.core.deps import CacheDep, SessionDep
 from app.core.security import MerchantUser
 from app.models import Announcement, Order
 from app.responses import suc
+from app.services.settings import get_setting, setting_enabled
 
 router = APIRouter()
 
@@ -20,7 +21,7 @@ _PAID = (Order.status == 1, Order.order_type == 0)
 
 
 @router.get("")
-async def index(session: SessionDep, auth: MerchantUser, days: int = 7):
+async def index(session: SessionDep, auth: MerchantUser, cache: CacheDep = None, days: int = 7):
     now = datetime.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday_start = today_start - timedelta(days=1)
@@ -69,11 +70,13 @@ async def index(session: SessionDep, auth: MerchantUser, days: int = 7):
         c, m = by_day.get(day.strftime("%Y-%m-%d"), (0, Decimal("0")))
         trend.append({"date": day.strftime("%m-%d"), "count": c, "money": float(m)})
 
-    # 平台公告（发布中，最新 5 条）
-    announces = (await session.exec(
-        select(Announcement).where(Announcement.status == 1)
-        .order_by(col(Announcement.id).desc()).limit(5)
-    )).all()
+    # 平台公告（发布中，最新 5 条）；功能开关关闭时不下发（商户端整块不展示）
+    announces = []
+    if setting_enabled(await get_setting(session, "announce_enable", True, cache=cache)):
+        announces = (await session.exec(
+            select(Announcement).where(Announcement.status == 1)
+            .order_by(col(Announcement.id).desc()).limit(5)
+        )).all()
 
     return suc({
         "balance": str(auth.user.balance),

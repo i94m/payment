@@ -77,8 +77,9 @@ export function getMerchantMenu(): MenuSection[] {
   ]
 }
 
-/** 按站点功能开关过滤菜单：单项隐藏、整组隐藏、外链取设置值，组内空则丢弃该组。 */
-export function filterMerchantMenu(sections: MenuSection[], f: SiteFeatures): MenuSection[] {
+/** 按站点功能开关过滤菜单：单项隐藏、整组隐藏、外链取设置值，组内空则丢弃该组。
+ *  admin/merchant 两端菜单结构一致，共用同一过滤器。 */
+export function filterMenu(sections: MenuSection[], f: SiteFeatures): MenuSection[] {
   const visible = (item: NavItem): NavItem | null => {
     if (item.urlFeature) {
       const url = String(f[item.urlFeature] ?? "").trim()
