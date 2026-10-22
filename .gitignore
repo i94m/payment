@@ -195,3 +195,6 @@ license_private.pem
 # Multica 平台运行时脚手架（注入到任务 worktree，不入库；CLAUDE.md 除外，入库）
 .claude/
 .multica/
+
+# 旧版 PHP 易支付参考源码残留（解包后的空目录骨架 + 零散 SDK 压缩包，不入库）
+source/
