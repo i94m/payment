@@ -125,7 +125,7 @@ def register_frontend(app: FastAPI) -> None:
             app.mount(f"/merchant/{subdir}", StaticFiles(directory=dir_path), name=f"frontend-merchant-{subdir}")
 
     # 入口页：/ 宣传首页（static/index.html，缺失时兜底商户中心；landing_enable 关闭时
-    # 返回居中站点标题的极简页，不跳转）、/{admin_prefix}/ 总后台（admin.html）、
+    # 返回居中站点标题 + 商户登录链接的极简页，不跳转）、/{admin_prefix}/ 总后台（admin.html）、
     # /agent/ 代理面板（agent.html）、/merchant/ 商户中心（index.html）。
     # 无斜杠路径 307 规范化到带斜杠：URL 唯一（收藏/日志/Referer 一致），
     # 且 vite base="./" 的相对资源引用只按带斜杠目录解析一种口径。
@@ -137,7 +137,9 @@ def register_frontend(app: FastAPI) -> None:
         return _entry("index.html")
 
     def _site_title_page(site_name: str) -> HTMLResponse:
-        """landing_enable 关闭时的极简占位页：站点标题（settings 的 site_name）居中。"""
+        """landing_enable 关闭时的极简占位页：站点标题（settings 的 site_name）居中，
+        下方附商户登录入口。链接指向商户中心 /merchant/（未登录由前端守卫自动
+        带到 #/login，已登录直达工作台），故只挂链接不做 307。"""
         name = html.escape(site_name)
         return HTMLResponse(
             f"""<!DOCTYPE html>
@@ -148,12 +150,14 @@ def register_frontend(app: FastAPI) -> None:
 <title>{name}</title>
 <style>
   html, body {{ margin: 0; height: 100%; }}
-  body {{ display: flex; align-items: center; justify-content: center;
-         font: 500 28px/1.4 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+  body {{ display: flex; flex-direction: column; align-items: center; justify-content: center;
+         gap: 20px; font: 500 28px/1.4 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
          color: #1f2329; background: #fff; }}
+  body a {{ font-size: 15px; color: #2563eb; text-decoration: none; }}
+  body a:hover {{ text-decoration: underline; }}
 </style>
 </head>
-<body>{name}</body>
+<body>{name}<a href="/merchant/">商户登录</a></body>
 </html>""",
             headers={"Cache-Control": "no-cache"},
         )
@@ -180,7 +184,7 @@ def register_frontend(app: FastAPI) -> None:
         except Exception:
             enabled = True
         if not enabled:
-            # 关闭宣传首页：不跳商户登录，改居中展示站点标题的极简页
+            # 关闭宣传首页：不跳转，改居中展示站点标题 + 商户登录入口的极简页
             try:
                 site_name = str(await get_setting(session, "site_name") or "聚合支付")
             except Exception:
