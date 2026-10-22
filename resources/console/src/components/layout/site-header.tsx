@@ -9,6 +9,7 @@ import { useLocation } from "react-router-dom"
 import { PAGE_META } from "@/lib/page-meta"
 import { APP_MODULE } from "@/lib/config"
 import { NotificationBell } from "@/components/layout/notification-bell"
+import { FEATURE_NOTIFICATION_CENTER } from "@/lib/features"
 
 export function SiteHeader() {
   const location = useLocation()
@@ -61,7 +62,8 @@ export function SiteHeader() {
           </BreadcrumbList>
         </Breadcrumb>
         <div className="ml-auto flex items-center gap-0.5 sm:gap-1">
-          {APP_MODULE === "admin" && <NotificationBell />}
+          {/* 通知中心铃铛：入口由 FEATURE_NOTIFICATION_CENTER 控制，组件代码保留 */}
+          {FEATURE_NOTIFICATION_CENTER && APP_MODULE === "admin" && <NotificationBell />}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" className="size-8 hidden md:inline-flex" onClick={toggleFullscreen}>
