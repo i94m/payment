@@ -191,3 +191,7 @@ license_private.pem
 
 # CI ccache 目录（构建上下文中转，不入库；内容仅编译目标码）
 .ci-ccache/
+
+# Multica 平台运行时脚手架（注入到任务 worktree，不入库；CLAUDE.md 除外，入库）
+.claude/
+.multica/
