@@ -34,7 +34,12 @@ export function getAdminMenu(): MenuSection[] {
         { title: "商户列表", url: "/merchants", icon: IconBuildingStore, permission: "merchant.view" },
         { title: "资金明细", url: "/records", icon: IconHistory, permission: "merchant.view" },
         { title: "结算管理", url: "/settle", icon: IconReceipt, permission: "settle.view" },
-        { title: "公告管理", url: "/announces", icon: IconSpeakerphone, permission: "announce.view" },
+        // 商户公告开关（announce_enable，默认开启，仅库内可改）：关闭后不出现发布入口，
+        // 页面/路由/接口代码保留（直链落到 404）
+        {
+          title: "公告管理", url: "/announces", icon: IconSpeakerphone,
+          permission: "announce.view", feature: "announce_enable",
+        },
       ],
     },
     {

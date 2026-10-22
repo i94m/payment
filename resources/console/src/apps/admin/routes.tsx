@@ -2,6 +2,7 @@ import { lazy } from "react"
 import type { RouteObject } from "react-router-dom"
 // 通知中心入口隐藏开关（见 lib/features）：关闭时仅移除入口与直链可达性，页面代码保留
 import { FEATURE_NOTIFICATION_CENTER } from "@/lib/features"
+import { FeatureGate } from "@/components/auth/feature-gate"
 
 // 路由级懒加载：各页面拆成独立 chunk，首屏只加载当前路由对应代码。
 // 页面均为命名导出，需映射为 default（React.lazy 要求 default 导出）。
@@ -42,7 +43,11 @@ export const routes: PermissionRouteObject[] = [
   { path: "/pay/channels", element: <ChannelsPage />, permission: "channel.view" },
   { path: "/pay/types", element: <PayTypesPage />, permission: "payment_type.view" },
   { path: "/settle", element: <SettlePage />, permission: "settle.view" },
-  { path: "/announces", element: <AnnouncesPage />, permission: "announce.view" },
+  // 公告管理：announce_enable（默认开启，仅库内可改）关闭后无发布入口、直链落到 404
+  {
+    path: "/announces", permission: "announce.view",
+    element: <FeatureGate feature="announce_enable"><AnnouncesPage /></FeatureGate>,
+  },
   { path: "/setting/pay", element: <PaySettingsPage />, permission: "pay_setting.view" },
   { path: "/system/accounts", element: <AccountsPage />, permission: "system.admin" },
   { path: "/403", element: <Error403 /> },
