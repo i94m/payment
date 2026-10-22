@@ -126,6 +126,9 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
+          # 显式指定最终阶段：不带 target 时 buildkit 默认构建 Dockerfile 的最后
+          # 一个阶段，会把 ccache-export（scratch 缓存包）当正式镜像发布
+          target: runtime
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
