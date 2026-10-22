@@ -4,6 +4,7 @@ import {
   IconAdjustments, IconPlugConnected, IconBell,
 } from "@tabler/icons-react"
 import type { MenuSection } from "@/apps/merchant/sidebar"
+import { FEATURE_NOTIFICATION_CENTER } from "@/lib/features"
 
 // 与商户端一致的平铺分组菜单（分组标题常驻、无折叠子菜单），
 // permission 与后端 PERMISSION_TREE / MENU_TREE 的 key 对齐
@@ -12,7 +13,12 @@ export function getAdminMenu(): MenuSection[] {
     {
       items: [
         { title: "仪表盘", url: "/", icon: IconGauge },
-        { title: "通知中心", url: "/system/notifications", icon: IconBell },
+        // 通知中心入口由 FEATURE_NOTIFICATION_CENTER 控制：关闭时仅隐藏入口，
+        // 页面 / 路由 / 接口代码保留（hidden 不影响 page-meta 推导页面标题）
+        {
+          title: "通知中心", url: "/system/notifications", icon: IconBell,
+          hidden: !FEATURE_NOTIFICATION_CENTER,
+        },
       ],
     },
     {

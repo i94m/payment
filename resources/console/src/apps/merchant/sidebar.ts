@@ -17,6 +17,8 @@ export interface NavItem {
   external?: boolean
   /** 关联的功能开关，为 false 时隐藏该项 */
   feature?: keyof SiteFeatures
+  /** 静态隐藏：不出现在侧边栏，页面与路由保留（页面元信息仍按全量菜单推导） */
+  hidden?: boolean
   /** url 取自站点设置（如 QQ群/APP下载外链），值为空时隐藏 */
   urlFeature?: keyof SiteFeatures
 }
