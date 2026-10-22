@@ -3,8 +3,8 @@
 私钥 license_private.pem 只存作者本机（已 gitignore），绝不入库/进镜像/外发。
 签发流程：
   1. uv run python scripts/license_gen.py keygen        # 首次：生成密钥对
-  2. 把打印出的公钥粘贴进 app/core/license.py 的 PUBLIC_KEY_B64（需重建镜像生效），
-     或发给部署方填入其 .env / docker-compose 的 LICENSE_PUBLIC_KEY（免重建镜像）
+  2. 把打印出的公钥粘贴进 app/core/license.py 的 PUBLIC_KEY_B64（唯一公钥来源，
+     随 Cython 编译进镜像 .so；换钥需重建镜像并让各部署重新拉取）
   3. uv run python scripts/license_gen.py issue --until 2027-12-31 --note 客户A
   4. 把打印出的一行授权码交给对方，填入其 .env 的 AUTH_CODE
 
@@ -73,9 +73,8 @@ def pubkey():
 
 def _print_pubkey(key: Ed25519PrivateKey) -> None:
     pub = _pubkey_b64(key)
-    typer.secho("\n公钥（两种用法任选其一）：\n"
-                "  ① 粘贴到 app/core/license.py 的 PUBLIC_KEY_B64（重建镜像后生效）\n"
-                "  ② 发给部署方填入 .env / docker-compose 的 LICENSE_PUBLIC_KEY=（覆盖内置，免重建镜像）\n",
+    typer.secho("\n公钥（唯一用法）：粘贴到 app/core/license.py 的 PUBLIC_KEY_B64，\n"
+                "随 Cython 编译进镜像 .so（换钥需重建镜像并让各部署重新拉取）\n",
                 fg="cyan")
     typer.echo(pub)
     typer.secho('\nPUBLIC_KEY_B64: str = "%s"' % pub, dim=True)

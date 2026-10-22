@@ -9,14 +9,13 @@
 - 授权码格式：<b64url(payload_json)>.<b64url(ed25519签名)>（两段），
   payload 形如 {"exp":<unix秒>,"iat":<unix秒>,"sub":"<客户备注>"}，
   签名覆盖 payload 段的原始 ASCII 字节；旧版码前的 "PAY1." 前缀兼容可验
-- 公钥解析优先级：环境变量 LICENSE_PUBLIC_KEY（32 字节原始公钥的标准
-  base64，44 字符纯字符串；docker-compose 的 environment: 或 env_file 注入
-  均可）→ 未设置/留空时回退内置 PUBLIC_KEY_B64。两者都空或格式非法一律
-  LicenseKeyError 拒绝启动（fail-secure，绝不静默跳过校验）
+- 公钥唯一来源：内置 PUBLIC_KEY_B64，随 Cython 编译进镜像 .so 的常量
+  （不提供环境变量/配置覆盖 —— 不给部署方"换公钥 + 自签授权码"留口子；
+  换钥 = 改此处后重建并重发镜像）。内置为空/格式非法一律 LicenseKeyError
+  拒绝启动（fail-secure，绝不静默跳过校验）
 """
 import base64
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -26,12 +25,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 # 旧版授权码前缀（v1 码形如 PAY1.载荷.签名；新签发的码不再带前缀，校验兼容两种）
 CODE_PREFIX = "PAY1"
 
-# 公钥环境变量名（覆盖内置公钥；compose environment: / .env 经 env_file 注入）
-PUBLIC_KEY_ENV = "LICENSE_PUBLIC_KEY"
-
 # ← 内置默认公钥（scripts/license_gen.py keygen/pubkey 输出的 32 字节原始
-#   公钥的标准 base64，44 字符）。可被环境变量 LICENSE_PUBLIC_KEY 覆盖
-#   （换钥免重建镜像）；两者都留空时镜像内启动直接拒绝（fail-secure）。
+#   公钥的标准 base64，44 字符）。唯一公钥来源：编译进镜像 .so，无配置覆盖；
+#   换钥 = 改此处后重建镜像并让各部署重新拉取。留空/非法时镜像内启动直接
+#   拒绝（fail-secure）。
 PUBLIC_KEY_B64: str = "+pQsryoUV5Zhf6zMPBzT3jXjglZg2M5aMqVO3belhSw="
 
 # 最近一次校验成功的 payload（main.py lifespan / worker 启动日志展示用）
@@ -73,19 +70,14 @@ def _b64url_decode(seg: str) -> bytes:
 
 
 def _load_public_key() -> Ed25519PublicKey:
-    """惰性解析公钥：环境变量 LICENSE_PUBLIC_KEY 优先，回退内置默认。
-
-    空/坏 → LicenseKeyError（指明是哪一路配置的问题），绝不静默跳过校验。
-    """
-    env_key = os.environ.get(PUBLIC_KEY_ENV, "").strip()
-    key_b64 = env_key or PUBLIC_KEY_B64.strip()
-    source = f"环境变量 {PUBLIC_KEY_ENV}" if env_key else "内置 PUBLIC_KEY_B64"
+    """惰性解析内置公钥。空/坏 → LicenseKeyError，绝不静默跳过校验。"""
+    key_b64 = PUBLIC_KEY_B64.strip()
     if not key_b64:
-        raise LicenseKeyError(f"授权公钥未配置（{source} 为空）")
+        raise LicenseKeyError("授权公钥未配置（内置 PUBLIC_KEY_B64 为空）")
     try:
         return Ed25519PublicKey.from_public_bytes(base64.b64decode(key_b64, validate=True))
     except Exception:
-        raise LicenseKeyError(f"授权公钥格式不正确（{source}，应为 32 字节原始公钥的标准 base64）") from None
+        raise LicenseKeyError("授权公钥格式不正确（内置 PUBLIC_KEY_B64，应为 32 字节原始公钥的标准 base64）") from None
 
 
 def verify(code: str) -> dict:

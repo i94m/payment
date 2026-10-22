@@ -27,8 +27,6 @@ def _patch_key(monkeypatch):
     """每个用例都换成测试公钥并清空已加载授权，避免串扰。"""
     monkeypatch.setattr(lic, "PUBLIC_KEY_B64", TEST_PUB_B64)
     monkeypatch.setattr(lic, "current", None)
-    # 隔离外部环境：确保用例从"内置公钥"起步，env 覆盖由用例显式 setenv
-    monkeypatch.delenv(lic.PUBLIC_KEY_ENV, raising=False)
 
 
 def _seg(data: bytes) -> str:
@@ -178,31 +176,11 @@ async def test_empty_baked_key_fails_secure(monkeypatch, capsys):
 
 
 # ============================================================
-# 公钥来源：环境变量 LICENSE_PUBLIC_KEY 覆盖 / 回退
+# 内置公钥（唯一来源，编译进 .so）：异常一律 fail-secure
 # ============================================================
 
-async def test_env_public_key_overrides_baked(monkeypatch):
-    """环境变量公钥优先：即使内置公钥非法，env 给了合法钥也能验过。"""
-    monkeypatch.setenv(lic.PUBLIC_KEY_ENV, TEST_PUB_B64)
-    monkeypatch.setattr(lic, "PUBLIC_KEY_B64", "%%%非法%%%")
-    lic.verify(make_code())
-
-
-async def test_env_public_key_empty_falls_back_to_baked(monkeypatch):
-    """env 留空（如 .env.example 的空行被 compose 注入）：回退内置公钥。"""
-    monkeypatch.setenv(lic.PUBLIC_KEY_ENV, "")
-    lic.verify(make_code())  # autouse fixture 已把内置换成测试公钥
-
-
-async def test_env_public_key_invalid_fails_secure(monkeypatch):
-    """env 配了但格式非法：明确指明 env 一路的问题，fail-secure。"""
-    monkeypatch.setenv(lic.PUBLIC_KEY_ENV, "not-base64!!")
-    with pytest.raises(lic.LicenseKeyError, match=lic.PUBLIC_KEY_ENV):
-        lic.verify(make_code())
-
-
 async def test_baked_invalid_error_mentions_builtin(monkeypatch):
-    """内置公钥非法且未设 env：报错指明是内置一路。"""
+    """内置公钥非法：报错指明内置一路，fail-secure。"""
     monkeypatch.setattr(lic, "PUBLIC_KEY_B64", "not-base64!!")
     with pytest.raises(lic.LicenseKeyError, match="PUBLIC_KEY_B64"):
         lic.verify(make_code())
