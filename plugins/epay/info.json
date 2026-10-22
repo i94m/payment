@@ -2,7 +2,7 @@
   "id": "epay",
   "name": "epay",
   "type": "payment",
-  "title": "易支付上游通道",
+  "title": "通用上游通道",
   "version": "1.0.0",
   "author": "pay-gateway",
   "types": ["alipay", "wxpay", "qqpay", "bank"]

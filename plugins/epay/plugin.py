@@ -1,4 +1,4 @@
-"""易支付上游通道插件。
+"""通用上游通道（epay 协议）插件。
 
 对接上游网关接口：
 - appswitch=1：POST {appurl}mapi.php 下单，拿 payurl/qrcode/urlscheme
@@ -49,11 +49,11 @@ def _verify_sign(data: dict, appkey: str, sign: str) -> bool:
 
 
 class EpayPayment(BasePayment):
-    """易支付上游通道。"""
+    """通用上游通道（epay 协议）。"""
 
     meta = PluginMeta(
         name="epay",
-        showname="易支付上游通道",
+        showname="通用上游通道",
         types=["alipay", "wxpay", "qqpay", "bank"],
         inputs=[
             {"name": "appurl", "title": "接口地址", "type": "input",

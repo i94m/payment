@@ -24,7 +24,7 @@ from tests.conftest import MERCHANT_KEY, UPSTREAM_KEY, signed_params, upstream_s
 
 
 def _sign_epay(data: dict, key: str) -> str:
-    """上游易支付协议 MD5 签名（上游协议未变，仅回调/查单用）。"""
+    """上游 epay 协议 MD5 签名（上游协议未变，仅回调/查单用）。"""
     items = sorted(
         (k, v) for k, v in data.items()
         if k not in ("sign", "sign_type") and v is not None and v != ""

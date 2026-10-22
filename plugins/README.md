@@ -133,7 +133,7 @@ cd <仓库根目录>
 ## 10. 参考实现
 
 - `plugins/_example/` — **伪代码骨架模板，新插件的起点**；`_` 前缀目录不会被注册、不在后台展示，复制使用时去掉前缀并把 `example.py`/`info.example.json` 重命名为 `plugin.py`/`info.json`
-- `plugins/epay/plugin.py` — 易支付上游通道，最标准的 MD5 签名 + 回调 + 查单 + 退款全量参考
+- `plugins/epay/plugin.py` — 通用上游通道（epay 协议），最标准的 MD5 签名 + 回调 + 查单 + 退款全量参考
 - `plugins/shuangzi/plugin.py` — 第三方聚合网关（POST-form 协议、数字支付方式编码），inputs 全字段带 placeholder 的示范
 - `plugins/alipaysl/`、`wxpayn/`、`douyinpay/` — 官方 SDK 型（RSA/证书签名）参考
 

@@ -64,7 +64,7 @@ The active project for this task is **Payment**.
 
 Project description — durable context the project owner set for work in this project:
 
-易支付重构版
+聚合支付重构版
 
 Project resources (also written to `.multica/project/resources.json`):
 

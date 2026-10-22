@@ -469,7 +469,7 @@ async def test_notify_once_marks_done_without_url_or_unpaid(session, seeded):
 # ============================================================
 
 def _sign_epay(data: dict, key: str) -> str:
-    """上游易支付协议 MD5 签名（同插件规则：排除 sign/sign_type 与空串）。"""
+    """上游 epay 协议 MD5 签名（同插件规则：排除 sign/sign_type 与空串）。"""
     items = sorted(
         (k, v) for k, v in data.items()
         if k not in ("sign", "sign_type") and v is not None and v != ""

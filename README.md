@@ -21,7 +21,7 @@
 - **上游回调网关**：`/callbacks/{plugin}/{trade_no}`（异步通知）与 `.../return`（同步回跳），
   URL 携带插件名并做一致性校验
 - **上游插件框架**：异步 `BasePayment`（submit/query/notify_handler）+ info.json 自动发现；
-  内置 **易支付上游通道插件**（`plugins/epay/`，对接易支付协议的上游网关）
+  内置 **通用上游通道插件**（`plugins/epay/`，对接 epay 协议的上游网关）
 - **通道管理**：凭证 Fernet 加密（密钥派生自 APP_KEY）、商户费率/成本费率、
   随机/顺序/权重三种路由、金额区间与当日限额（Redis 计数）
 - **商户端**：登录（验证码）+ 管理员 SSO + 自助注册（开关/审核/邀请码绑定/
@@ -104,7 +104,7 @@ app/
     callbacks.py            # /callbacks/{plugin}/{trade_no} 上游回调网关
     admin/ merchant/        # 管理后台 / 商户端 REST API（v1 子集）
   worker/jobs/              # notify_merchant / query_upstream / 三个扫描 cron
-plugins/epay/               # 易支付上游通道插件
+plugins/epay/               # 通用上游通道插件
 alembic/versions/0001_*.py  # 初始迁移
 tests/                      # 签名 / 下单 / 回调幂等 / 阶梯重试 / 补单 / 收银台
 ```
