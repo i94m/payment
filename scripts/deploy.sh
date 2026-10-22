@@ -43,7 +43,8 @@ if [ ! -f .env ]; then
   log "未发现 .env：已从 .env.example 复制，请填写以下必填项后重新运行本脚本 ..."
   cp .env.example .env
   log "必填项（密钥一律手动生成，脚本不自动写入）："
-  log "  APP_SECRET_KEY / STORAGE_LOCAL_SECRET：openssl rand -hex 32 各生成一个（或 uv run python artisan.py key generate）"
+  log "  APP_SECRET_KEY：openssl rand -hex 32 生成（或 uv run python artisan.py key generate）"
+  log "  STORAGE_LOCAL_SECRET：可选，不填默认取 APP_SECRET_KEY；要独立密钥则 openssl rand -hex 32 另生成"
   log "  AUTH_CODE：向作者获取授权码填入"
   log "  DB_DATABASE / DB_USERNAME / DB_PASSWORD：宿主机 MySQL 接入"
   log "  REDIS_PASSWORD：宿主机 Redis 密码"
@@ -55,10 +56,9 @@ fi
 env_val() { sed -n "s/^$1=//p" .env | tail -1 | tr -d '"'"'"' '; }
 
 # 密钥预检：不自动生成，缺配直接报错（APP_SECRET_KEY 兼作通道凭证加密根密钥，
-# 自动生成会让运维误以为已正确配置，换钥/漏配事故难以察觉）
-for k in APP_SECRET_KEY STORAGE_LOCAL_SECRET; do
-  [ -n "$(env_val "$k")" ] || die "$k 未配置：请生成后填入 .env（openssl rand -hex 32），再重新运行本脚本"
-done
+# 自动生成会让运维误以为已正确配置，换钥/漏配事故难以察觉；STORAGE_LOCAL_SECRET
+# 不填由应用侧回退到 APP_SECRET_KEY，不在此强制）
+[ -n "$(env_val "APP_SECRET_KEY")" ] || die "APP_SECRET_KEY 未配置：请生成后填入 .env（openssl rand -hex 32），再重新运行本脚本"
 
 # 授权码预检：编译镜像启动即强制校验，缺码会卡在健康检查且日志晦涩，提前拦截
 if ! grep -qE '^AUTH_CODE=..' .env; then

@@ -157,7 +157,10 @@ class Config(BaseSettings):
     @model_validator(mode="after")
     def _enforce_non_default_secrets(self) -> Self:
         self._check_default_secret("APP_SECRET_KEY", self.APP_SECRET_KEY)
-        self._check_default_secret("STORAGE_LOCAL_SECRET", self.STORAGE_LOCAL_SECRET)
+        # STORAGE_LOCAL_SECRET 可不配：回退到 APP_SECRET_KEY。它只用于本地存储
+        # 上传策略的 HMAC 签发/验签，签与验同在本服务内，回退不影响互操作。
+        if not self.STORAGE_LOCAL_SECRET:
+            self.STORAGE_LOCAL_SECRET = self.APP_SECRET_KEY
         # self._check_default_secret("DB_PASSWORD", self.DB_PASSWORD)
 
         return self
