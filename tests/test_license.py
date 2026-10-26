@@ -253,3 +253,35 @@ async def test_describe_contains_note_and_expiry():
 
 async def test_describe_before_load():
     assert lic.describe() == "未加载授权信息"
+
+
+# ============================================================
+# 到期日期：expire_date 助手 + 公开端点 /license/expire
+# ============================================================
+
+async def test_expire_date_helper(monkeypatch):
+    assert lic.expire_date() is None
+    exp = int(time.time()) + 3600
+    monkeypatch.setattr(lic, "current", {"exp": exp})
+    assert lic.expire_date() == time.strftime("%Y-%m-%d", time.localtime(exp))
+
+
+async def test_license_expire_endpoint(client, monkeypatch):
+    """公开端点直接输出到期日期（YYYY-MM-DD）；未加载授权输出「未授权」。"""
+    monkeypatch.setattr(lic, "current", None)
+    r = await client.get("/license/expire")
+    assert r.status_code == 200
+    assert r.text == "未授权"
+
+    exp = int(time.time()) + 3600
+    monkeypatch.setattr(lic, "current", {"exp": exp})
+    r = await client.get("/license/expire")
+    assert r.status_code == 200
+    assert r.text == time.strftime("%Y-%m-%d", time.localtime(exp))
+    assert r.headers["content-type"].startswith("text/plain")
+
+    # 软锁（启动失败/过期）期间仍可访问，便于排障与监控
+    monkeypatch.setattr(lic, "startup_error", "无效的授权码：授权码为空")
+    r = await client.get("/license/expire")
+    assert r.status_code == 200
+    assert r.text == time.strftime("%Y-%m-%d", time.localtime(exp))

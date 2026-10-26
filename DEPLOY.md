@@ -188,6 +188,7 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 编译镜像启动时校验 `.env` 中的 `AUTH_CODE`（校验完全离线，不访问网络；本地源码运行不校验）。
 缺失或无效时容器**不退出**，以未授权模式运行：Web 页面展示「无效的授权码」（不区分原因），
 业务接口（后台 API / 下单 / 回调）一律 503，`/health` 保持 200 供容器监控；
+`/license/expire` 公开输出授权到期日期（纯文本 `YYYY-MM-DD`，未授权时输出「未授权」）；
 具体原因见 `docker logs`，常见对照：
 
 | 报错（原因：…） | 处理 |
@@ -199,7 +200,7 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 | 未内置授权公钥 | 镜像构建遗漏公钥（作者侧构建问题，此情况启动即退出） |
 
 - **解除**：有效码填入 `.env` 后 `docker compose up -d` 重建（或 `docker compose restart app worker`，`.env` 为 bind 挂载，重启即重读）
-- **运行中过期**：API 逐请求比对有效期（内存比较，过期即刻 503 断流，回调同步断流；`/health` 保留供监控）；SAQ worker 与容器本身需重启后由启动校验拦截。续期 = 换码 + 重启
+- **运行中过期**：API 逐请求比对有效期（内存比较，过期即刻 503 断流，回调同步断流；`/health` 与 `/license/expire` 保留供监控）；SAQ worker 与容器本身需重启后由启动校验拦截。续期 = 换码 + 重启
 
 ## 三、容量速查（架构口径）
 

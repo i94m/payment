@@ -194,3 +194,14 @@ def describe() -> str:
     if isinstance(exp, int) and not isinstance(exp, bool):
         return f"授权对象：{sub}；有效期至 {time.strftime('%Y-%m-%d %H:%M', time.localtime(exp))}"
     return f"授权对象：{sub}"
+
+
+def expire_date() -> str | None:
+    """已加载授权的到期日期（YYYY-MM-DD，本地时区）；未加载返回 None。
+
+    供公开端点 /license/expire 使用：只输出日期，不泄露授权对象等其他信息。
+    """
+    exp = (current or {}).get("exp")
+    if isinstance(exp, int) and not isinstance(exp, bool):
+        return time.strftime("%Y-%m-%d", time.localtime(exp))
+    return None

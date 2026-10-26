@@ -12,12 +12,12 @@ from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_limiter import FastAPILimiter
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.staticfiles import StaticFiles
 
 from app.core.config import config
 from app.core.frontend import register_docs, register_frontend
-from app.core.license import describe, lock_reason as license_lock_reason
+from app.core.license import describe, expire_date, lock_reason as license_lock_reason
 from app.core.logger import logger, request_id_var
 from app.responses import err
 from app.routers import routers
@@ -139,13 +139,14 @@ def _unauthorized_page() -> str:
 # 业务请求（均为纯内存判断）。浏览器页面请求（Accept: text/html）返回
 # 自包含的「无效的授权码」提示页；其余（API/回调/静态资源）返回 503 JSON
 # （对外一律只提示「无效的授权码」，不区分原因）。堵住「有效期内启动、
-# 过期后长期不重启」的口子。/health 豁免：容器健康检查保持可用，
-# 运维可见「服务在但未授权」。源码运行恒放行，本地开发不受影响。
+# 过期后长期不重启」的口子。/health 与 /license/expire 豁免：容器健康检查
+# 保持可用，到期日期随时可查；源码运行恒放行，本地开发不受影响。
 # ============================================================
 @app.middleware("http")
 async def license_soft_lock_middleware(request: Request, call_next):
     lock = license_lock_reason()
-    if request.url.path != "/health" and lock:
+    # /health 与 /license/expire 豁免：健康检查保持可用，到期日期随时可查
+    if request.url.path not in ("/health", "/license/expire") and lock:
         if "text/html" in (request.headers.get("accept") or ""):
             return HTMLResponse(_unauthorized_page(), status_code=503)
         return err(-1, "无效的授权码", http_status=503)
@@ -179,6 +180,13 @@ async def request_id_middleware(request: Request, call_next):
 @app.get("/health")
 async def health():
     return JSONResponse({"message": "ok"})
+
+
+# 授权到期日期（公开、无鉴权，纯文本）：已加载授权时输出 YYYY-MM-DD，
+# 否则输出「未授权」。软锁期间同样可访问（便于监控/运维查看）。
+@app.get("/license/expire", include_in_schema=False)
+async def license_expire():
+    return PlainTextResponse(expire_date() or "未授权")
 
 # 对接文档（VitePress 静态站点，公开访问）— 必须先于 SPA 兜底路由注册
 register_docs(app)
