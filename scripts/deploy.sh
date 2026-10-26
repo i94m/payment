@@ -79,6 +79,11 @@ if [ "$PULL" -eq 1 ] && [ "${IMAGE#*/}" != "$IMAGE" ]; then
   dc pull app worker
 fi
 
+# 三方插件目录：由部署用户预创建，避免 docker 挂载时用 root 建目录导致
+# 部署方没有写权限（直接拷 .so 插件目录进 storage/plugins/<插件名>/ 即可，
+# 无需重建镜像；与后台上传安装同一目录，同名覆盖镜像内置插件）
+mkdir -p storage/plugins
+
 # ---- 3. 起容器 ----
 UP_ARGS=(-d)
 [ -n "$SCALE" ] && UP_ARGS+=(--scale "app=${SCALE}")

@@ -44,6 +44,8 @@ async def plugin_list(session: SessionDep):
         "inputs": p.inputs_schema or [],
         "is_enabled": bool(p.is_enabled),
         "version": p.version or "",
+        # 插件来源：builtin=镜像内置，third=三方（storage/plugins）；行已失效时兜底 unknown
+        "source": PluginRegistry.plugin_source(p.name) or "unknown",
     } for p in rows])
 
 

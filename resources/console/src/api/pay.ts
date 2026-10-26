@@ -19,6 +19,8 @@ export interface PluginData {
   inputs: PluginInput[]
   is_enabled: boolean
   version: string
+  /** 插件来源：builtin=镜像内置，third=三方（storage/plugins），unknown=已失效 */
+  source: string
 }
 
 // ============ 支付方式 ============

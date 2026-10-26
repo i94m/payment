@@ -9,7 +9,7 @@ services:
     image: ${PAY_IMAGE:-ghcr.io/i94m/payment:latest}
     platform: linux/amd64
     network_mode: host
-    command: ["/bin/sh", "-c", "mkdir -p storage/logs storage/public storage/exports storage/private && uvicorn main:app --host 127.0.0.1 --port \"${APP_PORT:-8000}\" --workers \"${WEB_WORKERS:-2}\" --access-log"]
+    command: ["/bin/sh", "-c", "mkdir -p storage/logs storage/public storage/exports storage/private storage/plugins && uvicorn main:app --host 127.0.0.1 --port \"${APP_PORT:-8000}\" --workers \"${WEB_WORKERS:-2}\" --access-log"]
     env_file:
       - .env
     environment:

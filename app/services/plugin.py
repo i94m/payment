@@ -3,6 +3,9 @@
 - 注册键 = 插件目录名（`_` 前缀目录跳过）
 - 插件元信息（凭证表单 schema / 版本号等）全部来自插件类的 meta 属性（PluginMeta），
   不再读取 info.json
+- 支付插件分两档：builtin=镜像内置（`plugins/`，随镜像编译），
+  third=三方（`storage/plugins/`，后台上传或部署方直接拷入 .so 目录），
+  同名时三方覆盖内置，无需重建镜像即可上线新插件
 - 兼容旧式同步插件：submit/notify 返回值若为可等待对象则 await，
   否则原样返回（由调用方做形态适配）
 """
@@ -33,9 +36,13 @@ async def maybe_await(result: Any) -> Any:
 
 
 class PluginRegistry:
-    # 后台上传插件的安装目录（storage 持久卷，容器重建不丢；payment 专属）
+    # 后台上传插件的安装目录（storage 持久卷，容器重建不丢；payment 专属）。
+    # 同时也是「三方插件」目录：部署方可直接把编译好的 plugin*.so 目录拷进来，
+    # 无需重建镜像；与后台上传同一目录、优先级高于镜像内置插件。
     UPLOAD_ROOT = Path("storage") / "plugins"
     _payment: dict[str, type[BasePayment]] = {}
+    # 插件来源：builtin=镜像内置（plugins/），third=三方（storage/plugins，覆盖内置）
+    _payment_source: dict[str, str] = {}
     _sms: dict[str, type[BaseSms]] = {}
     _mail: dict[str, type[BaseMail]] = {}
     _loaded = False
@@ -53,16 +60,18 @@ class PluginRegistry:
             return
         for plugin_type, (attr, base_cls, pkg) in cls.TYPE_MAP.items():
             registry = getattr(cls, attr)
-            dirs = [(Path(pkg.replace(".", "/")), pkg, True)]
+            dirs = [(Path(pkg.replace(".", "/")), pkg, True, "builtin")]
             if plugin_type == "payment":
-                # 额外扫描后台上传目录（不在包路径上，按文件位置导入）
-                dirs.append((cls.UPLOAD_ROOT, "", False))
-            for type_dir, pkg_name, from_pkg in dirs:
-                cls._scan_type_dir(type_dir, base_cls, pkg_name, from_pkg, registry)
+                # 额外扫描三方插件目录（不在包路径上，按文件位置导入）；
+                # 后扫描覆盖先扫描 → 同名三方插件优先于镜像内置
+                dirs.append((cls.UPLOAD_ROOT, "", False, "third"))
+            for type_dir, pkg_name, from_pkg, source in dirs:
+                cls._scan_type_dir(type_dir, base_cls, pkg_name, from_pkg, registry, source)
         cls._loaded = True
 
     @classmethod
-    def _scan_type_dir(cls, type_dir: Path, base_cls, pkg: str, from_pkg: bool, registry: dict):
+    def _scan_type_dir(cls, type_dir: Path, base_cls, pkg: str, from_pkg: bool, registry: dict,
+                       source: str = "builtin"):
         if not type_dir.exists():
             return
         for d in sorted(type_dir.iterdir()):
@@ -85,7 +94,7 @@ class PluginRegistry:
                     _log.warning(f"加载插件失败 {d.name}: {e}")
                     continue
             else:
-                # 上传目录只允许编译后的 .so（安全限制：不接受 .py 源码）
+                # 三方目录只允许编译后的 .so（安全限制：不接受 .py 源码）
                 so_path = cls._find_plugin_module(d)
                 if so_path is None:
                     continue
@@ -101,6 +110,8 @@ class PluginRegistry:
                     # 源码目录内不一致的按目录名注册（后台 meta 展示以类属性为准）
                     plugin_id = d.name
                     registry[plugin_id] = obj
+                    if registry is cls._payment:
+                        cls._payment_source[plugin_id] = source
                     break
 
     @classmethod
@@ -155,6 +166,7 @@ class PluginRegistry:
             del sys.modules[k]
         cls._loaded = False
         cls._payment.clear()
+        cls._payment_source.clear()
         cls._sms.clear()
         cls._mail.clear()
         cls.discover()
@@ -213,6 +225,15 @@ class PluginRegistry:
         return None
 
     @classmethod
+    def plugin_source(cls, plugin_name: str) -> str:
+        """插件来源：builtin=镜像内置（plugins/），third=三方（storage/plugins）。
+
+        注册表未命中时返回空串（调用方自行兜底）。
+        """
+        cls.discover()
+        return cls._payment_source.get(plugin_name, "")
+
+    @classmethod
     def list_plugins(cls) -> list[dict]:
         """扫描 plugins/ 目录，返回全部支付插件元信息（供 admin）。"""
         cls.discover()
@@ -226,8 +247,11 @@ class PluginRegistry:
                     "types": meta.types,
                     "inputs": meta.inputs,
                     "version": meta.version,
+                    "source": cls._payment_source.get(name, "builtin"),
                     "refund": bool(getattr(plugin_cls, "is_refund_supported", lambda: False)()),
                 })
             else:
-                result.append({"name": name, "showname": name, "types": [], "inputs": [], "version": "", "refund": False})
+                result.append({"name": name, "showname": name, "types": [], "inputs": [],
+                               "version": "", "source": cls._payment_source.get(name, "builtin"),
+                               "refund": False})
         return result

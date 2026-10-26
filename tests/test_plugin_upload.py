@@ -49,6 +49,14 @@ class _FakePluginMismatch(BasePayment):
         return PaymentResult(kind="error", msg="stub")
 
 
+class _FakeEpayOverride(BasePayment):
+    # 三方目录里的同名插件：应覆盖镜像内置的 epay，且来源标记为 third
+    meta = PluginMeta(name="epay", showname="覆盖版epay", types=["alipay"], version="9.9.9")
+
+    async def submit(self, ctx: PaymentContext) -> PaymentResult:
+        return PaymentResult(kind="error", msg="stub")
+
+
 @pytest.fixture
 def upload_root(tmp_path, monkeypatch):
     root = tmp_path / "plugins"
@@ -131,6 +139,41 @@ async def test_upload_install_success(client, upload_root, admin_headers, monkey
     names = {p["name"]: p for p in resp.json()["data"]}
     assert names["myplug"]["showname"] == "测试插件"
     assert names["myplug"]["version"] == "1.0.1"  # 版本号来自类 meta，不再来自 info.json
+    assert names["myplug"]["source"] == "third"  # 上传/三方目录来源标记
+    # 镜像内置插件标记为 builtin
+    assert PluginRegistry.plugin_source("epay") == "builtin"
+
+
+async def test_third_party_dir_overrides_builtin(upload_root, monkeypatch):
+    """三方目录（storage/plugins）同名插件覆盖镜像内置，来源标记 third。"""
+    import types as _types
+
+    def _fake_import(cls, name, so_path):
+        mod = _types.ModuleType(f"plugins_upload.{name}.plugin")
+        mod.Plugin = _FakeEpayOverride
+        return mod
+
+    monkeypatch.setattr(PluginRegistry, "_import_upload", classmethod(_fake_import))
+    # 模拟部署方直接拷入 storage/plugins/epay/plugin*.so（无 .py）
+    plug_dir = upload_root / "epay"
+    plug_dir.mkdir(parents=True)
+    (plug_dir / SO_NAME).write_bytes(b"\x7fELF-fake-override")
+
+    try:
+        PluginRegistry.reload()
+        assert PluginRegistry.get_payment_class("epay") is _FakeEpayOverride
+        assert PluginRegistry.plugin_source("epay") == "third"
+        metas = {m["name"]: m for m in PluginRegistry.list_plugins()}
+        assert metas["epay"]["showname"] == "覆盖版epay"
+        assert metas["epay"]["version"] == "9.9.9"
+        assert metas["epay"]["source"] == "third"
+    finally:
+        # 清掉临时三方目录并重扫，避免污染后续用例
+        for p in plug_dir.iterdir():
+            p.unlink()
+        plug_dir.rmdir()
+        PluginRegistry.reload()
+    assert PluginRegistry.plugin_source("epay") == "builtin"
 
 
 async def test_upload_ignores_info_json(client, upload_root, admin_headers, monkeypatch):

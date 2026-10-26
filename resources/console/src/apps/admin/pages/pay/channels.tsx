@@ -83,6 +83,10 @@ const testPaySchema = z.object({
   amount: numStr("订单金额", { min: 0.01, max: 1000 }),
 })
 
+// 插件展示名 + 来源标记：内置（随镜像）/ 三方（storage/plugins，上传或目录拷入）
+const pluginLabel = (p: PluginData) =>
+  `${p.showname}（${p.source === "third" ? "三方" : p.source === "builtin" ? "内置" : "未知"}）`
+
 export function ChannelsPage() {
 
   const navigate = useNavigate()
@@ -523,7 +527,7 @@ export function ChannelsPage() {
               <SelectContent>
                 <SelectItem value="_all">{"全部支付插件"}</SelectItem>
                 {plugins.map((p) => (
-                  <SelectItem key={p.name} value={p.name}>{p.showname}</SelectItem>
+                  <SelectItem key={p.name} value={p.name}>{pluginLabel(p)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -622,7 +626,7 @@ export function ChannelsPage() {
                           <div className="px-2 py-1.5 text-xs text-muted-foreground">{"该支付方式暂无可用插件"}</div>
                         )}
                         {availablePlugins.map((p) => (
-                          <SelectItem key={p.name} value={p.name}>{p.showname}</SelectItem>
+                          <SelectItem key={p.name} value={p.name}>{pluginLabel(p)}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

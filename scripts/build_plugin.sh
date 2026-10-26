@@ -9,16 +9,13 @@
 #   dist/plugins/<插件名>/             解压后的插件目录（服务器挂载/更新用）
 #   dist/plugin_packages/<插件名>.zip  发给客户上传的安装包（仅 .so，无源码）
 #
-# 客户侧安装（推荐）:
+# 客户侧安装（推荐发给客户）:
 #   后台「支付通道 → 上传插件」选择该 zip → 建通道填凭证 → 测试 → 启用
 #   多 worker/多副本部署时，其他进程需重启后才加载新插件
 #
-# 服务器侧更新（挂载方式，以 prod/ 部署为例，app 与 worker 两个服务都要挂载）:
-#   1. 把 dist/plugins/<插件名>/ 拷到服务器，如 prod/plugins_ext/<插件名>/
-#   2. compose 里两个服务的 volumes 各加一行:
-#        - ./plugins_ext/<插件名>:/app/plugins/<插件名>:ro
-#   3. docker compose up -d                 # 重建容器，启动时自动刷新插件注册表
-#   4. 后台「已安装插件」核对版本号（更新前记得在 plugin.py 的 meta.version 递增）
+# 自用/托管部署（目录映射，无需重建镜像）:
+#   把 dist/plugins/<插件名>/ 整个目录拷到服务器的 storage/plugins/<插件名>/，
+#   重启容器即可（与后台上传同一目录；同名覆盖镜像内置插件，后台标记为「三方」）
 #
 # 注意: 产物仅适用于生产镜像（cp312 / linux-amd64）；挂载会覆盖镜像内同名插件目录
 set -euo pipefail

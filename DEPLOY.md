@@ -171,6 +171,10 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 ## 二、应用侧配套
 
 - 部署/升级统一走 `scripts/deploy.sh`（建表/迁移已内置，无需手工 db init）
+- **三方插件目录**：`storage/plugins/<插件名>/`（compose 已挂载整个 `storage/`，无需改编排）。
+  把编译好的插件目录（`plugin*.so`）拷进去后重启容器即可，**不用重建镜像**；
+  与后台上传安装是同一目录，同名时覆盖镜像内置插件，后台来源标记为「三方」。
+  `deploy.sh` 会自动预创建该目录（部署用户属主，便于 scp 投放）。
 - `.env`：`DB_POOL_SIZE / DB_MAX_OVERFLOW` 按“连接数预算”收敛；`WORKER_CONCURRENCY` 按 CPU 调
 - 页面未暴露的运行期配置（`api_order_rate_limit`、`merchant_reg_open` / `merchant_reg_review`、
   `site_name`、`settle_d1_enable` 等）：站点配置页仅展示扣量 + 结算组（自动结算 / D+1 除外），
