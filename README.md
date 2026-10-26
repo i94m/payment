@@ -63,7 +63,7 @@ uv run pytest                             # 测试（134 个用例，sqlite 本�
 Docker 全链路：`docker compose -f docker-compose.production.yml up -d`（镜像从 ghcr.io 拉取）
 （默认起 3 个 app 实例，端口仅绑 `127.0.0.1:8000-8002`；实例数经 `.env` 的 `APP_REPLICAS` 配置
 或 `--scale app=N` 覆盖（N ≤ 端口范围大小），范围可经 `APP_PORT_RANGE` 扩大。
-主机 nginx 反代负载均衡见 `nginx-example.conf`：上游轮询这组端口，`nginx -t` 后 reload 生效。
+主机 nginx 反代负载均衡见 `nginx-conf.conf`（宝塔站点可直接粘贴）：上游轮询这组端口，`nginx -t` 后 reload 生效。
 生产部署与 MySQL 高并发配置见 `DEPLOY.md`。）
 
 初始化后：admin 登录 `/admin-api/auth/login`（admin / 123456，首次后改密）。

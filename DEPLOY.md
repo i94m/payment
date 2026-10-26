@@ -8,7 +8,7 @@
 | worker | 容器（SAQ：通知重试/补单/过期关单，可 `--scale worker=N`） | 同上 |
 | MySQL 8.0（兼容 5.7） | **宿主机系统服务（非容器）**；容器化仅为备选 | 本文·一 |
 | Redis | **宿主机系统服务（非容器）**（队列/限流/锁/扣量计数） | 本文·一之 3 |
-| nginx | **宿主机**（非容器），轮询上游 8000-8002 | `nginx-example.conf` |
+| nginx | **宿主机**（非容器），轮询上游 8000-8002 | `nginx-conf.conf` |
 
 ## 零、打包与部署（各一条命令）
 
@@ -36,6 +36,35 @@ git pull && PAY_IMAGE=registry.example.com/myns/pay-gateway:<tag> ./scripts/depl
 `PAY_IMAGE` 环境变量决定 compose 用的镜像名（默认 `ghcr.io/i94m/payment:latest`，
 GitHub Actions 自动构建发布；本机 `scripts/build-image.sh` 产出 `pay-gateway:<tag>`，
 用 `PAY_IMAGE=pay-gateway:<tag>` 指定）。服务器上请固定带版本标签拉取，避免 latest 漂移。
+
+### 生成客户部署包（一条命令交付）
+
+```shell
+uv run python scripts/make_release.py
+# 交互询问「文件夹名称」和「授权有效日期」，自动签发授权码并打包
+```
+
+也可以非交互（CI/批量交付）：
+
+```shell
+uv run python scripts/make_release.py --name client-a --until 2027-12-31 \
+    --image ghcr.io/i94m/payment:1.2.3
+```
+
+产物（`dist/` 已 gitignore，不会入库）：
+
+```
+dist/releases/<文件夹名>/            解压后的部署目录
+dist/releases/<文件夹名>.zip         发给客户的交付包
+```
+
+包内结构：`.env`（已生成 `APP_SECRET_KEY` / `STORAGE_LOCAL_SECRET` / `AUTH_CODE` /
+`PAY_IMAGE`）、`docker-compose.yml`、`scripts/deploy.sh`、`nginx-conf.conf`、
+`安装说明.md`。客户解压后只需改 `.env` 里的数据库/Redis 配置，执行 `bash scripts/deploy.sh`
+即可完成拉镜像、建表/迁移、健康检查。
+
+> 需要作者本机的 `license_private.pem`（gitignored）；缺失时先跑
+> `uv run python scripts/license_gen.py keygen`。脚本会校验签发私钥与镜像内置公钥是否一致。
 
 ## 一、MySQL 高并发配置
 
@@ -181,7 +210,8 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
   其余设置键一律直接写 `settings` 表或调 `PATCH /admin-api/setting` 调整
   （如 `api_order_rate_limit` 下单限流，次/分钟/来源IP，0=不限，默认 60）
 - 扩 app 实例：`./scripts/deploy.sh --scale 3`（上限 = 端口范围大小，见 compose 注释）
-- nginx：`sudo cp nginx-example.conf /etc/nginx/conf.d/pay-gateway.conf && sudo nginx -t && sudo systemctl reload nginx`
+- nginx：宝塔用户把 `nginx-conf.conf` 粘进站点「配置文件」（替换 `pay.example.com` 为实际域名）；
+  非宝塔：`sudo cp nginx-conf.conf /etc/nginx/conf.d/pay-gateway.conf && sudo nginx -t && sudo systemctl reload nginx`
 
 ### 授权码（AUTH_CODE）
 

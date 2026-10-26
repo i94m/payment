@@ -18,7 +18,14 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-COMPOSE_FILE=${COMPOSE_FILE:-docker-compose.production.yml}
+# 编排文件：源码仓库用 docker-compose.production.yml；客户部署包内命名为 docker-compose.yml
+if [ -z "${COMPOSE_FILE:-}" ]; then
+  if [ -f docker-compose.production.yml ]; then
+    COMPOSE_FILE=docker-compose.production.yml
+  else
+    COMPOSE_FILE=docker-compose.yml
+  fi
+fi
 
 log() { printf '\033[1;36m[deploy]\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31m[deploy]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -148,6 +155,6 @@ esac
 
 # ---- 6. 汇总 ----
 dc ps --format 'table {{.Name}}\t{{.Status}}'
-log "完成 ✔  入口：宿主 nginx 反代 127.0.0.1:8000-8002（nginx-example.conf）；"
+log "完成 ✔  入口：宿主 nginx 反代 127.0.0.1:8000-8002（nginx-conf.conf，宝塔可直接粘贴站点配置）；"
 log "      管理后台 /admin（首次部署默认 admin/123456，登录后立即改密）；"
 log "      日志：docker compose -f $COMPOSE_FILE logs -f app worker"

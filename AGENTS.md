@@ -16,6 +16,8 @@ uv run python artisan.py key generate    # writes APP_SECRET_KEY + STORAGE_LOCAL
 uv run python artisan.py db init         # create tables + admin + pay types + settings + permission tree
 uv run uvicorn main:app --reload         # API on :8000
 uv run python -m saq app.worker.settings # SAQ worker (needs Redis): notify retries / query-fill / expire
+scripts/build_plugin.sh <name>           # compile a plugin to .so + upload zip (needs docker)
+uv run python scripts/make_release.py    # interactive customer bundle (.env/compose/deploy.sh + zip) -> dist/releases/
 uv run pytest                            # tests (sqlite at /tmp/pay_pytest.db)
 uv run pytest tests/test_pay_flow.py::test_create_order_and_notify_paid   # single test
 ```
