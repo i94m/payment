@@ -65,6 +65,7 @@ class EpayPayment(BasePayment):
             {"name": "appswitch", "title": "是否使用mapi接口", "type": "select",
              "options": {"0": "否", "1": "是"}},
         ],
+        version="1.0.0",
     )
 
     @classmethod

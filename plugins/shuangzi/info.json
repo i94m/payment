@@ -1,9 +1,0 @@
-{
-  "id": "shuangzi",
-  "name": "shuangzi",
-  "type": "payment",
-  "title": "双子支付",
-  "version": "1.0.0",
-  "author": "pay-gateway",
-  "types": ["alipay", "wxpay"]
-}

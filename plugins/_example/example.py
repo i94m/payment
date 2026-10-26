@@ -5,10 +5,10 @@
 
 使用方法：
 1. 复制整个 _example 目录 → plugins/<你的插件名>/
-2. example.py 重命名为 plugin.py，info.example.json 重命名为 info.json
-   （id 改成与目录名一致，version 新插件一律 1.0.0）
-3. 按下方注释逐段替换伪代码；硬性规则见 plugins/README.md，
-   完整可运行的参考实现见 README.md §10（epay / shuangzi 最贴近本骨架）
+2. example.py 重命名为 plugin.py
+3. 元信息统一定义在类属性 meta（name 与目录名一致，version 新插件一律 "1.0.0"），
+   不再需要 info.json；按下方注释逐段替换伪代码，硬性规则见 plugins/README.md，
+   完整可运行的参考实现见 README.md §10（epay 最贴近本骨架）
 
 接口定义：app/services/plugin_interfaces.py（写之前先通读一遍）
 """
@@ -67,7 +67,7 @@ class ExamplePayment(BasePayment):
 
     # ---- 元信息：admin 后台按 inputs 动态渲染"渠道凭证"表单 ----
     meta = PluginMeta(
-        name="example",                      # ★ 必须与目录名、info.json.id 三者一致
+        name="example",                      # ★ 必须与目录名一致
         showname="示例支付",
         types=["alipay", "wxpay"],           # 只能取系统支付方式 code
         inputs=[
@@ -83,6 +83,7 @@ class ExamplePayment(BasePayment):
             {"name": "paymode", "title": "支付模式", "type": "select",
              "options": {"1": "跳转", "2": "扫码"}},
         ],
+        version="1.0.0",                     # ★ 必填；迭代按语义化递增（见 README §7）
     )
 
     @classmethod

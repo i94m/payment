@@ -15,10 +15,11 @@ from typing import Optional
 @dataclass
 class PluginMeta:
     """插件元信息（admin 动态渲染凭证表单用）。"""
-    name: str                    # 必须与目录名/info.json id 一致
+    name: str                    # 必须与目录名一致
     showname: str
     types: list[str]             # 支持的 payment_type.code，如 ["alipay","wxpay"]
     inputs: list[dict] = field(default_factory=list)
+    version: str = ""            # 插件版本（新插件一律 "1.0.0"，admin 列表展示/核对用）
     # inputs 元素示例：
     # {"name": "appurl", "title": "接口地址", "type": "input",
     #  "placeholder": "https://xxx/", "required": True}

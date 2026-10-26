@@ -27,17 +27,23 @@ def _make_zip(files: dict[str, bytes]) -> bytes:
 
 
 def _so_zip(name: str = "myplug") -> bytes:
+    # 插件包只有 plugin.so（info.json 已彻底废除，不再参与元信息）
     return _make_zip({
         f"{name}/{SO_NAME}": b"\x7fELF-fake-plugin-so",
-        f"{name}/info.json": (
-            '{"id": "%s", "title": "测试插件", "types": ["alipay"], "version": "1.0.1"}' % name
-        ).encode(),
     })
 
 
 class _FakePlugin(BasePayment):
-    # 模拟真实编译插件：类 meta 与 info.json 保持一致（编译保留类属性）
-    meta = PluginMeta(name="myplug", showname="测试插件", types=["alipay"])
+    # 模拟真实编译插件：元信息/版本号全部来自类 meta（编译保留类属性）
+    meta = PluginMeta(name="myplug", showname="测试插件", types=["alipay"], version="1.0.1")
+
+    async def submit(self, ctx: PaymentContext) -> PaymentResult:
+        return PaymentResult(kind="error", msg="stub")
+
+
+class _FakePluginMismatch(BasePayment):
+    # meta.name 与 zip 目录名不一致：安装必须被拒绝（防注册键错位）
+    meta = PluginMeta(name="otherplug", showname="错名插件", types=["alipay"], version="1.0.0")
 
     async def submit(self, ctx: PaymentContext) -> PaymentResult:
         return PaymentResult(kind="error", msg="stub")
@@ -114,9 +120,9 @@ async def test_upload_install_success(client, upload_root, admin_headers, monkey
     assert body["data"]["name"] == "myplug"
     assert body["data"]["showname"] == "测试插件"
 
-    # 安装目录保持文件夹形式且无 .py
+    # 安装目录保持文件夹形式且无 .py、无 info.json
     assert (upload_root / "myplug" / SO_NAME).is_file()
-    assert (upload_root / "myplug" / "info.json").is_file()
+    assert not (upload_root / "myplug" / "info.json").exists()
     assert not any(upload_root.rglob("*.py"))
 
     # 注册表可查 + Plugin 表已同步（后台「已安装插件」立即可见）
@@ -124,7 +130,54 @@ async def test_upload_install_success(client, upload_root, admin_headers, monkey
     resp = await client.get("/admin-api/pay/plugins", headers=admin_headers)
     names = {p["name"]: p for p in resp.json()["data"]}
     assert names["myplug"]["showname"] == "测试插件"
+    assert names["myplug"]["version"] == "1.0.1"  # 版本号来自类 meta，不再来自 info.json
+
+
+async def test_upload_ignores_info_json(client, upload_root, admin_headers, monkeypatch):
+    """包内残留 info.json 一律忽略：不落盘、不解析（彻底废除口径）。"""
+
+    def _fake_import(cls, name, so_path):
+        mod = types.ModuleType(f"plugins_upload.{name}.plugin")
+        mod.Plugin = _FakePlugin
+        return mod
+
+    monkeypatch.setattr(PluginRegistry, "_import_upload", classmethod(_fake_import))
+
+    data = _make_zip({
+        f"myplug/{SO_NAME}": b"\x7fELF-fake-plugin-so",
+        "myplug/info.json": b'{"id": "evil", "title": "fake", "version": "9.9.9"}',
+    })
+    r = await client.post("/admin-api/pay/plugins/upload",
+                          files={"file": ("myplug.zip", data, "application/zip")},
+                          headers=admin_headers)
+    body = r.json()
+    assert body["code"] == 0, body
+    # 插件名/版本以目录名与类 meta 为准，info.json 被忽略
+    assert body["data"]["name"] == "myplug"
+    assert not (upload_root / "myplug" / "info.json").exists()
+    resp = await client.get("/admin-api/pay/plugins", headers=admin_headers)
+    names = {p["name"]: p for p in resp.json()["data"]}
     assert names["myplug"]["version"] == "1.0.1"
+
+
+async def test_upload_meta_name_mismatch_rolls_back(client, upload_root, admin_headers, monkeypatch):
+    """meta.name 与 zip 目录名不一致：拒绝安装并回滚（防注册键错位）。"""
+
+    def _fake_import(cls, name, so_path):
+        mod = types.ModuleType(f"plugins_upload.{name}.plugin")
+        mod.Plugin = _FakePluginMismatch
+        return mod
+
+    monkeypatch.setattr(PluginRegistry, "_import_upload", classmethod(_fake_import))
+
+    r = await client.post("/admin-api/pay/plugins/upload",
+                          files={"file": ("myplug.zip", _so_zip("myplug"), "application/zip")},
+                          headers=admin_headers)
+    body = r.json()
+    assert body["code"] != 0
+    assert "插件名不一致" in body["message"]
+    assert not (upload_root / "myplug").exists()
+    assert "myplug" not in PluginRegistry.payment_names()
 
 
 async def test_upload_bad_so_rolls_back(client, upload_root, admin_headers, monkeypatch):

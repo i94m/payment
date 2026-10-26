@@ -11,7 +11,7 @@
   - alembic/**：迁移脚本按文件路径动态加载（不走包导入），且 migrate init 会在
     容器内覆写 env.py；迁移脚本=表结构，敏感度低
   - plugins/_example/**：插件开发模板，保持可读（发现逻辑按 `_` 前缀天然跳过）
-  - *.json（info.json、regions.json 等）等数据文件
+  - *.json（regions.json 等）等数据文件
 
 编译指令三件套是 pydantic v2 / FastAPI / typer 兼容的命门：
   annotation_typing=False  注解按 Python 对象保留（pydantic 读 __annotations__ 建模型）

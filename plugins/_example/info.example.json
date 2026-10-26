@@ -1,9 +1,0 @@
-{
-  "id": "example",
-  "name": "example",
-  "type": "payment",
-  "title": "示例支付",
-  "version": "1.0.0",
-  "author": "pay-gateway",
-  "types": ["alipay", "wxpay"]
-}

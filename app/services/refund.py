@@ -42,10 +42,7 @@ async def refunded_amount(session: AsyncSession, trade_no: str) -> Decimal:
 
 
 def _refund_ok(result: dict) -> bool:
-    """归一化插件退款成功判定（各插件返回形态不一致）。
-
-    epay：status==1；alipay/wxpay 系：code==0；douyinpay：status=="success"。
-    """
+    """归一化插件退款成功判定（epay 返回 status==1；code==0 形态兼容保留）。"""
     if not isinstance(result, dict):
         return False
     status = result.get("status")

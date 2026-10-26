@@ -6,7 +6,6 @@
 from datetime import datetime, time, timedelta
 from decimal import Decimal
 import io
-import json
 import re
 import shutil
 import uuid
@@ -50,9 +49,11 @@ async def plugin_list(session: SessionDep):
 
 @router.post("/plugins/sync", dependencies=[Depends(PermissionChecker("channel.update"))])
 async def plugin_sync(session: SessionDep):
-    """扫描 plugins/ 目录刷新插件注册表。"""
+    """扫描 plugins/ 目录刷新插件注册表；盘上已不存在的插件行一并清理
+    （仍被通道引用的跳过，避免通道静默失效，提示人工处理）。"""
     PluginRegistry.reload()
     metas = PluginRegistry.list_plugins()
+    names = {m["name"] for m in metas}
     for meta in metas:
         row = await session.get(Plugin, meta["name"])
         inputs = meta.get("inputs", [])
@@ -71,8 +72,26 @@ async def plugin_sync(session: SessionDep):
                 version=version,
                 is_enabled=True,
             ))
+    # 清理：注册表中已不存在的插件行；仍被通道引用的跳过并提示
+    removed, referenced = [], []
+    for row in (await session.exec(select(Plugin))).all():
+        if row.name in names:
+            continue
+        used = (await session.exec(
+            select(func.count()).select_from(Channel).where(Channel.plugin_name == row.name)
+        )).one()
+        if used:
+            referenced.append(row.name)
+            continue
+        await session.delete(row)
+        removed.append(row.name)
     await session.commit()
-    return suc(f"已同步 {len(metas)} 个插件")
+    msg = f"已同步 {len(metas)} 个插件"
+    if removed:
+        msg += f"，清理失效插件 {len(removed)} 个"
+    if referenced:
+        msg += f"；{len(referenced)} 个插件仍被通道引用未删除：{','.join(referenced)}"
+    return suc(msg)
 
 
 # 上传插件包大小上限
@@ -83,12 +102,13 @@ _UPLOAD_MAX_SIZE = 10 * 1024 * 1024
 async def plugin_upload(file: UploadFile, session: SessionDep):
     """上传安装编译后的插件包（zip）。
 
-    包结构 = scripts/build_plugin.sh 产物目录直接压缩：
+    包结构 = scripts/build_plugin.sh 产物目录直接压缩（通常只有主模块一个文件）：
       <插件名>/plugin.cpython-312-x86_64-linux-gnu.so
-      <插件名>/info.json
-    仅接受 .so 编译产物（含 .py 一律拒绝，与镜像源码保护口径一致）；安装到
-    storage/plugins/<插件名>/（持久卷随 storage 备份，容器重建不丢），安装后
-    立即刷新注册表并同步 Plugin 表。多 worker/多副本部署时其他进程需重启生效。
+    仅接受 .so 编译产物（含 .py 一律拒绝，与镜像源码保护口径一致）；插件名取
+    zip 内目录名，元信息/版本号来自插件类的 meta（不再支持 info.json，包内残留的
+    info.json 会被忽略）。安装到 storage/plugins/<插件名>/（持久卷随 storage 备份，
+    容器重建不丢），安装后立即刷新注册表并同步 Plugin 表。
+    多 worker/多副本部署时其他进程需重启生效。
     """
     data = await file.read()
     if len(data) > _UPLOAD_MAX_SIZE:
@@ -116,19 +136,15 @@ async def plugin_upload(file: UploadFile, session: SessionDep):
     main = min(main_entries, key=lambda i: i.filename.count("/"))
     prefix = main.filename[: -len(main.filename.split("/")[-1])]  # 含尾随 /
 
-    # 插件名：info.json 的 id 优先，缺省用 zip 内目录名
-    info = {}
-    try:
-        info = json.loads(zf.read(prefix + "info.json"))
-    except Exception:
-        pass
+    # 插件名 = zip 内目录名（元信息以插件类 meta 为准）
     default_name = prefix.rstrip("/").rsplit("/", 1)[-1] if prefix \
         else (file.filename or "plugin").rsplit(".", 1)[0]
-    name = str(info.get("id") or "").strip() or default_name
+    name = default_name
     if not re.fullmatch(r"[a-z][a-z0-9_]{0,49}", name):
         return err(-1, f"插件名不合法：{name}（需小写字母开头，仅含小写字母/数字/下划线）")
 
     # 先解包到暂存目录，校验通过后原子替换（zip-slip 防护：越界路径直接拒绝）
+    # 彻底废除 info.json：包内残留的 info.json 一律忽略，不落盘
     upload_root = PluginRegistry.UPLOAD_ROOT
     upload_root.mkdir(parents=True, exist_ok=True)
     stage = upload_root.parent / f".upload_{uuid.uuid4().hex}"
@@ -138,6 +154,8 @@ async def plugin_upload(file: UploadFile, session: SessionDep):
             if not i.filename.startswith(prefix):
                 continue
             target = stage / i.filename[len(prefix):]
+            if target.name == "info.json":
+                continue
             if not target.resolve().is_relative_to(stage.resolve()):
                 return err(-1, "压缩包包含非法路径")
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -156,11 +174,21 @@ async def plugin_upload(file: UploadFile, session: SessionDep):
         PluginRegistry.reload()
         return err(-1, "插件导入失败：.so 与运行环境不兼容或缺少 BasePayment 子类")
 
+    # 元信息必须来自插件类 meta，且 meta.name 与 zip 目录名一致（防注册键错位）
     meta = PluginRegistry.plugin_meta(name)
-    showname = meta.showname if meta else name
-    types = ",".join(meta.types) if meta else ""
-    inputs = meta.inputs if meta else []
-    version = (str(info.get("version") or ""))[:16] or None
+    if meta is None:
+        shutil.rmtree(upload_root / name, ignore_errors=True)
+        PluginRegistry.reload()
+        return err(-1, "插件缺少 meta 元信息（PluginMeta），无法安装")
+    if meta.name != name:
+        shutil.rmtree(upload_root / name, ignore_errors=True)
+        PluginRegistry.reload()
+        return err(-1, f"插件名不一致：meta.name={meta.name}，zip 目录名={name}")
+
+    showname = meta.showname
+    types = ",".join(meta.types)
+    inputs = meta.inputs
+    version = (str(meta.version or ""))[:16] or None
 
     # 同步 Plugin 表，让「已安装插件」列表立即可见（plugin_sync 同款最小集）
     row = await session.get(Plugin, name)

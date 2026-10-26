@@ -123,7 +123,7 @@ export const payApi = {
   // 扫描 plugins/ 目录刷新插件注册表（支付通道页「同步插件」按钮）
   syncPlugins: () => apiClient.post("/pay/plugins/sync"),
 
-  // 上传安装编译后的插件包（zip：build_plugin.sh 产物目录，仅含 .so + info.json）
+  // 上传安装编译后的插件包（zip：build_plugin.sh 产物目录，仅含 .so）
   uploadPlugin: (file: File) => {
     const fd = new FormData()
     fd.append("file", file)

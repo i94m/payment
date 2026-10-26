@@ -1,8 +1,8 @@
 """插件注册表 — 支付插件扫描 plugins/ 自动发现，短信/邮件适配器在 app/addons/。
 
-- 注册键取 info.json 的 id（缺省目录名）
-- 插件元信息（凭证表单 schema 等）优先读插件类的 meta 属性（PluginMeta），
-  兼容只写 info.json 的旧式插件
+- 注册键 = 插件目录名（`_` 前缀目录跳过）
+- 插件元信息（凭证表单 schema / 版本号等）全部来自插件类的 meta 属性（PluginMeta），
+  不再读取 info.json
 - 兼容旧式同步插件：submit/notify 返回值若为可等待对象则 await，
   否则原样返回（由调用方做形态适配）
 """
@@ -10,7 +10,6 @@ import asyncio
 import importlib
 import importlib.machinery
 import importlib.util
-import json
 import logging
 import sys
 from pathlib import Path
@@ -72,13 +71,6 @@ class PluginRegistry:
             if d.name.startswith("_"):
                 # `_` 前缀目录是模板/示例（如 _example），不注册、不在后台展示
                 continue
-            info_file = d / "info.json"
-            info = {}
-            if info_file.exists():
-                try:
-                    info = json.loads(info_file.read_text())
-                except Exception:
-                    info = {}
             if from_pkg:
                 # 编译镜像里插件已是 .so，不再存在 plugin.py；
                 # 按 import 系统后缀表探测模块是否存在（.py 与 .so 通用）
@@ -105,7 +97,9 @@ class PluginRegistry:
             for name in dir(mod):
                 obj = getattr(mod, name)
                 if isinstance(obj, type) and issubclass(obj, base_cls) and obj is not base_cls:
-                    plugin_id = info.get("id", d.name)
+                    # 注册键 = 目录名；meta.name 与目录名的一致性由上传校验，
+                    # 源码目录内不一致的按目录名注册（后台 meta 展示以类属性为准）
+                    plugin_id = d.name
                     registry[plugin_id] = obj
                     break
 
@@ -208,35 +202,14 @@ class PluginRegistry:
         return cls_obj(config) if cls_obj else None
 
     @classmethod
-    def _info_json(cls, plugin_name: str) -> dict:
-        """读插件目录的 info.json（取不到返回空 dict）。"""
-        for info_path in (Path("plugins") / plugin_name / "info.json",
-                          cls.UPLOAD_ROOT / plugin_name / "info.json"):
-            if info_path.exists():
-                try:
-                    return json.loads(info_path.read_text())
-                except Exception:
-                    pass
-        return {}
-
-    @classmethod
     def plugin_meta(cls, plugin_name: str) -> Optional[PluginMeta]:
-        """取插件元信息（优先类上的 meta，缺省从 info.json 兜底）。"""
+        """取插件元信息（类属性 meta 为唯一来源）。"""
         plugin_cls = cls.get_payment_class(plugin_name)
         if not plugin_cls:
             return None
         meta = getattr(plugin_cls, "meta", None)
         if isinstance(meta, PluginMeta):
             return meta
-        # 兜底：从 info.json 构造
-        info = cls._info_json(plugin_name)
-        if info:
-            return PluginMeta(
-                name=plugin_name,
-                showname=info.get("title", plugin_name),
-                types=info.get("types", []),
-                inputs=info.get("inputs", []),
-            )
         return None
 
     @classmethod
@@ -246,16 +219,15 @@ class PluginRegistry:
         result = []
         for name, plugin_cls in cls._payment.items():
             meta = cls.plugin_meta(name)
-            version = str(cls._info_json(name).get("version", "") or "")
             if meta:
                 result.append({
                     "name": meta.name,
                     "showname": meta.showname,
                     "types": meta.types,
                     "inputs": meta.inputs,
-                    "version": version,
+                    "version": meta.version,
                     "refund": bool(getattr(plugin_cls, "is_refund_supported", lambda: False)()),
                 })
             else:
-                result.append({"name": name, "showname": name, "types": [], "inputs": [], "version": version, "refund": False})
+                result.append({"name": name, "showname": name, "types": [], "inputs": [], "version": "", "refund": False})
         return result

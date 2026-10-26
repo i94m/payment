@@ -123,7 +123,7 @@ export function ChannelsPage() {
   const [testDebug, setTestDebug] = React.useState<ChannelTestDebug | null>(null)
   // 插件同步（插件目录扫描，同步后刷新插件下拉与通道列表）
   const [syncing, setSyncing] = React.useState(false)
-  // 上传安装编译后的插件包（zip：build_plugin.sh 产物，仅 .so + info.json）
+  // 上传安装编译后的插件包（zip：build_plugin.sh 产物，仅 .so）
   const [uploading, setUploading] = React.useState(false)
   const uploadRef = React.useRef<HTMLInputElement>(null)
 
@@ -546,7 +546,7 @@ export function ChannelsPage() {
                 {`已安装插件（${plugins.length}）`}
               </Button>
               <Button size="sm" variant="outline" onClick={() => uploadRef.current?.click()}
-                      disabled={uploading} title="上传编译后的插件包（zip：build_plugin.sh 产物，仅 .so + info.json）">
+                      disabled={uploading} title="上传编译后的插件包（zip：build_plugin.sh 产物，仅 .so）">
                 <IconUpload className={`size-4 ${uploading ? "animate-pulse" : ""}`} />
                 {uploading ? "上传中…" : "上传插件"}
               </Button>

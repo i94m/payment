@@ -20,7 +20,7 @@
   每 2 分钟主动查上游补记账补通知；每 5 分钟过期关单
 - **上游回调网关**：`/callbacks/{plugin}/{trade_no}`（异步通知）与 `.../return`（同步回跳），
   URL 携带插件名并做一致性校验
-- **上游插件框架**：异步 `BasePayment`（submit/query/notify_handler）+ info.json 自动发现；
+- **上游插件框架**：异步 `BasePayment`（submit/query/notify_handler）+ 目录自动发现（元信息在插件类 `meta`）；
   内置 **通用上游通道插件**（`plugins/epay/`，对接 epay 协议的上游网关）
 - **通道管理**：凭证 Fernet 加密（密钥派生自 APP_KEY）、商户费率/成本费率、
   随机/顺序/权重三种路由、金额区间与当日限额（Redis 计数）
@@ -167,9 +167,8 @@ docs/
 
 ## 已知边界（后续迭代）
 
-- 5 个直连插件（wxpayn/alipayd 等）保留旧同步实现，未适配异步接口
-  （`services/plugin.maybe_await` 兼容调用，v1 验收不依赖）
-- 微信 V3 回调验签 TODO 随直连插件一并后置
+- 内置上游插件仅 `epay`（协议适配）；官方直连类插件（微信 V3/支付宝等）已移除，
+  需要时按 `plugins/README.md` 的流程重新接入
 - 商户找回密码依赖邮件通道：支付设置 `mail_channel`/`mail_config` 未配置时不可自助重置
   （管理员端有「重置登录密码」兜底）；订阅邮件同理
 - 代理独立登录面板后置：归属（paypage 路径式 `/{pid}/{agent_id}`）、业绩统计、商户侧管理已实现

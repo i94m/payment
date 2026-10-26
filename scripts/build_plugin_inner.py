@@ -5,8 +5,8 @@
 embedsignature 三件套，pydantic v2 兼容的命门，缺一不可），产物为
 cp312 / linux-amd64 的 .so，与镜像内 .so ABI 一致。
 
-挂载约定：仓库根只读挂 /src（取插件源码），/out 输出编译产物（.so + info.json
-等非 .py 文件），插件名经环境变量 PLUGIN 传入。
+挂载约定：仓库根只读挂 /src（取插件源码），/out 输出编译产物（.so 等非 .py 文件），
+插件名经环境变量 PLUGIN 传入。
 """
 import importlib.machinery
 import os

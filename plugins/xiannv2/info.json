@@ -1,9 +1,0 @@
-{
-  "id": "xiannv2",
-  "name": "xiannv2",
-  "type": "payment",
-  "title": "仙女支付2",
-  "version": "1.0.0",
-  "author": "pay-gateway",
-  "types": ["alipay", "wxpay"]
-}

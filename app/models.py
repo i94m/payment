@@ -275,7 +275,7 @@ class PaymentType(SQLModel, table=True):
 
 
 class Plugin(SQLModel, table=True):
-    """支付插件注册表快照（由 `artisan plugin sync` 从 info.json 扫描写入）。"""
+    """支付插件注册表快照（admin「同步插件」按 PluginRegistry 扫描的插件类 meta 写入）。"""
     __tablename__ = "plugins"
     __table_args__ = _MYSQL_ARGS
 

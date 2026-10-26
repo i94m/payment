@@ -7,8 +7,7 @@
 ```
 plugins/
 ├── <plugin_name>/           支付插件
-│   ├── plugin.py            必需，插件实现
-│   └── info.json            必需，静态元信息
+│   └── plugin.py            必需，插件实现 + 元信息（类属性 meta，不再使用 info.json）
 ├── _example/                ★ 示例模板（伪代码），新插件从这里复制开始
 └── README.md                本文件
 ```
@@ -20,9 +19,10 @@ plugins/
   新插件从 `plugins/_example/` 复制后**必须去掉下划线前缀**
 - 通过 `importlib` 导入 `plugins.<name>.plugin`，模块内**任何**继承
   `BasePayment / BaseSms / BaseMail` 的类都会被注册（取第一个命中的）
-- 注册键 = `info.json` 的 `id`（缺省目录名）；**`id` 必须与目录名一致**
+- 注册键 = 目录名；**`meta.name` 必须与目录名一致**（上传安装会强制校验）
+- 元信息（name/showname/types/inputs/version）统一定义在插件类的 `meta`（PluginMeta）上
 - 加载失败只记 warning 不中断启动 —— 新插件写完后要主动验证注册成功（见 §8）
-- `info.json` 改动/新增插件后需 `PluginRegistry.reload()` 或重启进程才生效（`_loaded` 缓存）
+- 新增插件后需 `PluginRegistry.reload()` 或重启进程才生效（`_loaded` 缓存）
 
 ## 2. 接口契约
 
@@ -36,7 +36,7 @@ plugins/
 | `return_handler(ctx_params) -> dict \| None` | 否 | 同步回跳，仅上游 return 带成功态时才需要 |
 | `refund(order, refund_no, amount) -> dict` | 否 | 退款，`{"status": 1/0, "msg": ...}`（商户端退款入口已下线，插件层接口保留） |
 | `is_refund_supported()` | 否 | 类方法，支持退款才覆写为 `True` |
-| `meta: PluginMeta` | 强烈建议 | 元信息 + admin 动态渲染凭证表单 |
+| `meta: PluginMeta` | 是 | 元信息唯一来源（name/showname/types/inputs/version）+ admin 动态渲染凭证表单 |
 
 数据类（字段含义见源码注释，勿随意加字段）：
 
@@ -67,7 +67,7 @@ plugins/
 1. **MD5 一律小写**：Python `hexdigest()` 本身就是小写；比对时两侧统一（PHP 老代码用 `strcasecmp` 的，Python 侧 `.lower() == .lower()`）
 2. **排序语义**：PHP `ksort($arr, SORT_STRING)` ≙ Python `sorted(keys)`（ASCII 字符串升序）
 3. **空值排除的边界**：排除 `''` 和 `None`，但 **`"0"` 必须参与签名**（`'' == '0'` 在 PHP 是宽松比较的坑；参考 `plugins/epay/plugin.py` 的 `_sign_content_epay` 注释）
-4. **拼接方式逐字核对上游文档**：`k=v&k=v` 后**直接拼 key** 还是拼 **`&key=密钥`**，逐字核对（epay 插件是前者、shuangzi 是后者），差一个 `&` 签名就错
+4. **拼接方式逐字核对上游文档**：`k=v&k=v` 后**直接拼 key** 还是拼 **`&key=密钥`**，逐字核对（epay 插件是前者），差一个 `&` 签名就错
 5. **有文档签名示例向量的，先离线验证再写业务逻辑**（见 §8），验证不过说明拼接规则理解有误
 6. URL 编码：签名用**原始值**编码前的串；发起跳转时才用 `urlencode()`
 
@@ -85,9 +85,10 @@ plugins/
 - 回调里的成功状态码要转成字符串比较：`str(ctx_params.get("orderStatus")) == "2"`，防止上游传 `"02"` / int 差异
 - 同步回跳 `return_handler` 只在上游 return 请求**自带签名和成功态**时才实现；多数上游 return 无签名，保持默认返回 `None` 即可
 
-## 7. meta 与 info.json
+## 7. meta 元信息与凭证表单
 
-- `meta = PluginMeta(...)`：`name` 与目录名/`info.json.id` 一致；`types` 只能取系统支付方式 code（如 `alipay / wxpay / qqpay / bank`），对应 `ctx.order["payment_type_code"]`
+- `meta = PluginMeta(...)`：`name` 与目录名一致；`types` 只能取系统支付方式 code（如 `alipay / wxpay / qqpay / bank`），对应 `ctx.order["payment_type_code"]`
+- **`version` 必填，新插件一律 `1.0.0`**；此后协议/签名行为变更递增主版本（2.0.0），新增功能或凭证字段递增次版本（1.1.0），纯修复递增修订号（1.0.1）
 - `inputs` 是 admin 渠道表单 schema（运维在后台配置支付账号/密钥等凭证时按它渲染），必须是 **list[dict]**，字段：`{"name", "title", "type"(input/select), "placeholder", "required", "options"(select 用 dict)}`
 - **placeholder 是硬性要求**：
   - 每个支付账号/密钥类字段（商户号、AppID、密钥、网关地址、编码/编号等一切 `type: "input"` 的字段）**必须带 `placeholder`**，缺一个都算不合规
@@ -98,8 +99,6 @@ plugins/
     - 特殊编码（如支付方式编号）→ 格式 + 含义，如 `数字编码如 123，不同支付方式不同，需向平台确认`
   - `type: "select"` 用 `options` 提供候选项，不需要 placeholder
 - 凭证读取统一走 `self.channel`（已解密 dict），空值兜底用 `str(self.channel.get("k", "") or "").strip()`，且**必须与 inputs 里的 `name` 逐一对应**
-- `info.json` 保留 `id / name / type / title / version / author / types` 七个键，与 meta 保持一致（registry 兜底用）
-- **`version` 必填，新插件一律 `1.0.0`**；此后协议/签名行为变更递增主版本（2.0.0），新增功能或凭证字段递增次版本（1.1.0），纯修复递增修订号（1.0.1）
 
 ## 8. 验收清单（写完插件必须逐项过）
 
@@ -108,14 +107,15 @@ cd <仓库根目录>
 ```
 
 1. **可导入**：`python -c "import plugins.<name>.plugin"`
-2. **注册成功**：`PluginRegistry.reload()` 后 `get_payment_class("<id>")` 非 None（写临时脚本或用 `python -c` 验证）
-3. **签名有文档向量的必须离线比对**（如双子 `96cf5606...` 示例），用 `python -c` 算一遍
+2. **注册成功**：`PluginRegistry.reload()` 后 `get_payment_class("<name>")` 非 None（写临时脚本或用 `python -c` 验证）
+3. **签名有文档向量的必须离线比对**，用 `python -c` 算一遍
 4. **meta 表单字段与实际读取的 channel 键一一对应**（input name ↔ `self.channel.get(...)`）
 5. **每个 `type: "input"` 的 inputs 字段都有 placeholder**，且是可照抄的真实格式示例（见 §7）
-6. **info.json 有 `version` 字段**：新插件一律 `1.0.0`，迭代按语义化递增（见 §7）
+6. **`meta.version` 必填**：新插件一律 `1.0.0`，迭代按语义化递增（见 §7）
 7. **notify 分支齐全**：无 sign / 验签失败 / 非成功状态 / 成功 / 金额解析失败，五条路径都有明确返回
 8. 不确定上游查单响应结构时，`query` 按防御式解析（`code`/`data` 判空），失败一律 `unknown`
 9. 新插件接入真实通道前，用上游测试商户号跑一笔小额下单 + 回调闭环
+10. 验收通过后，执行 `scripts/build_plugin.sh <插件名>` 生成客户上传包（见 §11，产物在 `dist/`，不入库）
 
 ## 9. 常见坑（历史踩过的）
 
@@ -125,16 +125,49 @@ cd <仓库根目录>
 - 回调里自行比对金额并拒绝 → 与中心层逻辑重复且口径不一致；插件只报数
 - 在插件里 `import app.models` 查订单 → 越界；订单一律通过 `ctx.order` 快照拿
 - 同步/返回代码里用同步 requests/httpx → 阻塞事件循环
-- `info.json` 的 `id` 与目录名不一致 → 注册键错位，admin 建通道后回调 404
+- `meta.name` 与目录名不一致 → 注册键错位，admin 建通道后回调 404
 - inputs 缺 placeholder 或写空话 → 运维建通道时不知道账号/密钥该填什么格式，填错后排查成本高
-- inputs 写成 dict（如 `douyinpay` 旧版 `info.json` 的形式）→ 渲染异常，**必须 list[dict]，勿模仿旧格式**
+- inputs 写成 dict → 渲染异常，**必须 list[dict]**
 - 老 PHP 插件的 `/tmp/*.log` 文件日志、`global $siteurl` 全局变量、`daddslashes` 转义在新架构里都没有对应物，从 PHP 插件改写时不要照搬
 
 ## 10. 参考实现
 
-- `plugins/_example/` — **伪代码骨架模板，新插件的起点**；`_` 前缀目录不会被注册、不在后台展示，复制使用时去掉前缀并把 `example.py`/`info.example.json` 重命名为 `plugin.py`/`info.json`
-- `plugins/epay/plugin.py` — 通用上游通道（epay 协议），最标准的 MD5 签名 + 回调 + 查单 + 退款全量参考
-- `plugins/shuangzi/plugin.py` — 第三方聚合网关（POST-form 协议、数字支付方式编码），inputs 全字段带 placeholder 的示范
-- `plugins/alipaysl/`、`wxpayn/`、`douyinpay/` — 官方 SDK 型（RSA/证书签名）参考
+- `plugins/_example/` — **伪代码骨架模板，新插件的起点**；`_` 前缀目录不会被注册、不在后台展示，复制使用时去掉前缀并把 `example.py` 重命名为 `plugin.py`
+- `plugins/epay/plugin.py` — 唯一内置上游插件（epay 协议），MD5 签名 + 回调 + 查单 + 退款全量参考
 
 短信/邮件适配器已迁至 `app/addons/{sms,mail}/`（复用 storage addon 的组织方式），由 `PluginRegistry` 按包名扫描，不适用本指南的插件验收流程。
+
+## 11. 打包与分发（对接完成后，生成给客户的上传包）
+
+插件开发 + §8 验收全部通过后，一条命令生成客户可直接在后台上传的安装包：
+
+```bash
+cd <仓库根目录>
+scripts/build_plugin.sh <插件名>        # 需要 docker（与生产镜像同环境编译 .so）
+```
+
+产物（`dist/` 已在 `.gitignore` 中，**不会入库**，仅用于私下分发）：
+
+```
+dist/plugins/<插件名>/             解压后的插件目录（服务器挂载/更新用）
+dist/plugin_packages/<插件名>.zip  发给客户的上传包（仅 .so，无源码 / 无 info.json）
+```
+
+zip 内结构（后台上传接口要求的目录层级）：
+
+```
+<插件名>/plugin.cpython-312-x86_64-linux-gnu.so
+```
+
+> 上传接口只接受编译后的 `.so`，包内含 `.py` 会被拒绝；`info.json` 已废除，残留文件会被忽略、不落盘。
+> 版本号来自插件类 `meta.version`，发版前记得递增，客户安装后可在后台「已安装插件」核对。
+
+**客户侧安装步骤：**
+
+1. 管理后台 →「支付通道」→ 右上角「上传插件」，选择 `dist/plugin_packages/<插件名>.zip`
+2. 新建通道：选支付方式 + 该插件 → 按 `inputs` 表单填凭证 → 保存（新通道默认关闭）
+3. 通道列表点「测试」跑一笔测试单，确认下单 + 回调闭环
+4. 打开通道开关启用
+5. 多 worker/多副本部署时，上传只刷新当前进程，其他进程需重启后生效
+
+**服务器侧更新（挂载方式，替代后台上传）：** 把 `dist/plugins/<插件名>/` 拷到服务器（如 `prod/plugins_ext/<插件名>/`），在 compose 里给 app 与 worker 两个服务各加一行只读挂载 `- ./plugins_ext/<插件名>:/app/plugins/<插件名>:ro`，然后 `docker compose up -d`。
