@@ -60,7 +60,8 @@ RUN APP_SECRET_KEY=build-smoke STORAGE_LOCAL_SECRET=build-smoke \
     assert app.core.license.PUBLIC_KEY_B64, '镜像未内置授权公钥：请先在 app/core/license.py 填入 PUBLIC_KEY_B64'; \
     import sys, types; _stub = types.ModuleType('app.core.license'); \
     _stub.enforce = lambda code: None; _stub.current = None; _stub.describe = lambda: 'build-smoke'; \
-    _stub.lock_reason = lambda: None; \
+    _stub.lock_reason = lambda: None; _stub.expire_date = lambda: None; \
+    _stub.__getattr__ = lambda name: (lambda *a, **k: None); \
     sys.modules['app.core.license'] = _stub; \
     import main, artisan; \
     from app.services.plugin import PluginRegistry; PluginRegistry.discover(); \
@@ -131,7 +132,9 @@ RUN mkdir -p storage/logs storage/public storage/exports storage/private
 RUN APP_SECRET_KEY=runtime-smoke STORAGE_LOCAL_SECRET=runtime-smoke \
     python -c "import sys, types; _stub = types.ModuleType('app.core.license'); \
     _stub.enforce = lambda code: None; _stub.current = None; _stub.describe = lambda: 'runtime-smoke'; \
-    _stub.lock_reason = lambda: None; sys.modules['app.core.license'] = _stub; \
+    _stub.lock_reason = lambda: None; _stub.expire_date = lambda: None; \
+    _stub.__getattr__ = lambda name: (lambda *a, **k: None); \
+    sys.modules['app.core.license'] = _stub; \
     import main; print('runtime smoke ok:', len(main.app.routes), 'routes')"
 
 EXPOSE 8000
