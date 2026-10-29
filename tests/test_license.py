@@ -143,22 +143,22 @@ async def test_enforce_compiled_empty_code_soft_locks(monkeypatch, capsys):
     """空码不退出进程：记录 startup_error 转软锁，stderr 给运维完整提示。"""
     monkeypatch.setattr(lic, "__file__", SO_FILE)
     lic.enforce("")
-    assert lic.startup_error and "无效的授权码" in lic.startup_error and "为空" in lic.startup_error
-    assert "授权" in capsys.readouterr().err
+    assert lic.startup_error and "Invalid license code" in lic.startup_error and "empty" in lic.startup_error
+    assert "License" in capsys.readouterr().err
 
 
 async def test_enforce_compiled_bad_sig_soft_locks(monkeypatch, capsys):
     monkeypatch.setattr(lic, "__file__", SO_FILE)
     lic.enforce(make_code(tamper=True))
-    assert lic.startup_error and "签名" in lic.startup_error
-    assert "签名" in capsys.readouterr().err
+    assert lic.startup_error and "signature" in lic.startup_error
+    assert "signature" in capsys.readouterr().err
 
 
 async def test_enforce_compiled_expired_soft_locks(monkeypatch, capsys):
     monkeypatch.setattr(lic, "__file__", SO_FILE)
     lic.enforce(make_code({"exp": int(time.time()) - 10}))
-    assert lic.startup_error and "过期" in lic.startup_error
-    assert "过期" in capsys.readouterr().err
+    assert lic.startup_error and "expired" in lic.startup_error
+    assert "expired" in capsys.readouterr().err
 
 
 async def test_enforce_compiled_valid_passes(monkeypatch, capsys):
@@ -176,7 +176,7 @@ async def test_empty_baked_key_fails_secure(monkeypatch, capsys):
     monkeypatch.setattr(lic, "__file__", SO_FILE)
     with pytest.raises(SystemExit):
         lic.enforce(make_code())
-    assert "公钥" in capsys.readouterr().err
+    assert "public key" in capsys.readouterr().err
 
 
 # ============================================================
@@ -200,14 +200,14 @@ async def test_lock_reason_flags(monkeypatch):
     monkeypatch.setattr(lic, "current", {"exp": int(time.time()) + 3600})
     assert lic.lock_reason() is None
     monkeypatch.setattr(lic, "current", {"exp": int(time.time())})
-    assert "过期" in lic.lock_reason()
+    assert "expired" in lic.lock_reason()
     monkeypatch.setattr(lic, "current", {"exp": int(time.time()) - 1})
-    assert "过期" in lic.lock_reason()
+    assert "expired" in lic.lock_reason()
     monkeypatch.setattr(lic, "current", {"sub": "no-exp"})
     assert lic.lock_reason() is None
     # 启动失败优先于过期判定
-    monkeypatch.setattr(lic, "startup_error", "无效的授权码：授权码为空")
-    assert "为空" in lic.lock_reason()
+    monkeypatch.setattr(lic, "startup_error", "Invalid license code: License code is empty")
+    assert "empty" in lic.lock_reason()
 
 
 async def test_soft_lock_middleware(client, monkeypatch):
@@ -219,7 +219,7 @@ async def test_soft_lock_middleware(client, monkeypatch):
     monkeypatch.setattr(lic, "current", {"exp": int(time.time()) - 1})
     r = await client.get("/admin-api/pay/channels")
     assert r.status_code == 503
-    assert r.json()["message"] == "无效的授权码"
+    assert r.json()["message"] == "Invalid License Code"
     assert (await client.get("/health")).status_code == 200
 
 
@@ -227,16 +227,16 @@ async def test_soft_lock_middleware_html_page(client, monkeypatch):
     """浏览器页面请求（Accept: text/html）返回自包含「无效的授权码」提示页，
     不泄露原因与配置方法；启动失败与过期同样只出该提示。"""
     for lock_state in (
-        {"startup_error": "无效的授权码：授权码为空"},
+        {"startup_error": "Invalid license code: License code is empty"},
         {"current": {"exp": int(time.time()) - 1}},
     ):
         monkeypatch.setattr(lic, "startup_error", lock_state.get("startup_error"))
         monkeypatch.setattr(lic, "current", lock_state.get("current"))
         r = await client.get("/", headers={"accept": "text/html"})
         assert r.status_code == 503
-        assert "无效的授权码" in r.text
+        assert "Invalid License Code" in r.text
         # 公开页面不泄露原因/配置细节
-        assert "为空" not in r.text and ".env" not in r.text and "过期" not in r.text
+        assert "empty" not in r.text and ".env" not in r.text and "expired" not in r.text
         assert "text/html" in r.headers["content-type"]
 
 
@@ -271,7 +271,7 @@ async def test_license_expire_endpoint(client, monkeypatch):
     monkeypatch.setattr(lic, "current", None)
     r = await client.get("/license/expire")
     assert r.status_code == 200
-    assert r.text == "未授权"
+    assert r.text == "Unlicensed"
 
     exp = int(time.time()) + 3600
     monkeypatch.setattr(lic, "current", {"exp": exp})
@@ -281,7 +281,7 @@ async def test_license_expire_endpoint(client, monkeypatch):
     assert r.headers["content-type"].startswith("text/plain")
 
     # 软锁（启动失败/过期）期间仍可访问，便于排障与监控
-    monkeypatch.setattr(lic, "startup_error", "无效的授权码：授权码为空")
+    monkeypatch.setattr(lic, "startup_error", "Invalid license code: License code is empty")
     r = await client.get("/license/expire")
     assert r.status_code == 200
     assert r.text == time.strftime("%Y-%m-%d", time.localtime(exp))

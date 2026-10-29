@@ -73,18 +73,18 @@ def _b64url_decode(seg: str) -> bytes:
         std = seg.replace("-", "+").replace("_", "/")
         return base64.b64decode(std + "=" * (-len(seg) % 4), validate=True)
     except Exception:
-        raise LicenseFormatError("授权码编码不正确") from None
+        raise LicenseFormatError("Invalid license code encoding") from None
 
 
 def _load_public_key() -> Ed25519PublicKey:
     """惰性解析内置公钥。空/坏 → LicenseKeyError，绝不静默跳过校验。"""
     key_b64 = PUBLIC_KEY_B64.strip()
     if not key_b64:
-        raise LicenseKeyError("授权公钥未配置（内置 PUBLIC_KEY_B64 为空）")
+        raise LicenseKeyError("License public key not configured (built-in PUBLIC_KEY_B64 is empty)")
     try:
         return Ed25519PublicKey.from_public_bytes(base64.b64decode(key_b64, validate=True))
     except Exception:
-        raise LicenseKeyError("授权公钥格式不正确（内置 PUBLIC_KEY_B64，应为 32 字节原始公钥的标准 base64）") from None
+        raise LicenseKeyError("Invalid license public key format (built-in PUBLIC_KEY_B64 must be standard base64 of a 32-byte raw key)") from None
 
 
 def verify(code: str) -> dict:
@@ -95,12 +95,12 @@ def verify(code: str) -> dict:
     global current
     code = (code or "").strip()
     if not code:
-        raise LicenseFormatError("授权码为空")
+        raise LicenseFormatError("License code is empty")
     parts = code.split(".")
     if parts[0] == CODE_PREFIX:
         parts = parts[1:]
     if len(parts) != 2:
-        raise LicenseFormatError("格式不正确（应为 载荷.签名 两段；旧版 PAY1. 前缀码亦可）")
+        raise LicenseFormatError("Invalid format (expected payload.signature; legacy PAY1.-prefixed codes are also accepted)")
     payload_seg, sig_seg = parts
     payload_bytes = _b64url_decode(payload_seg)
     sig = _b64url_decode(sig_seg)
@@ -109,20 +109,20 @@ def verify(code: str) -> dict:
     except LicenseError:
         raise
     except Exception:
-        raise LicenseSignatureError("签名无效") from None
+        raise LicenseSignatureError("Invalid signature") from None
     try:
         payload = json.loads(payload_bytes)
     except Exception:
-        raise LicenseFormatError("载荷不是合法 JSON") from None
+        raise LicenseFormatError("Payload is not valid JSON") from None
     if not isinstance(payload, dict):
-        raise LicenseFormatError("载荷必须是 JSON 对象")
+        raise LicenseFormatError("Payload must be a JSON object")
     exp = payload.get("exp")
     # bool 是 int 子类，需排除；未知扩展键忽略（前向兼容）
     if isinstance(exp, bool) or not isinstance(exp, int):
-        raise LicenseFormatError("载荷缺少有效期 exp（unix 秒）")
+        raise LicenseFormatError("Payload is missing expiration exp (unix seconds)")
     if exp <= time.time():
         raise LicenseExpiredError(
-            f"授权已于 {time.strftime('%Y-%m-%d %H:%M', time.localtime(exp))} 过期")
+            f"License expired at {time.strftime('%Y-%m-%d %H:%M', time.localtime(exp))}")
     current = payload
     return payload
 
@@ -147,24 +147,26 @@ def enforce(code: str) -> None:
         sys.stderr.write(
             "\n"
             "==========================================================\n"
-            "启动失败：授权公钥不可用（镜像构建问题，fail-secure 退出）\n"
-            f"原因：{e}\n"
-            "处理：由作者修复 PUBLIC_KEY_B64 后重建并重发镜像\n"
+            "Startup failed: license public key unavailable (image build issue, fail-secure exit)\n"
+            f"Reason: {e}\n"
+            "Fix: the author must correct PUBLIC_KEY_B64, rebuild and redistribute the image\n"
             "==========================================================\n"
         )
         sys.stderr.flush()
         raise SystemExit(1) from None
     except LicenseError as e:
-        startup_error = f"无效的授权码：{e}"
+        startup_error = f"Invalid license code: {e}"
         sys.stderr.write(
             "\n"
             "==========================================================\n"
-            "授权码校验未通过，服务将以未授权模式启动（进程不退出）\n"
-            f"原因：{e}\n"
-            f"当前 AUTH_CODE：{(code or '').strip()[:12] or '（空）'}\n"
-            "处理：获取有效授权码后填入 .env 的 AUTH_CODE=，重启容器\n"
-            "     （docker compose up -d）。校验完全离线，不会访问网络\n"
-            "未授权期间：Web 页面展示「无效的授权码」，业务接口全部 503\n"
+            "License verification failed; the service will start unlicensed (process stays up)\n"
+            f"Reason: {e}\n"
+            f"Current AUTH_CODE: {(code or '').strip()[:12] or '(empty)'}\n"
+            "Fix: obtain a valid license code, set AUTH_CODE= in .env, then restart\n"
+            "     the container (docker compose up -d). Verification is fully offline\n"
+            "     and never accesses the network\n"
+            "While unlicensed: web pages show the invalid-license notice, all\n"
+            "business APIs return 503\n"
             "==========================================================\n"
         )
         sys.stderr.flush()
@@ -181,7 +183,7 @@ def lock_reason() -> str | None:
         return startup_error
     exp = (current or {}).get("exp")
     if isinstance(exp, int) and not isinstance(exp, bool) and exp <= time.time():
-        return f"授权已于 {time.strftime('%Y-%m-%d %H:%M', time.localtime(exp))} 过期，请向作者续期后重启服务"
+        return f"License expired at {time.strftime('%Y-%m-%d %H:%M', time.localtime(exp))}, please renew it with the author and restart the service"
     return None
 
 

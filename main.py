@@ -73,7 +73,7 @@ async def lifespan(instance: FastAPI):
     # 授权信息展示（强制校验在 config 导入期已完成；失败不退出，进未授权软锁）
     lock = license_lock_reason()
     if lock:
-        logger.warning(f"授权未生效（{lock}）：业务接口已软锁，Web 页面展示未授权提示")
+        logger.warning(f"License not active ({lock}): business APIs are soft-locked, web pages show the invalid-license notice")
     else:
         logger.info(f"授权信息: {describe()}")
     # 启动即强刷插件注册表（与后台「已安装插件」刷新同源），不等首次使用或手动点击
@@ -118,19 +118,19 @@ def _unauthorized_page() -> str:
     配置方法，细节留在启动 stderr（docker logs）给运维。
     """
     return """<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>无效的授权码</title>
+<title>Invalid License Code</title>
 <style>
   html, body { margin: 0; height: 100%; }
   body { display: flex; align-items: center; justify-content: center;
-         font: 500 28px/1.4 system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+         font: 500 28px/1.4 system-ui, sans-serif;
          color: #1f2329; background: #fff; }
 </style>
 </head>
-<body>无效的授权码</body>
+<body>Invalid License Code</body>
 </html>"""
 
 
@@ -149,7 +149,7 @@ async def license_soft_lock_middleware(request: Request, call_next):
     if request.url.path not in ("/health", "/license/expire") and lock:
         if "text/html" in (request.headers.get("accept") or ""):
             return HTMLResponse(_unauthorized_page(), status_code=503)
-        return err(-1, "无效的授权码", http_status=503)
+        return err(-1, "Invalid License Code", http_status=503)
     return await call_next(request)
 
 
@@ -186,7 +186,7 @@ async def health():
 # 否则输出「未授权」。软锁期间同样可访问（便于监控/运维查看）。
 @app.get("/license/expire", include_in_schema=False)
 async def license_expire():
-    return PlainTextResponse(expire_date() or "未授权")
+    return PlainTextResponse(expire_date() or "Unlicensed")
 
 # 对接文档（VitePress 静态站点，公开访问）— 必须先于 SPA 兜底路由注册
 register_docs(app)
