@@ -72,14 +72,3 @@ def cashier_url(site: str, trade_no: str) -> str:
 def paypage_url(code: str) -> str:
     """收款页短链：/p/{code}（code 由 services/paytoken.py 按商户/代理映射）。"""
     return f"/p/{code}"
-
-
-
-def cashier_url(site: str, trade_no: str) -> str:
-    """收银台不透明链接：{site}/cashier/{token}。"""
-    return f"{site.rstrip('/')}/cashier/{encode_link_token(trade_no)}"
-
-
-def paypage_url(code: str) -> str:
-    """收款页短链：/p/{code}（code 由 services/paytoken.py 按商户/代理映射）。"""
-    return f"/p/{code}"
