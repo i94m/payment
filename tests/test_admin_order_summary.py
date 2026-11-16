@@ -11,9 +11,9 @@
 
 实测（3 笔命中，10+20+50=80）：旧实现返回 **240.00**，修复后 80.00。
 
-修复在 `feat/api-presentation-layer`（PR #8）：`sum(subq.c.money)` 只引用子查询列。
-本用例在该分支上是 **XPASS**；合并进 main 后删掉下面的 xfail 标记即为常驻门禁。
-需要立刻看真实结果时用 `pytest tests/test_admin_order_summary.py --runxfail`。
+修复随 PR #8 合入主线（`sum(subq.c.money)` 只引用子查询列）；xfail 标记已摘除，
+本用例是常驻门禁。验收时核对过「修复前的树（`9334aa8`）上 `--runxfail` 失败
+（且 SQLAlchemy 直接报 cartesian product 警告），在最终树上通过」。
 """
 from decimal import Decimal
 
@@ -22,12 +22,6 @@ from sqlmodel import select
 
 from app.core.security import hash_password, issue_token
 from app.models import Order, SystemAdmin
-
-# 修复未合并进 main 前为预期失败（与 test_p0_concurrency.py 同一套 xfail 工作流）
-xfail_p3_27 = pytest.mark.xfail(
-    reason="P3-27 未修复：admin 订单列表汇总 FROM 里同时有 orders 与子查询，金额被放大 N 倍",
-    strict=False,
-)
 
 
 async def _admin_headers(session, username: str = "admin") -> dict:
@@ -62,7 +56,6 @@ async def _summary(client, headers, body: dict) -> tuple[int, Decimal]:
     return data["total"], Decimal(data["summary"]["money"])
 
 
-@xfail_p3_27
 @pytest.mark.asyncio
 async def test_admin_order_summary_is_not_multiplied_by_cartesian_product(client, seeded, session):
     mid = seeded["merchant"].id

@@ -10,26 +10,17 @@
 
 最后一条是审计可信度的前提——否则「有记录」不再等于「做过」。
 
-修复在 `sec/hardening-lin`（PR #10）。本文件在 #10 上是 3 XPASS，
-合并进 main 后删掉下面的 xfail 标记即为常驻门禁。
-需要立刻看真实结果时用 `pytest tests/test_audit_api.py --runxfail`。
+**这 3 条是常驻门禁（`system.audit` 已随 PR #10 合入主线，xfail 标记已摘除）**：
+断言对象是最终实现的读口口径——403/401 走的是 `app/routers/admin/audit.py` 的
+`require_permission("system.audit")`，而不是「表里没数据所以为空」；`action` 参数是
+子串筛选；「失败不落痕」靠 `record_audit` 只在业务成功后调用。验收时核对过
+「修复前的树（`9334aa8`）上 `--runxfail` 全部失败，在最终树上全部通过」。
 """
 import pytest
 from sqlmodel import select
 
 from app.core.security import hash_password, issue_token
-from app.models import SystemAdmin, SystemAdminPermission, SystemPermission
-
-try:  # #10 未合并时审计表还不存在：用例走 xfail，不允许收集期 ImportError
-    from app.models import SystemAuditLog
-except ImportError:  # pragma: no cover
-    SystemAuditLog = None  # type: ignore[assignment]
-
-# P1-7 审计查询接口未合并进主线前为预期失败（与 test_p0_concurrency.py 同一套工作流）
-xfail_p1_7 = pytest.mark.xfail(
-    reason="P1-7 未合并（PR #10）：/admin-api/audit/* 与 system.audit 权限键尚不存在",
-    strict=False,
-)
+from app.models import SystemAdmin, SystemAdminPermission, SystemAuditLog, SystemPermission
 
 
 async def _make_admin(session, username: str, *, super_admin: bool = True,
@@ -55,7 +46,6 @@ async def _make_admin(session, username: str, *, super_admin: bool = True,
     return {"Authorization": f"Bearer {token.access_token}"}, admin
 
 
-@xfail_p1_7
 @pytest.mark.asyncio
 async def test_audit_query_requires_system_audit(session, client, seeded):
     """没有 system.audit 的账号读不到审计；匿名连身份都没有。"""
@@ -71,7 +61,6 @@ async def test_audit_query_requires_system_audit(session, client, seeded):
         assert anonymous.status_code == 401, anonymous.text[:200]
 
 
-@xfail_p1_7
 @pytest.mark.asyncio
 async def test_audit_query_readable_with_system_audit(session, client, seeded):
     """有 system.audit 的非超管可读（运营/审计角色不必给超管）。"""
@@ -103,7 +92,6 @@ async def test_audit_query_readable_with_system_audit(session, client, seeded):
                for i in filtered.json()["data"]["items"])
 
 
-@xfail_p1_7
 @pytest.mark.asyncio
 async def test_rejected_operation_writes_no_audit(session, client, seeded):
     """PATCH 被白名单拒绝（422）不产生 setting.update 审计行。"""
