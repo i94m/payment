@@ -73,6 +73,11 @@ export interface ChannelData {
 
 export interface ChannelDetailData extends ChannelData {
   inputs: PluginInput[] // 凭证渲染 schema（仅详情返回）
+  /**
+   * 本次详情是否回显了明文凭证：`reveal=1` 且账号具备 channel.update 时才为 true。
+   * 无权限时后端静默降级为脱敏凭证（不报 403），前端据此提示而不是当成功。
+   */
+  config_revealed?: boolean
 }
 
 export interface ChannelStats {
@@ -152,7 +157,8 @@ export const payApi = {
   channels: (params?: { page?: number; per_page?: number; payment_type_id?: number; plugin_name?: string }) =>
     apiClient.get("/pay/channels", { params }) as Promise<PaginatedResponse<ChannelData>>,
 
-  channelDetail: (id: number) => apiClient.get(`/pay/channels/${id}`) as Promise<ChannelDetailData>,
+  channelDetail: (id: number, opts?: { reveal?: boolean }) =>
+    apiClient.get(`/pay/channels/${id}`, { params: opts?.reveal ? { reveal: 1 } : undefined }) as Promise<ChannelDetailData>,
 
   createChannel: (data: ChannelPayload) => apiClient.post("/pay/channels", data) as Promise<ChannelData>,
 

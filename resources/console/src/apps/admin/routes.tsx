@@ -18,6 +18,7 @@ const SettlePage = lazy(() => import("./pages/settle/list").then((m) => ({ defau
 const AnnouncesPage = lazy(() => import("./pages/announce/list").then((m) => ({ default: m.AnnouncesPage })))
 const PaySettingsPage = lazy(() => import("./pages/setting/pay").then((m) => ({ default: m.PaySettingsPage })))
 const AccountsPage = lazy(() => import("./pages/system/accounts").then((m) => ({ default: m.AccountsPage })))
+const AuditPage = lazy(() => import("./pages/system/audit").then((m) => ({ default: m.AuditPage })))
 const AdminNotificationsPage = lazy(() => import("./pages/system/notifications").then((m) => ({ default: m.AdminNotificationsPage })))
 const UserCenterPage = lazy(() => import("@/pages/user-center").then((m) => ({ default: m.UserCenterPage })))
 // 错误页体积小且需在异常时立即可用，保持静态导入
@@ -51,6 +52,8 @@ const pageRoutes: PermissionRouteObject[] = [
   },
   { path: "/setting/pay", element: <PaySettingsPage />, permission: "pay_setting.view" },
   { path: "/system/accounts", element: <AccountsPage />, permission: "system.admin" },
+  // 操作审计：只读，权限键 system.audit（与后端 PermissionChecker 同口径）
+  { path: "/system/audit", element: <AuditPage />, permission: "system.audit" },
   { path: "/403", element: <Error403 /> },
   { path: "/500", element: <Error500 /> },
   { path: "*", element: <Error404 /> },
