@@ -21,6 +21,8 @@ import {
   useDataList,
   FormDialog,
   ConfirmDialog,
+  ListError,
+  PanelError,
   actionsColumn,
 } from "@/components/data-list/"
 import type { ActionItem } from "@/components/data-list/"
@@ -33,6 +35,8 @@ import {
   IconList, IconReceipt,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
+import { toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { CopyButton } from "@/components/ui/copy-button"
 
@@ -142,6 +146,8 @@ export function MerchantsPage() {
   // 商户 API 密钥中心
   const [detailTarget, setDetailTarget] = React.useState<MerchantData | null>(null)
   const [detailData, setDetailData] = React.useState<MerchantData | null>(null)
+  const [detailLoading, setDetailLoading] = React.useState(false)
+  const [detailError, setDetailError] = React.useState<unknown>(null)
   // RSA 密钥对生成（私钥仅显示一次）
   const [rsagenTarget, setRsagenTarget] = React.useState<MerchantData | null>(null)
   const [rsaResult, setRsaResult] = React.useState<{ username: string; public_key: string; private_key: string } | null>(null)
@@ -159,7 +165,8 @@ export function MerchantsPage() {
     if (keyword2.trim()) params.keyword = keyword2.trim()
     if (dstatus) params.dstatus = dstatus
     if (sortOrder) params.order = sortOrder
-    if (orderDays) params.order_days = Number(orderDays)
+    const days = toIntParam(orderDays)
+    if (days !== undefined) params.order_days = days
     return params
   }, [keyword2, dstatus, sortOrder, orderDays])
 
@@ -173,7 +180,7 @@ export function MerchantsPage() {
       updateRow(item.id, { [field]: status } as Partial<MerchantData>)
       toast.success("状态已更新")
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -197,28 +204,34 @@ export function MerchantsPage() {
     setSettleNameValue(item.settle_name || "")
   }
 
-  const openDetail = async (item: MerchantData) => {
+  const loadDetail = React.useCallback(async (id: number) => {
+    setDetailLoading(true)
+    setDetailError(null)
+    try {
+      setDetailData(await merchantsApi.get(id))
+    } catch (err) {
+      setDetailError(err)
+    } finally {
+      setDetailLoading(false)
+    }
+  }, [])
+
+  const openDetail = (item: MerchantData) => {
     setDetailTarget(item)
     setDetailData(null)
     // 平台公钥为全局配置，尽力加载（失败不阻塞详情展示）
     merchantsApi.platformKey()
       .then((r) => setPlatformKey(r.public_key || ""))
       .catch(() => setPlatformKey(""))
-    try {
-      const d = await merchantsApi.get(item.id)
-      setDetailData(d)
-    } catch {
-      toast.error("加载失败")
-    }
+    void loadDetail(item.id)
   }
 
   const {
-    table, loading, setKeyword, applyFilters, refresh, updateRow,
+    table, loading, error, setKeyword, applyFilters, refresh, updateRow,
   } = useDataList<MerchantData>({
     fetchFn: (params) => merchantsApi.list(params as never),
     filters: filterParams,
     perPage: 20,
-    onError: () => toast.error("操作失败"),
     columns: [
       {
         // 用户名
@@ -438,8 +451,8 @@ export function MerchantsPage() {
       a.download = `merchants_${Date.now()}.csv`
       a.click()
       URL.revokeObjectURL(url)
-    } catch {
-      toast.error("加载失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, "导出失败"))
     }
   }
 
@@ -461,7 +474,7 @@ export function MerchantsPage() {
       setRandomTarget(null)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -475,7 +488,7 @@ export function MerchantsPage() {
       setRatelimitTarget(null)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -494,7 +507,7 @@ export function MerchantsPage() {
       setSettleTarget(null)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -516,7 +529,7 @@ export function MerchantsPage() {
       setBatchRandomOpen(false)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -525,7 +538,7 @@ export function MerchantsPage() {
       const res = await merchantsApi.sso(m.id)
       window.open(res.url, "_blank")
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -540,45 +553,36 @@ export function MerchantsPage() {
       setBalanceTarget(null)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
   const submitRsaGen = async () => {
     if (!rsagenTarget) return
-    try {
-      const res = await merchantsApi.generateRsaKey(rsagenTarget.id)
-      setDetailData((d) => (d && d.id === rsagenTarget.id ? { ...d, public_key: res.public_key } : d))
-      setRsaResult({ username: rsagenTarget.username, ...res }) // 私钥仅此一次展示
-      setRsagenTarget(null)
-      refresh()
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    }
+    // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
+    const res = await merchantsApi.generateRsaKey(rsagenTarget.id)
+    setDetailData((d) => (d && d.id === rsagenTarget.id ? { ...d, public_key: res.public_key } : d))
+    setRsaResult({ username: rsagenTarget.username, ...res }) // 私钥仅此一次展示
+    setRsagenTarget(null)
+    refresh()
   }
 
   const submitResetPwd = async () => {
     if (!pwdTarget) return
-    try {
-      const res = await merchantSecurityApi.resetPassword(pwdTarget.id)
-      toast.success(`${"新密码"}: ${res.password}`, { duration: 15000 })
-      setPwdTarget(null)
-      refresh()
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    }
+    // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
+    const res = await merchantSecurityApi.resetPassword(pwdTarget.id)
+    toast.success(`${"新密码"}: ${res.password}`, { duration: 15000 })
+    setPwdTarget(null)
+    refresh()
   }
 
   const submitDelete = async () => {
     if (!deleteTarget) return
-    try {
-      await merchantsApi.remove(deleteTarget.id)
-      toast.success("删除成功")
-      setDeleteTarget(null)
-      refresh()
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    }
+    // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
+    await merchantsApi.remove(deleteTarget.id)
+    toast.success("删除成功")
+    setDeleteTarget(null)
+    refresh()
   }
 
   return (
@@ -644,9 +648,13 @@ export function MerchantsPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} />
+            </DataTable>
+          )}
         </div>
       </div>
 
@@ -967,8 +975,18 @@ export function MerchantsPage() {
             <DialogTitle>{"API密钥"} - {detailTarget?.username}</DialogTitle>
             <DialogDescription>{"商户号"} {detailTarget?.pid}</DialogDescription>
           </DialogHeader>
-          {!detailData ? (
-            <p className="text-sm text-muted-foreground">{"加载失败"}</p>
+          {detailLoading ? (
+            <div className="space-y-3 py-4">
+              <div className="h-8 bg-muted rounded animate-pulse" />
+              <div className="h-16 bg-muted rounded animate-pulse" />
+            </div>
+          ) : detailError ? (
+            <PanelError
+              error={detailError}
+              onRetry={() => { if (detailTarget) void loadDetail(detailTarget.id) }}
+            />
+          ) : !detailData ? (
+            <p className="text-sm text-muted-foreground">{"暂无数据"}</p>
           ) : (
             <div className="space-y-4">
               {/* 平台公钥（商户用于验证平台通知签名） */}

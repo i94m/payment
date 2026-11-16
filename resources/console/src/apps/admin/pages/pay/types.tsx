@@ -12,6 +12,7 @@ import {
   useDataList,
   FormDialog,
   ConfirmDialog,
+  ListError,
   actionsColumn,
   secondaryCell,
 } from "@/components/data-list/"
@@ -19,6 +20,7 @@ import type { ActionItem } from "@/components/data-list/"
 import { IconPlus, IconEdit, IconTrash, IconList } from "@tabler/icons-react"
 import { z } from "zod"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
 
 // 支持设备：0=PC+Mobile 1=PC 2=Mobile
 const deviceOptions = [
@@ -58,24 +60,21 @@ export function PayTypesPage() {
       updateRow(item.id, { status: item.status === 1 ? 0 : 1 })
       toast.success("状态已更新")
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
   const submitDelete = async () => {
     if (!deleteId) return
-    try {
-      await payApi.deletePayType(deleteId)
-      setDeleteId(null)
-      refresh()
-      toast.success("删除成功")
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    }
+    // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
+    await payApi.deletePayType(deleteId)
+    setDeleteId(null)
+    refresh()
+    toast.success("删除成功")
   }
 
   const {
-    table, loading, refresh, updateRow,
+    table, loading, error, refresh, updateRow,
   } = useDataList<PaymentTypeData>({
     // 支付方式为全量列表（后端无分页）
     fetchFn: async (params) => {
@@ -158,7 +157,6 @@ export function PayTypesPage() {
       ] as ActionItem<PaymentTypeData>[], { width: 230 }),
     ],
     perPage: 100,
-    onError: () => toast.error("操作失败"),
   })
 
   return (
@@ -174,9 +172,13 @@ export function PayTypesPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} />
+            </DataTable>
+          )}
         </div>
       </div>
 

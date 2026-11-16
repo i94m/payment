@@ -15,6 +15,7 @@ import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
+  ListError,
   actionsColumn,
   secondaryCell,
   dateCell,
@@ -22,7 +23,6 @@ import {
 } from "@/components/data-list/"
 import type { ActionItem } from "@/components/data-list/"
 import { IconSearch, IconRefresh, IconEye } from "@tabler/icons-react"
-import { toast } from "sonner"
 
 export function NotifyLogsPage() {
 
@@ -48,7 +48,7 @@ export function NotifyLogsPage() {
     kind === "merchant" ? "通知商户" : "上游回调"
 
   const {
-    table, loading, keyword, setKeyword, applyFilters, refresh,
+    table, loading, error, keyword, setKeyword, applyFilters, refresh,
   } = useDataList<NotifyLogData>({
     // keyword 统一映射为后端认的 trade_no 过滤
     fetchFn: (params) => {
@@ -126,7 +126,6 @@ export function NotifyLogsPage() {
       ] as ActionItem<NotifyLogData>[], { width: 100 }),
     ],
     perPage: 20,
-    onError: () => toast.error("操作失败"),
   })
 
   return (
@@ -178,9 +177,13 @@ export function NotifyLogsPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} />
+            </DataTable>
+          )}
         </div>
       </div>
 
