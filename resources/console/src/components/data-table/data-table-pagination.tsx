@@ -17,6 +17,12 @@ import { cn } from "@/lib/utils"
 
 interface DataTablePaginationProps<TData> {
   table: Table<TData>
+  /**
+   * 服务端返回的总条数（`manualPagination` 时必须传）。
+   * 表格 data 只装了当前页，取 `getFilteredRowModel()` 会得到当前页行数，
+   * 所以「共 N 条」与总页数一律以这个值为准；不传时退回客户端行数。
+   */
+  total?: number
   pageSizeOptions?: number[]
 }
 
@@ -37,12 +43,18 @@ function getPageNumbers(current: number, total: number, delta = 2): (number | ".
 
 export function DataTablePagination<TData>({
   table,
+  total,
   pageSizeOptions = [10, 20, 30, 50, 100],
 }: DataTablePaginationProps<TData>) {
   const selectedCount = table.getFilteredSelectedRowModel().rows.length
-  const totalRows = table.getFilteredRowModel().rows.length
+  const pageSize = table.getState().pagination.pageSize
+  // 服务端分页时 data 只有当前页，行数不能当总数用
+  const totalRows = total ?? table.getFilteredRowModel().rows.length
   const current = table.getState().pagination.pageIndex + 1
-  const totalPages = table.getPageCount()
+  const totalPages =
+    total == null
+      ? Math.max(1, table.getPageCount())
+      : Math.max(1, Math.ceil(total / Math.max(1, pageSize)))
   const pages = getPageNumbers(current, totalPages)
 
   const handleJumpPage = (e: React.FormEvent<HTMLFormElement>) => {

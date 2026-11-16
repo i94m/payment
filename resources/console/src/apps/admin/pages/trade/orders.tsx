@@ -19,6 +19,7 @@ import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
+  ListError,
   actionsColumn,
   secondaryCell,
   dateCell,
@@ -30,12 +31,15 @@ import {
   IconSearch, IconRefresh, IconBell, IconRefreshDot, IconDownload, IconEye,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
+import { digitsOnly, toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { useSearchParams } from "react-router-dom"
 
 const orderStatusOptions: StatusBadgeOption[] = [
   { label: "待支付", value: 0, variant: "secondary" },
   { label: "已支付", value: 1, variant: "default" },
+  { label: "已退款", value: 2, variant: "outline" },
   { label: "已过期", value: 3, variant: "outline" },
 ]
 
@@ -83,8 +87,11 @@ export function OrdersPage() {
     const params: Record<string, unknown> = {}
     if (tradeNo.trim()) params.trade_no = tradeNo.trim()
     if (outTradeNo.trim()) params.out_trade_no = outTradeNo.trim()
-    if (merchantId.trim()) params.merchant_id = merchantId.trim()
-    if (channelId.trim()) params.channel_id = Number(channelId)
+    // 数字型过滤统一走 toIntParam：非法值（如 URL 里带 channel_id=abc）不再序列化成 NaN 打到后端
+    const mid = toIntParam(merchantId)
+    if (mid !== undefined) params.merchant_id = mid
+    const cid = toIntParam(channelId)
+    if (cid !== undefined) params.channel_id = cid
     if (typeCode.trim()) params.type = typeCode.trim()
     if (statusFilter !== "") params.status = Number(statusFilter)
     if (notifyFilter !== "") params.notify_status = Number(notifyFilter)
@@ -94,6 +101,15 @@ export function OrdersPage() {
     return params
   }, [tradeNo, outTradeNo, merchantId, typeCode, statusFilter, notifyFilter, startDate, endDate])
 
+  // 日期区间是成对参数：只选一端会被后端静默忽略，这里显式提示而不是「查了没反应」
+  const applyFilterParams = () => {
+    if (!!startDate !== !!endDate) {
+      toast.warning("请同时选择开始日期与结束日期")
+      return
+    }
+    applyFilters()
+  }
+
   const handleReset = () => {
     setTradeNo(""); setOutTradeNo(""); setMerchantId("")
     setStatusFilter(""); setNotifyFilter(""); setStartDate(undefined); setEndDate(undefined)
@@ -101,7 +117,7 @@ export function OrdersPage() {
   }
 
   const {
-    table, loading, keyword, setKeyword, applyFilters, refresh,
+    table, total, loading, error, keyword, setKeyword, applyFilters, refresh,
   } = useDataList<OrderData>({
     // useServerPagination 统一注入 keyword；后端 /order/list 只认 trade_no，此处做映射
     fetchFn: async (params) => {
@@ -191,8 +207,8 @@ export function OrdersPage() {
           onClick: async (item) => {
             try {
               setDetailOrder(await ordersApi.detail(item.trade_no))
-            } catch {
-              toast.error("加载失败")
+            } catch (err) {
+              toast.error(getErrorMessage(err, "订单详情加载失败"))
             }
           },
         },
@@ -209,7 +225,6 @@ export function OrdersPage() {
       ] as ActionItem<OrderData>[], { width: 320 }),
     ],
     perPage: 20,
-    onError: () => toast.error("操作失败"),
   })
 
   const handleExport = async () => {
@@ -217,7 +232,8 @@ export function OrdersPage() {
       const params: Record<string, string> = {}
       if (tradeNo.trim()) params.trade_no = tradeNo.trim()
       if (outTradeNo.trim()) params.out_trade_no = outTradeNo.trim()
-      if (merchantId.trim()) params.merchant_id = merchantId.trim()
+      const mid = toIntParam(merchantId)
+      if (mid !== undefined) params.merchant_id = String(mid)
       if (statusFilter !== "") params.status = statusFilter
       if (notifyFilter !== "") params.notify_status = notifyFilter
       if (startDate && endDate) {
@@ -231,8 +247,8 @@ export function OrdersPage() {
       a.download = `orders_${Date.now()}.csv`
       a.click()
       URL.revokeObjectURL(url)
-    } catch {
-      toast.error("操作失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, "导出失败"))
     }
   }
 
@@ -242,17 +258,13 @@ export function OrdersPage() {
 
   const runAction = async () => {
     if (!actionTradeNo || !actionType) return
-    try {
-      if (actionType === "refill") await ordersApi.refill(actionTradeNo)
-      if (actionType === "notify") await ordersApi.resendNotify(actionTradeNo)
-      toast.success(actionType === "refill" ? "补单成功" : "通知发送成功")
-      refresh()
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    } finally {
-      setActionTradeNo(null)
-      setActionType(null)
-    }
+    // 失败时直接抛出：由 ConfirmDialog 统一提示后端原因并保持弹窗打开，成功后关闭
+    if (actionType === "refill") await ordersApi.refill(actionTradeNo)
+    else await ordersApi.resendNotify(actionTradeNo)
+    toast.success(actionType === "refill" ? "补单成功" : "通知发送成功")
+    refresh()
+    setActionTradeNo(null)
+    setActionType(null)
   }
 
   return (
@@ -278,8 +290,9 @@ export function OrdersPage() {
             <Input
               placeholder={"商户 ID"}
               className="h-9"
+              inputMode="numeric"
               value={merchantId}
-              onChange={(e) => setMerchantId(e.target.value)}
+              onChange={(e) => setMerchantId(digitsOnly(e.target.value))}
             />
             <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
               <SelectTrigger className="h-9 w-full">
@@ -319,7 +332,7 @@ export function OrdersPage() {
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => applyFilters()}>
+              <Button size="sm" onClick={() => applyFilterParams()}>
                 <IconSearch className="size-4" />
                 {"查询"}
               </Button>
@@ -341,9 +354,13 @@ export function OrdersPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} total={total} />
+            </DataTable>
+          )}
         </div>
       </div>
 

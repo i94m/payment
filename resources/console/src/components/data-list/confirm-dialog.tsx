@@ -1,4 +1,6 @@
 import * as React from "react"
+import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -36,6 +38,9 @@ export function ConfirmDialog({
     try {
       await onConfirm()
       onOpenChange(false)
+    } catch (err) {
+      // 操作失败保持弹窗打开并回显后端原因，避免「点了确定没反应」
+      toast.error(getErrorMessage(err, "操作失败，请稍后重试"))
     } finally {
       setLoading(false)
     }
