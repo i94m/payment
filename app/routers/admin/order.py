@@ -212,7 +212,7 @@ async def order_refill(session: SessionDep, cache: CacheDep, request: Request, a
         await record_audit(
             session, action="order.refill", actor=auth, request=request,
             target_type="order", target_id=trade_no, after=audit_after,
-            remark=f"手动补单({result.status})" + ("，过期单受控回补" if was_expired else ""),
+            remark=f"手动补单({result.status})",
         )
         return suc("过期单回补成功（请核对上游收款凭证）" if was_expired else "补单成功")
     if result.status == "mismatch":
@@ -222,12 +222,11 @@ async def order_refill(session: SessionDep, cache: CacheDep, request: Request, a
     return err(-1, _refill_error_text(result.status))
 
 
-# 补单失败给管理员看的文案：内部状态枚举（invalid/lock_failed…）不直接外露。
-# 过期单可走受控回补（P0-4），所以 invalid 不写「仅待支付订单可补单」。
+# 补单失败给管理员看的文案：内部状态枚举（invalid/lock_failed…）不直接外露
 _REFILL_ERROR_TEXT = {
     "not_found": "订单不存在",
     "lock_failed": "订单正在处理中，请稍后重试",
-    "invalid": "订单状态不可补单，请核对订单状态后重试",
+    "invalid": "订单当前状态不可补单（仅待支付订单可补单），请刷新后重试",
     "mismatch": "金额校验失败",
 }
 

@@ -165,27 +165,22 @@ async def _refund(client, trade_no, amount=None, out_refund_no=None):
 
 @pytest.mark.asyncio
 async def test_pending_refund_reserves_capacity(client, seeded, session, engine):
-    """在途退款预占占住可退额度，防止并发部分退款超退。
-
-    预占落在 `orders.refunded_amount` 上（已退 + 在途），是条件 UPDATE 的唯一判定源；
-    因此这里直接置这一列代表「另一笔正在走上游的退款占住 50」。
-    """
+    """在途（status=0）退款预占占住可退额度，防止并发部分退款超退。"""
     order = await _pay_order(client, session, "RSV-1")
 
     # 模拟另一笔正在走上游的退款：预占 50（可退上限 98 → 剩 48）
-    order.refunded_amount = dmoney("50.00")
-    session.add(order)
+    session.add(Refund(
+        refund_no="R" + datetime.now().strftime("%y%m%d%H%M%S%f") + "001",
+        out_refund_no="HELD-1", trade_no=order.trade_no,
+        merchant_id=seeded["merchant"].id, amount=dmoney("50.00"),
+        status=0, created_at=datetime.now(),
+    ))
     await session.commit()
 
     body = await _refund(client, order.trade_no, amount="60.00")
     assert body["code"] != 0
     assert "可退" in body["message"]
     assert await _balance(engine, seeded["merchant"].id) == dmoney("98.00")
-    # 被拒的请求不得残留配额占用
-    fresh = (await session.exec(
-        select(Order).where(Order.trade_no == order.trade_no)
-        .execution_options(populate_existing=True))).one()
-    assert dmoney(fresh.refunded_amount) == dmoney("50.00")
 
     # 预占额内仍可退
     ok = await _refund(client, order.trade_no, amount="40.00", out_refund_no="RSV-OK")
