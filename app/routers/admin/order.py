@@ -217,6 +217,8 @@ async def order_refill(session: SessionDep, cache: CacheDep, request: Request, a
         return suc("过期单回补成功（请核对上游收款凭证）" if was_expired else "补单成功")
     if result.status == "mismatch":
         return err(-1, "金额校验失败")
+    if result.status == "invalid":
+        return err(-1, "订单状态不可补单，请核对订单状态后重试")
     return err(-1, _refill_error_text(result.status))
 
 
