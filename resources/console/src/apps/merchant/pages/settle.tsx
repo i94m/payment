@@ -317,7 +317,7 @@ export function SettlePage() {
               ) : (
                 <>
                   <DataTable table={table} loading={loading} emptyMessage={"暂无结算记录"} />
-                  <DataTablePagination table={table} />
+                  <DataTablePagination table={table} total={total} />
                 </>
               )}
             </CardContent>

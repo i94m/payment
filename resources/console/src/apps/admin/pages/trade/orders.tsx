@@ -117,7 +117,7 @@ export function OrdersPage() {
   }
 
   const {
-    table, loading, error, keyword, setKeyword, applyFilters, refresh,
+    table, total, loading, error, keyword, setKeyword, applyFilters, refresh,
   } = useDataList<OrderData>({
     // useServerPagination 统一注入 keyword；后端 /order/list 只认 trade_no，此处做映射
     fetchFn: async (params) => {
@@ -358,7 +358,7 @@ export function OrdersPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>

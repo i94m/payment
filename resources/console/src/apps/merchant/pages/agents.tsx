@@ -124,7 +124,7 @@ export function AgentsPage() {
   }
 
   const {
-    table, loading, error, keyword, setKeyword, applyFilters, refresh,
+    table, total, loading, error, keyword, setKeyword, applyFilters, refresh,
   } = useDataList<AgentData>({
     // keyword 搜索框映射为后端的 kw（名称/备注模糊）
     fetchFn: (params) => {
@@ -234,7 +234,7 @@ export function AgentsPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>

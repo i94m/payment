@@ -25,7 +25,7 @@ const settingsSchema = z.record(z.string(), z.string())
 // 后端 group 值 → 分组标题（与 SettingGroup 对齐；未识别的组原样展示、排最后）
 const GROUP_TITLES: Record<string, string> = {
   site: "站点",
-  order: "扣量",
+  order: "订单",  // 订单组含过期单回补窗口与扣量开关，标题不再只写「扣量」
   notify: "通知",
   settle: "结算",
 }

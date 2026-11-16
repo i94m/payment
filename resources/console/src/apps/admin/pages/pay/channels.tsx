@@ -406,7 +406,7 @@ export function ChannelsPage() {
   }
 
   const {
-    table, loading, error, applyFilters, refresh, updateRow,
+    table, total, loading, error, applyFilters, refresh, updateRow,
   } = useDataList<ChannelData>({
     fetchFn: (params) => payApi.channels(params as never),
     filters: filterParams,
@@ -573,7 +573,7 @@ export function ChannelsPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>

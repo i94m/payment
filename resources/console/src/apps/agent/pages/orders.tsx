@@ -68,7 +68,7 @@ export function OrdersPage() {
   }
 
   const {
-    table, loading, error, setKeyword, applyFilters, refresh,
+    table, total, loading, error, setKeyword, applyFilters, refresh,
   } = useDataList<AgentOrderData>({
     fetchFn: (params) => agentPanelApi.orders(params),
     filters: filterParams,
@@ -181,7 +181,7 @@ export function OrdersPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无订单记录"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>

@@ -315,7 +315,9 @@ async def test_admin_refill_expired_rejected(client, seeded, session, engine):
     r = await client.post("/admin-api/order/refill", headers=await _admin_headers(session),
                           json={"trade_no": o.trade_no})
     assert r.json()["code"] != 0
-    assert "补单失败" in r.json()["message"]
+    # 对管理员只给可操作的中文提示，不把内部状态枚举（invalid 等）甩出来
+    assert "不可补单" in r.json()["message"]
+    assert "invalid" not in r.json()["message"]
 
 
 @pytest.mark.asyncio

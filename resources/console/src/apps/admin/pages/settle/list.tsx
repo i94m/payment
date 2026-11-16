@@ -65,7 +65,7 @@ export function SettlePage() {
   }
 
   const {
-    table, loading, error, applyFilters, refresh,
+    table, total, loading, error, applyFilters, refresh,
   } = useDataList<AdminSettleData>({
     fetchFn: (params) => settleApi.adminList(params as never),
     filters: filterParams,
@@ -204,7 +204,7 @@ export function SettlePage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>

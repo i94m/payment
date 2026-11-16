@@ -92,7 +92,7 @@ export function AdminRecordsPage() {
   }
 
   const {
-    table, loading, error, keyword, setKeyword, applyFilters, refresh,
+    table, total, loading, error, keyword, setKeyword, applyFilters, refresh,
   } = useDataList<AdminRecordData>({
     fetchFn: async (params) => {
       const { keyword: kw, ...rest } = params as { keyword?: string }
@@ -301,7 +301,7 @@ export function AdminRecordsPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>

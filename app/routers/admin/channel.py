@@ -17,10 +17,11 @@ from pydantic import BaseModel
 from sqlmodel import col, func, select
 
 from app.core.deps import CacheDep, SessionDep
-from app.core.security import AdminUser, PermissionChecker
+from app.core.security import AdminUser, PermissionChecker, check_permission, require_super_admin
 from app.lib.linktoken import cashier_url as build_cashier_url
 from app.models import Channel, Merchant, Order, PaymentType, Plugin
 from app.responses import err, paginate, suc
+from app.services.audit import record_audit
 from app.services.balance import dmoney
 from app.services.crypto import decrypt_config, encrypt_config
 from app.services.plugin import PluginRegistry
@@ -100,9 +101,10 @@ async def plugin_sync(session: SessionDep):
 _UPLOAD_MAX_SIZE = 10 * 1024 * 1024
 
 
-@router.post("/plugins/upload", dependencies=[Depends(PermissionChecker("channel.update"))])
-async def plugin_upload(file: UploadFile, session: SessionDep):
-    """上传安装编译后的插件包（zip）。
+@router.post("/plugins/upload", dependencies=[Depends(require_super_admin)])
+async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
+                        auth: AdminUser):
+    """上传安装编译后的插件包（zip）。**仅超管**：装插件 = 进程内执行 .so。
 
     包结构 = scripts/build_plugin.sh 产物目录直接压缩（通常只有主模块一个文件）：
       <插件名>/plugin.cpython-312-x86_64-linux-gnu.so
@@ -203,6 +205,12 @@ async def plugin_upload(file: UploadFile, session: SessionDep):
         session.add(Plugin(name=name, showname=showname, supported_types=types,
                            inputs_schema=inputs, version=version, is_enabled=True))
     await session.commit()
+    await record_audit(
+        session, action="plugin.install", actor=auth, request=request,
+        target_type="plugin", target_id=name,
+        after={"name": name, "showname": showname, "version": version or "",
+               "types": types},
+    )
     return suc({"name": name, "showname": showname,
                 "note": "多进程/多副本部署时，其他进程需重启后生效"})
 
@@ -355,7 +363,41 @@ async def type_delete(type_id: int, session: SessionDep):
 # 通道
 # ============================================================
 
-def _dump_channel(c: Channel, with_config: bool = False) -> dict:
+# 凭证脱敏哨兵：列表/详情默认把密钥类字段替换为该值回显；
+# 编辑提交时「值等于哨兵」表示不修改，服务端保留库内原值（前端无需改造）。
+CONFIG_MASK = "******"
+# 字段名命中这些片段即视为密钥类（与 audit._SECRET_HINTS 同口径，按子串匹配）
+_SECRET_FIELD_HINTS = ("key", "secret", "password", "passwd", "token", "private")
+
+
+def _is_secret_field(name: str) -> bool:
+    lowered = str(name).lower()
+    return any(hint in lowered for hint in _SECRET_FIELD_HINTS)
+
+
+def _mask_config(config: dict | None) -> dict:
+    """密钥类字段 → `******`；空值保持空（前端据此判断「未配置」）。"""
+    return {
+        key: (CONFIG_MASK if value not in (None, "") else value)
+        if _is_secret_field(key) else value
+        for key, value in (config or {}).items()
+    }
+
+
+def _merge_config(submitted: dict, stored: dict) -> dict:
+    """提交值合并：哨兵值=沿用库内原值，其余以提交为准（缺失的键即删除）。"""
+    merged: dict = {}
+    for key, value in (submitted or {}).items():
+        if isinstance(value, str) and value.strip() == CONFIG_MASK:
+            if key in stored:
+                merged[key] = stored[key]
+            continue
+        merged[key] = value
+    return merged
+
+
+def _dump_channel(c: Channel, reveal: bool = False) -> dict:
+    config = decrypt_config(c.config)
     data = {
         "id": c.id,
         "name": c.name,
@@ -372,7 +414,8 @@ def _dump_channel(c: Channel, with_config: bool = False) -> dict:
         "day_limit_count": c.day_limit_count,
         "sort": c.sort,
         "debug_log": 1 if c.debug_log else 0,
-        "config": decrypt_config(c.config),
+        # 默认脱敏：channel.view（只读）拿不到上游 appkey/appsecret 明文
+        "config": config if reveal else _mask_config(config),
     }
     return data
 
@@ -431,11 +474,15 @@ async def channel_stats(session: SessionDep):
 
 
 @router.get("/channels/{channel_id}", dependencies=[Depends(PermissionChecker("channel.view"))])
-async def channel_detail(channel_id: int, session: SessionDep):
+async def channel_detail(channel_id: int, session: SessionDep, auth: AdminUser,
+                         reveal: int = Query(0)):
+    """通道详情。默认脱敏；`reveal=1` 且具备 channel.update 才回显明文凭证。"""
     c = await session.get(Channel, channel_id)
     if not c:
         return err(404, "通道不存在")
-    data = _dump_channel(c)
+    can_reveal = bool(reveal) and await check_permission(auth, "channel.update", session)
+    data = _dump_channel(c, reveal=can_reveal)
+    data["config_revealed"] = can_reveal
     data["inputs"] = await _get_plugin_inputs(session, c.plugin_name)
     return suc(data)
 
@@ -460,12 +507,14 @@ class ChannelRequest(BaseModel):
 
 
 @router.post("/channels", dependencies=[Depends(PermissionChecker("channel.create"))])
-async def channel_create(body: ChannelRequest, session: SessionDep):
-    plugin = PluginRegistry.get_payment_class(body.plugin_name)
-    if not plugin:
-        return err(-1, "插件不存在或未加载")
+async def channel_create(body: ChannelRequest, session: SessionDep,
+                         request: Request, auth: AdminUser):
+    if msg := _validate_channel_payload(body):
+        return err(-1, msg)
+    if not await session.get(PaymentType, body.payment_type_id):
+        return err(-1, "支付方式不存在")
     c = Channel(
-        name=body.name,
+        name=body.name.strip(),
         plugin_name=body.plugin_name,
         payment_type_id=body.payment_type_id,
         merchant_rate=dmoney(body.merchant_rate),
@@ -479,25 +528,52 @@ async def channel_create(body: ChannelRequest, session: SessionDep):
         day_limit_count=body.day_limit_count,
         sort=body.sort,
         debug_log=1 if body.debug_log == 1 else 0,
-        config=encrypt_config(body.config),
+        # 新建时不存在「库内原值」：哨兵值视为空（防止把掩码写进凭证）
+        config=encrypt_config(_merge_config(body.config, {})),
     )
     session.add(c)
     await session.commit()
     await session.refresh(c)
+    await record_audit(
+        session, action="channel.create", actor=auth, request=request,
+        target_type="channel", target_id=c.id,
+        after={"name": c.name, "plugin_name": c.plugin_name,
+               "payment_type_id": c.payment_type_id,
+               "config": _mask_config(decrypt_config(c.config))},
+    )
     return suc(_dump_channel(c))
 
 
+def _validate_channel_payload(body: ChannelRequest) -> str:
+    """更新与创建共用的引用校验（P2-20：更新也必须过一遍）。"""
+    if not (body.name or "").strip():
+        return "通道名称不能为空"
+    if not PluginRegistry.get_payment_class(body.plugin_name):
+        return "插件不存在或未加载"
+    return ""
+
+
 @router.put("/channels/{channel_id}", dependencies=[Depends(PermissionChecker("channel.update"))])
-async def channel_update(channel_id: int, body: ChannelRequest, session: SessionDep):
+async def channel_update(channel_id: int, body: ChannelRequest, session: SessionDep,
+                         request: Request, auth: AdminUser):
     c = await session.get(Channel, channel_id)
     if not c:
         return err(404, "通道不存在")
-    c.name = body.name
+    if msg := _validate_channel_payload(body):
+        return err(-1, msg)
+    pt = await session.get(PaymentType, body.payment_type_id)
+    if not pt:
+        return err(-1, "支付方式不存在")
+
+    before = {"name": c.name, "plugin_name": c.plugin_name,
+              "payment_type_id": c.payment_type_id, "status": c.status,
+              "config": _mask_config(decrypt_config(c.config))}
+    c.name = body.name.strip()
     c.plugin_name = body.plugin_name
     c.payment_type_id = body.payment_type_id
     c.merchant_rate = dmoney(body.merchant_rate)
     c.cost_rate = dmoney(body.cost_rate)
-    c.status = body.status
+    c.status = 1 if body.status == 1 else 0  # 状态归一化，避免前端传 2 落库后语义不明
     c.mode = body.mode
     c.weight = body.weight
     c.min_amount = dmoney(body.min_amount)
@@ -508,20 +584,37 @@ async def channel_update(channel_id: int, body: ChannelRequest, session: Session
     if body.debug_log is not None:
         c.debug_log = 1 if body.debug_log == 1 else 0
     if body.config:
-        # 凭证明文回显、直接编辑：提交什么就存什么（空 dict 表示不触碰，供开关等场景透传）
-        c.config = encrypt_config(body.config)
+        # 凭证：提交什么存什么；哨兵值（前端未改动的密钥）沿用库内原值
+        c.config = encrypt_config(_merge_config(body.config, decrypt_config(c.config)))
     session.add(c)
     await session.commit()
+    await record_audit(
+        session, action="channel.update", actor=auth, request=request,
+        target_type="channel", target_id=c.id,
+        before=before,
+        after={"name": c.name, "plugin_name": c.plugin_name,
+               "payment_type_id": c.payment_type_id, "status": c.status,
+               "config": _mask_config(decrypt_config(c.config))},
+    )
     return suc(_dump_channel(c))
 
 
 @router.delete("/channels/{channel_id}", dependencies=[Depends(PermissionChecker("channel.delete"))])
-async def channel_delete(channel_id: int, session: SessionDep):
+async def channel_delete(channel_id: int, session: SessionDep, request: Request,
+                         auth: AdminUser):
     c = await session.get(Channel, channel_id)
     if not c:
         return err(404, "通道不存在")
+    before = {"name": c.name, "plugin_name": c.plugin_name,
+              "payment_type_id": c.payment_type_id, "status": c.status,
+              "config": _mask_config(decrypt_config(c.config))}
+    channel_id_copy = c.id
     await session.delete(c)
     await session.commit()
+    await record_audit(
+        session, action="channel.delete", actor=auth, request=request,
+        target_type="channel", target_id=channel_id_copy, before=before,
+    )
     return suc("success")
 
 
@@ -534,7 +627,10 @@ TEST_PAY_MAX = "1000.00"
 
 
 async def _test_debug_payload(c: Channel, order, flow, client_ip: str) -> dict:
-    """通道测试的调试信息：通道/订单/上游请求响应快照，失败排障用。"""
+    """通道测试的调试信息：通道/订单/上游请求响应快照，失败排障用。
+
+    凭证类字段一律脱敏 —— 调试弹窗不需要、也不应携带上游 appkey。
+    """
     from app.services.crypto import decrypt_config
 
     cfg = decrypt_config(c.config)
@@ -548,7 +644,7 @@ async def _test_debug_payload(c: Channel, order, flow, client_ip: str) -> dict:
             "plugin": c.plugin_name,
             "gateway": cfg.get("appurl") or "（默认网关）",
             "merchant": cfg.get("appmchid", ""),
-            "appkey": str(cfg.get("appkey", "")),
+            "appkey": CONFIG_MASK if cfg.get("appkey") else "",
             "productid": cfg.get("productid", ""),
         },
         "order": {

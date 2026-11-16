@@ -227,7 +227,7 @@ export function MerchantsPage() {
   }
 
   const {
-    table, loading, error, setKeyword, applyFilters, refresh, updateRow,
+    table, total, loading, error, setKeyword, applyFilters, refresh, updateRow,
   } = useDataList<MerchantData>({
     fetchFn: (params) => merchantsApi.list(params as never),
     filters: filterParams,
@@ -652,7 +652,7 @@ export function MerchantsPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>

@@ -12,19 +12,22 @@ from app.core.limiter import rate_limit
 from fastapi.responses import JSONResponse
 
 from app.core.deps import SessionDep, CacheDep
-from app.core.security import AdminUser
+from app.core.security import AdminUser, get_current_admin
 from app.core.config import config
 from app.addons.storage import get_storage
 from app.responses import suc, err
 
-router = APIRouter()
+# 公开端点（页面/登录页需要、或自带签名鉴权）：不参与 admin 身份拦截。
+# 其余端点统一走 `router`（fail-closed：新增端点忘记挂 AdminUser 也不会匿名可达）。
+public_router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_admin)])
 
 
 # ============================================================
 # 图片验证码 GET /admin-api/captcha
 # ============================================================
 
-@router.get("/captcha")
+@public_router.get("/captcha")
 async def captcha(cache: CacheDep, _rl=rate_limit(times=20)):
     """生成图片验证码。返回 {content: data URL, key}，key 5 分钟内有效且一次性。"""
     import uuid
@@ -267,7 +270,7 @@ def _generate_oss_sts(options: dict) -> dict:
 # 上传文件 POST /upload (独立路由，非 admin-api 下)
 # ============================================================
 
-@router.post("/upload")
+@public_router.post("/upload")
 async def upload_file(
     request: Request,
     file: UploadFile = File(..., alias="file"),

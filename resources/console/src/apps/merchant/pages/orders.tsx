@@ -176,7 +176,7 @@ export function OrdersPage() {
   }
 
   const {
-    table, loading, error, keyword, setKeyword, applyFilters, summary, refresh,
+    table, total, loading, error, keyword, setKeyword, applyFilters, summary, refresh,
   } = useDataList<OrderData>({
     // keyword（平台订单号搜索框）映射为后端认的 trade_no
     fetchFn: (params) => {
@@ -364,7 +364,7 @@ export function OrdersPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无订单记录"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>

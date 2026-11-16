@@ -4,23 +4,19 @@ workers 为空即 worker 全部离线（心跳 TTL 60s），可供外部探活�
 """
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlmodel import col, func, select
 
 from app.core.deps import SessionDep
-from app.core.security import AdminUser
+from app.core.security import PermissionChecker
 from app.models import Order
 from app.responses import suc
 
 router = APIRouter()
 
 
-@router.post("/stats")
-async def queue_stats(session: SessionDep, auth: AdminUser):
-    if not auth.is_super_admin and "queue.view" not in await auth.get_permission_keys(session):
-        from app.responses import err
-        return err(403, "forbidden")
-
+@router.post("/stats", dependencies=[Depends(PermissionChecker("queue.view"))])
+async def queue_stats(session: SessionDep):
     from app.worker import queue
     try:
         info = await queue.info()

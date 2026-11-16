@@ -7,7 +7,10 @@
 - 今日订单成功率；近期（60/30/10/1 分钟）订单成功率与已支付成功笔数
 - 支付方式收入统计 / 支付通道收入统计 / 支付方式手续费利润（仅今日）
 
-所有统计实时计算，无缓存。
+所有统计实时计算（不缓存，保证运营看到的是当前值），但查询已收敛：
+近期成功率 1 条、扣量 1 条、计数 1 条、余额/结算 1 条、趋势 1 条
+（原实现按天 ×2 条循环）、今日/累计各 1 条 —— 首页固定 10 条查询内，
+配合 orders 的 (status, paid_at) 复合索引（迁移 0004）走索引范围扫描。
 
 快捷配置：
 - 金额路由：按支付方式配置金额区间 → 固定通道（写入 payroute_config，choose_channel 生效）
@@ -116,31 +119,30 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
     r = row._tuple() if hasattr(row, "_tuple") else row
     (allnum, sucnum, suc60, suc30, suc10, suc1m, all60, all30, all10, all1m) = [int(v or 0) for v in r]
 
-    # ---- 预计收入（扣量订单）：今日 / 昨日 ----
-    deducted_today = (
-        col(Order.is_deducted).is_(True),
-        col(Order.created_at) >= today_start,
-    )
-    deducted_yesterday = (
-        col(Order.is_deducted).is_(True),
-        col(Order.created_at) >= yesterday_start,
-        col(Order.created_at) < today_start,
-    )
-    today_deduct_money = (await session.exec(
-        select(func.coalesce(func.sum(Order.money), 0)).where(*deducted_today)
-    )).one()
-    today_deduct_count = (await session.exec(
-        select(func.count()).select_from(Order).where(*deducted_today)
-    )).one()
-    yesterday_deduct_money = (await session.exec(
-        select(func.coalesce(func.sum(Order.money), 0)).where(*deducted_yesterday)
-    )).one()
-    yesterday_deduct_count = (await session.exec(
-        select(func.count()).select_from(Order).where(*deducted_yesterday)
-    )).one()
+    # ---- 预计收入（扣量订单）：今日 / 昨日（单条条件聚合，避免 4 次往返）----
+    deducted_today = col(Order.created_at) >= today_start
+    deducted_yesterday = and_(col(Order.created_at) >= yesterday_start,
+                              col(Order.created_at) < today_start)
+    today_deduct_money, today_deduct_count, yesterday_deduct_money, yesterday_deduct_count = (
+        await session.exec(
+            select(
+                func.coalesce(func.sum(case((deducted_today, col(Order.money)), else_=0)), 0),
+                func.coalesce(func.sum(case((deducted_today, 1), else_=0)), 0),
+                func.coalesce(func.sum(case((deducted_yesterday, col(Order.money)), else_=0)), 0),
+                func.coalesce(func.sum(case((deducted_yesterday, 1), else_=0)), 0),
+            )
+            .select_from(Order)
+            .where(col(Order.is_deducted).is_(True), col(Order.created_at) >= yesterday_start)
+        )
+    ).one()
 
-    count1 = (await session.exec(select(func.count()).select_from(Order))).one()
-    count2 = (await session.exec(select(func.count()).select_from(Merchant))).one()
+    # ---- 订单/商户计数（两条标量子查询，一次往返）----
+    count1, count2 = (await session.exec(
+        select(
+            select(func.count()).select_from(Order).scalar_subquery(),
+            select(func.count()).select_from(Merchant).scalar_subquery(),
+        )
+    )).one()
 
     # ---- 支付方式 / 通道名称映射（仅启用）----
     paytype = {str(t.id): t.name for t in (await session.exec(
@@ -151,48 +153,61 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
     )).all()}
 
     # ---- 重统计段（实时计算）----
-    usermoney = (await session.exec(
-        select(func.coalesce(func.sum(Merchant.balance), 0)).select_from(Merchant)
-    )).one()
-    settlemoney = (await session.exec(
-        select(func.coalesce(func.sum(Settlement.amount), 0)).select_from(Settlement)
-        .where(col(Settlement.status) == 1)  # 仅已打款（0 待处理 / 2 已拒绝不计）
+    usermoney, settlemoney = (await session.exec(
+        select(
+            select(func.coalesce(func.sum(Merchant.balance), 0)).scalar_subquery(),
+            select(func.coalesce(func.sum(Settlement.amount), 0))
+            .where(col(Settlement.status) == 1).scalar_subquery(),  # 仅已打款（0 待处理 / 2 已拒绝不计）
+        )
     )).one()
     order_today = await _today_stats(session, today_start)
 
     # ---- 近 N 日趋势（图表用，保持既有口径：money=申报金额）----
-    trend = []
+    # 单条 GROUP BY 取代原来的「每天 2 条计数/求和」循环（30 天省 58 次往返）
     trend_days = max(1, min(days, 30))
+    trend_start = (now - timedelta(days=trend_days - 1)).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    trend_end = today_start + timedelta(days=1)
+    day_col = func.date(Order.paid_at)
+    rows = (await session.exec(
+        select(
+            day_col.label("d"),
+            func.count().label("c"),
+            func.coalesce(func.sum(Order.money), 0).label("m"),
+        )
+        .select_from(Order)
+        .where(col(Order.status) == 1,
+               col(Order.paid_at) >= trend_start,
+               col(Order.paid_at) < trend_end)
+        .group_by(day_col)
+    )).all()
+    by_day: dict[str, tuple[int, float]] = {}
+    for d, c, m in rows:
+        key = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)[:10]
+        by_day[key] = (int(c or 0), _f(m))
+    trend = []
     for i in range(trend_days - 1, -1, -1):
         day_start = (now - timedelta(days=i)).replace(hour=0, minute=0, second=0, microsecond=0)
-        day_end = day_start + timedelta(days=1)
-        cnt = (await session.exec(
-            select(func.count()).select_from(Order).where(col(Order.status) == 1,
-                                                          col(Order.paid_at) >= day_start,
-                                                          col(Order.paid_at) < day_end)
-        )).one()
-        money = (await session.exec(
-            select(func.coalesce(func.sum(Order.money), 0)).select_from(Order)
-            .where(col(Order.status) == 1, col(Order.paid_at) >= day_start, col(Order.paid_at) < day_end)
-        )).one()
-        trend.append({"date": day_start.strftime("%Y-%m-%d"), "count": int(cnt), "money": _f(money)})
+        cnt, money = by_day.get(day_start.strftime("%Y-%m-%d"), (0, 0.0))
+        trend.append({"date": day_start.strftime("%Y-%m-%d"), "count": cnt, "money": money})
 
-    today_paid_count = (await session.exec(
-        select(func.count()).select_from(Order).where(col(Order.status) == 1, col(Order.paid_at) >= today_start)
-    )).one()
-    today_paid_money = (await session.exec(
-        select(func.coalesce(func.sum(Order.money), 0)).select_from(Order)
+    # ---- 今日已支付 / 累计已支付（各 1 条条件聚合，避免 5 次往返）----
+    today_paid_count, today_paid_money, today_profit = (await session.exec(
+        select(
+            func.count(),
+            func.coalesce(func.sum(Order.money), 0),
+            func.coalesce(func.sum(Order.profit), 0),
+        )
+        .select_from(Order)
         .where(col(Order.status) == 1, col(Order.paid_at) >= today_start)
     )).one()
-    today_profit = (await session.exec(
-        select(func.coalesce(func.sum(Order.profit), 0)).select_from(Order)
-        .where(col(Order.status) == 1, col(Order.paid_at) >= today_start)
-    )).one()
-    total_paid_count = (await session.exec(
-        select(func.count()).select_from(Order).where(col(Order.status) == 1)
-    )).one()
-    total_paid_money = (await session.exec(
-        select(func.coalesce(func.sum(Order.money), 0)).select_from(Order).where(col(Order.status) == 1)
+    total_paid_count, total_paid_money = (await session.exec(
+        select(
+            func.count(),
+            func.coalesce(func.sum(Order.money), 0),
+        )
+        .select_from(Order)
+        .where(col(Order.status) == 1)
     )).one()
 
     return suc({
@@ -228,8 +243,8 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
     })
 
 
-# 兼容 /index 路径
-router.add_api_route("/index", index, methods=["GET"], include_in_schema=False)
+# /admin-api/index 旧入口兼容别名统一挂在 admin 根路由（admin/__init__.py），
+# 这里不再重复注册 /dashboard/index。
 
 
 # ============================================================

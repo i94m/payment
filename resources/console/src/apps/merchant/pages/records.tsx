@@ -21,7 +21,7 @@ const BIZ_TYPE_LABELS: Record<string, string> = {
 }
 
 export function RecordsPage() {
-  const { table, loading, error, refresh } = useDataList<MerchantRecordData>({
+  const { table, total, loading, error, refresh } = useDataList<MerchantRecordData>({
     fetchFn: (params) => recordsApi.list({ page: params.page, per_page: params.per_page }),
     columns: [
       { accessorKey: "created_at", enableSorting: false, header: () => "创建时间", cell: ({ row }) => dateCell(row.original.created_at), meta: { headClassName: "min-w-[150px]" } },
@@ -68,7 +68,7 @@ export function RecordsPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无资金明细"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>
