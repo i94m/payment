@@ -205,7 +205,7 @@ async def order_refill(session: SessionDep, cache: CacheDep, body: dict):
     if result.status == "mismatch":
         return err(-1, "金额校验失败")
     if result.status == "invalid":
-        return err(-1, "补单失败：订单状态不允许记账")
+        return err(-1, "订单状态不可补单，请核对订单状态后重试")
     return err(-1, f"补单失败：{result.status}")
 
 
