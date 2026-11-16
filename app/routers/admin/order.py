@@ -12,6 +12,7 @@ from app.core.security import AdminUser, PermissionChecker
 from app.lib.export import export_csv
 from app.models import Merchant, Order
 from app.responses import err, paginated_query_async, suc
+from app.routers.common.params import parse_int
 from app.services.notify import requeue_notify
 from app.services.order import (
     get_order_by_trade_no,
@@ -64,16 +65,17 @@ def _build_query(body: dict):
     if body.get("out_trade_no"):
         query = query.where(Order.out_trade_no == body["out_trade_no"])
     if body.get("merchant_id"):
-        query = query.where(Order.merchant_id == int(body["merchant_id"]))
+        # 商户列表「订单」快捷跳转：/trade/orders?merchant_id=xx
+        query = query.where(Order.merchant_id == parse_int(body["merchant_id"], "merchant_id"))
     if body.get("channel_id"):
         # 通道列表「订单」快捷跳转：/trade/orders?channel_id=xx
-        query = query.where(Order.channel_id == int(body["channel_id"]))
+        query = query.where(Order.channel_id == parse_int(body["channel_id"], "channel_id"))
     if body.get("status") is not None and body.get("status") != "":
-        query = query.where(Order.status == int(body["status"]))
+        query = query.where(Order.status == parse_int(body["status"], "status"))
     if body.get("type"):
         query = query.where(Order.payment_type_code == body["type"])
     if body.get("notify_status") is not None and body.get("notify_status") != "":
-        query = query.where(Order.notify_status == int(body["notify_status"]))
+        query = query.where(Order.notify_status == parse_int(body["notify_status"], "notify_status"))
     addtime = body.get("addtime") or ""
     if "," in addtime:
         start, end = addtime.split(",", 1)
@@ -89,14 +91,9 @@ async def order_list(session: SessionDep, page: int = Query(1, ge=1),
                      per_page: int = Query(20, ge=1, le=100), body: dict | None = None):
     body = body or {}
     # DataList 把 page/per_page 放在 body 里，此处兜底兼容
-    try:
-        page = max(int(body.get("page", page) or page), 1)
-    except (TypeError, ValueError):
-        pass
-    try:
-        per_page = min(max(int(body.get("per_page", per_page) or per_page), 1), 100)
-    except (TypeError, ValueError):
-        pass
+    page = parse_int(body.get("page", page), "page", default=page, minimum=1)
+    per_page = parse_int(body.get("per_page", per_page), "per_page",
+                         default=per_page, minimum=1, maximum=100)
     query = _build_query(body)
     data = await paginated_query_async(session, query, page, per_page,
                                        dump_fn=lambda o: _dump_order(o))
@@ -109,10 +106,10 @@ async def order_list(session: SessionDep, page: int = Query(1, ge=1),
         name_map = {m.id: m.username for m in merchants}
         for it in data["items"]:
             it["merchant_username"] = name_map.get(it["merchant_id"], "")
-    # 汇总
-    agg_query = _build_query(body)
+    # 汇总（必须引用子查询列：直接引用 Order.money 会把 orders 再放进 FROM，产生笛卡尔积）
+    subq = _build_query(body).order_by(None).subquery()
     total_money = (await session.exec(
-        select(func.coalesce(func.sum(Order.money), 0)).select_from(agg_query.subquery())
+        select(func.coalesce(func.sum(subq.c.money), 0)).select_from(subq)
     )).one()
     data["summary"] = {"money": str(Decimal(str(total_money)))}
     return suc(data)
@@ -132,7 +129,7 @@ async def order_export(session: SessionDep, request: Request):
         )).all()
         name_map = {m.id: m.username for m in merchants}
 
-    status_text = {0: "待支付", 1: "已支付", 3: "已过期"}
+    status_text = {0: "待支付", 1: "已支付", 2: "已退款", 3: "已过期"}
     rows = []
     for o in orders:
         rows.append({
@@ -204,9 +201,21 @@ async def order_refill(session: SessionDep, cache: CacheDep, body: dict):
         return suc("过期单回补成功（请核对上游收款凭证）" if was_expired else "补单成功")
     if result.status == "mismatch":
         return err(-1, "金额校验失败")
-    if result.status == "invalid":
-        return err(-1, "订单状态不可补单，请核对订单状态后重试")
-    return err(-1, f"补单失败：{result.status}")
+    return err(-1, _refill_error_text(result.status))
+
+
+# 补单失败给管理员看的文案：内部状态枚举（invalid/lock_failed…）不直接外露。
+# 过期单可走受控回补（P0-4），所以 invalid 不写「仅待支付订单可补单」。
+_REFILL_ERROR_TEXT = {
+    "not_found": "订单不存在",
+    "lock_failed": "订单正在处理中，请稍后重试",
+    "invalid": "订单状态不可补单，请核对订单状态后重试",
+    "mismatch": "金额校验失败",
+}
+
+
+def _refill_error_text(status: str) -> str:
+    return _REFILL_ERROR_TEXT.get(status, "补单失败，请稍后重试（订单状态可能已变更）")
 
 
 @router.post("/notify", dependencies=[Depends(PermissionChecker("order.notify"))])

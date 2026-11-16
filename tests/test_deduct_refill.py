@@ -325,6 +325,8 @@ async def test_admin_refill_expired_controlled_backfill(client, seeded, session,
                           json={"trade_no": o.trade_no})
     assert r.json()["code"] == 0, r.json()
     assert "回补" in r.json()["message"]
+    # 不把内部状态枚举（invalid 等）甩给管理员
+    assert "invalid" not in r.json()["message"]
 
     fresh = await _refetch(engine, o.trade_no)
     assert fresh.status == 1 and fresh.notify_status == 1
