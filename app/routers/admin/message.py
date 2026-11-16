@@ -1,16 +1,19 @@
 """后台通知中心：列表 / 未读数 / 已读（已读为全局语义，任一管理员操作即生效）。"""
 from datetime import datetime
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import update as sa_update
 from sqlmodel import col, func, select
 
 from app.core.deps import SessionDep
-from app.core.security import AdminUser
+from app.core.security import PermissionChecker
 from app.models import AdminMessage
 from app.responses import err, paginate, suc
 
 router = APIRouter()
+
+_view = Depends(PermissionChecker("message.view"))
 
 
 def _dump(m: AdminMessage) -> dict:
@@ -24,8 +27,8 @@ def _dump(m: AdminMessage) -> dict:
     }
 
 
-@router.get("/list")
-async def message_list(session: SessionDep, auth: AdminUser,
+@router.get("/list", dependencies=[_view])
+async def message_list(session: SessionDep,
                        page: int = Query(1, ge=1), per_page: int = Query(20, ge=1, le=100),
                        unread: int = 0):
     query = select(AdminMessage).order_by(col(AdminMessage.id).desc())
@@ -38,8 +41,8 @@ async def message_list(session: SessionDep, auth: AdminUser,
                         has_more_pages=page * per_page < total, has_pages=total > per_page))
 
 
-@router.get("/unread-count")
-async def unread_count(session: SessionDep, auth: AdminUser):
+@router.get("/unread-count", dependencies=[_view])
+async def unread_count(session: SessionDep):
     cnt = (await session.exec(
         select(func.count()).select_from(AdminMessage).where(
             col(AdminMessage.read_at).is_(None),
@@ -52,8 +55,8 @@ class ReadRequest(BaseModel):
     id: int = 0  # 0=全部已读
 
 
-@router.post("/read")
-async def mark_read(body: ReadRequest, session: SessionDep, auth: AdminUser):
+@router.post("/read", dependencies=[_view])
+async def mark_read(body: ReadRequest, session: SessionDep):
     now = datetime.now()
     if body.id > 0:
         msg = await session.get(AdminMessage, body.id)
@@ -63,11 +66,11 @@ async def mark_read(body: ReadRequest, session: SessionDep, auth: AdminUser):
             msg.read_at = now
             session.add(msg)
     else:
-        rows = (await session.exec(
-            select(AdminMessage).where(col(AdminMessage.read_at).is_(None))
-        )).all()
-        for msg in rows:
-            msg.read_at = now
-            session.add(msg)
+        # 全部已读：一条 UPDATE 批量置位（原实现逐行 SELECT + UPDATE）
+        await session.exec(
+            sa_update(AdminMessage)
+            .where(col(AdminMessage.read_at).is_(None))
+            .values(read_at=now)
+        )
     await session.commit()
     return suc("success")

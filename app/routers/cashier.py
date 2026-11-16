@@ -71,6 +71,7 @@ async def launch_payment(request: Request, session: SessionDep, cache: CacheDep,
         body = await request.json()
         trade_no = str(body.get("trade_no", "") or "")
         type_code = str(body.get("type", "") or "")
+        refresh = bool(body.get("refresh", False))
     except Exception:
         return err(-1, "参数错误")
     if not trade_no or not type_code:
@@ -93,6 +94,16 @@ async def launch_payment(request: Request, session: SessionDep, cache: CacheDep,
     merchant = await session.get(Merchant, order.merchant_id)
     if not merchant:
         return err(-1, "商户不存在")
+
+    # 同一支付方式重复拉起：复用已落库的上游支付信息（与开放 API 下单口径一致），
+    # 收银台刷新/回退不再每次都向上游新建付款会话；切换支付方式或 refresh=true 才重新拉起。
+    extra = order.extra or {}
+    stored_type = str(extra.get("pay_type") or "")
+    stored_info = str(extra.get("pay_info") or "")
+    if not refresh and order.payment_type_code == pay_type.code \
+            and stored_type in ("jump", "scheme", "qrcode", "html") and stored_info:
+        return suc_data({"pay_type": stored_type, "pay_info": stored_info,
+                         "expires_in": order_remaining_seconds(order)})
 
     order.payment_type_id = pay_type.id
     order.payment_type_code = pay_type.code

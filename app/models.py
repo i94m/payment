@@ -352,6 +352,11 @@ class Order(SQLModel, table=True):
         # 商户仪表盘/趋势图按实付时间聚合（merchant_id 等值 + paid_at 范围）：
         # 原先只能吃 (merchant_id,status) 前缀全扫商户已付单，20 万行实测 45666→179 行
         Index("ix_orders_merchant_paid", "merchant_id", "paid_at"),
+        # 全站口径的「已支付 + 实付时间」聚合（admin 看板/今日收入/趋势图）：
+        # 原实现没有以 status 为前导、paid_at 为次列的索引，全站查询退化为扫全部
+        # 已支付行；20 万行造数实测今日收入 14 万行/72.7ms → 1111 行/1.3ms
+        # （见迁移 0004 的 EXPLAIN 对比）
+        Index("ix_orders_status_paid", "status", "paid_at"),
         # 代理面板订单列表/计数（agent_id 不在其他索引首列，原计数扫 6.6 万行）
         Index("ix_orders_agent_created", "agent_id", "created_at"),
         _MYSQL_ARGS,

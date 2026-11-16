@@ -153,6 +153,10 @@ async def create_paypage_order_core(body: PaypageOrderRequest, request: Request,
             raw = Decimal(str(body.money).strip())
         except InvalidOperation:
             return -1, "金额格式错误", None
+        # NaN/Infinity 能被 Decimal 解析（不是异常），但后续比较/量化会抛
+        # InvalidOperation → 500。这里显式挡掉，统一按格式错误处理。
+        if not raw.is_finite():
+            return -1, "金额格式错误", None
         if raw <= 0:
             return -1, "金额必须大于0", None
         if raw != raw.quantize(Decimal("0.01")):
@@ -193,6 +197,9 @@ async def create_paypage_order_core(body: PaypageOrderRequest, request: Request,
         )
     except ValueError as e:
         return -1, str(e), None
+    except InvalidOperation:
+        # create_order 内部 Decimal 运算抛出的非法数字（NaN/Infinity 等）
+        return -1, "金额格式错误", None
 
     if order.status != 0:
         return -1, "订单已支付，请勿重复提交", None
