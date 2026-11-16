@@ -13,11 +13,14 @@
 从而确定性复现 TOCTOU 窗口（不是靠 gather 随机交错）。
 
 **这 7 条是常驻门禁（P0 修复已合入主线，xfail 标记已摘除）**：断言对象是最终
-实现——结算打款/驳回的条件 UPDATE（`WHERE status=0` + rowcount）、结算申请的
-条件 UPDATE 预占（`reserve_settlement_funds`）、退款配额占位
-（`orders.refunded_amount` + rowcount）与 `expire_at` 查单窗口，不是修复过程中
-的中间版本。验收时核对过「修复前的树（`9334aa8`）上 `--runxfail` 全部失败、
-最终树上全部通过」，所以它们确实拦得住回归，而不是恒绿的摆设。
+实现——结算打款/驳回的「进程内协作锁 + 结算单行锁 + 状态机复核」、结算申请的
+行锁内重算可提余额（`coop_lock` + `lock_merchant`）、退款可退上限的
+「订单行锁 + status∈{0,1} 退款单求和（`_reserved_refunded_amount`）」与
+`expire_at` 查单窗口，不是修复过程中的中间版本。SQLite 没有 `FOR UPDATE`，
+票据里的并发语义在这些用例上由 `coop_lock` 兜住，因此它同样是门禁的一部分：
+去掉它（或去掉锁内状态复核）用例就会红（变异验证见下方各用例的注入点说明）。
+验收时核对过「修复前的树（`9334aa8`）上 `--runxfail` 全部失败、最终树上全部通过」，
+所以它们确实拦得住回归，而不是恒绿的摆设。
 """
 import asyncio
 import os
@@ -312,31 +315,30 @@ async def _paid_order(session: AsyncSession, mid: int, channel_id: int, trade_no
     return order
 
 
-def _delay_order_reads(monkeypatch, delay: float = 0.05) -> None:
-    """让「占位前的订单当前读」之后让出控制权：两个并发退款都读到旧配额（0）。
+def _delay_quota_read(monkeypatch, delay: float = 0.05) -> None:
+    """让「锁内配额读」之后让出控制权：并发退款的 TOCTOU 临界读就在这一层。
 
-    修复后的配额判定在 `_claim_refund_quota`：`UPDATE orders SET refunded_amount=...
-    WHERE refunded_amount + :amt <= 可退上限` + rowcount。把延迟打在这里（占位前
-    的那次 `_fresh_order`）才是最终实现的 TOCTOU 形状——两个请求都以为自己还能退，
-    谁能占住额度只由条件 UPDATE 决定。对 `refunded_amount()`（对外报表口径的
-    成功退款求和）注入延迟已不在关键段，测不到配额守卫。
+    最终实现的配额口径是 `_reserved_refunded_amount`（订单行锁内对 status∈{0,1}
+    的退款单求和，含在途预占），串行化靠 `coop_lock("refund:<trade_no>")` +
+    订单行 `FOR UPDATE`。延迟必须打在这里：注入到 `refunded_amount()`（只算
+    成功单）已不在关键段——它测不到「在途预占」口径。
     """
     import app.services.refund as refund_mod
 
-    orig = refund_mod._fresh_order
+    orig = refund_mod._reserved_refunded_amount
 
     async def _slow(session, trade_no):
-        order = await orig(session, trade_no)
+        val = await orig(session, trade_no)
         await asyncio.sleep(delay)
-        return order
+        return val
 
-    monkeypatch.setattr(refund_mod, "_fresh_order", _slow)
+    monkeypatch.setattr(refund_mod, "_reserved_refunded_amount", _slow)
 
 
 async def test_concurrent_partial_refund_cannot_over_refund(
     monkeypatch, client, conc_engine, conc_seed, sessions,
 ):
-    """并发部分退款（60 + 50）不得突破可退上限 98，且余额/配额与已退金额自洽。"""
+    """并发部分退款（60 + 50）不得突破可退上限 98，且余额/预占与已退金额自洽。"""
     mid = conc_seed["merchant_id"]
     maker = async_sessionmaker(conc_engine, class_=AsyncSession, expire_on_commit=False)
     async with maker() as s:
@@ -344,7 +346,7 @@ async def test_concurrent_partial_refund_cannot_over_refund(
         order = await _paid_order(s, mid, conc_seed["channel_id"], "2601010000000000000001")
     trade_no = order.trade_no
 
-    _delay_order_reads(monkeypatch)
+    _delay_quota_read(monkeypatch)
 
     a, b = sessions
     m_a = await a.get(Merchant, mid)
@@ -358,15 +360,16 @@ async def test_concurrent_partial_refund_cannot_over_refund(
         refunds = (await s.exec(select(Refund).where(Refund.trade_no == trade_no))).all()
         total = sum((dmoney(r.amount) for r in refunds), Decimal("0.00"))
         m = await _merchant_row(s, mid)
-        fresh = await s.get(Order, order.id)
         assert total <= dmoney("98.00"), f"超退：累计退款 {total} > 可退上限 98（结果 {results}）"
         assert dmoney(m.balance) == dmoney("98.00") - total, (
             f"余额与已退金额不自洽：balance={m.balance} refunded={total}"
         )
-        # 配额口径（orders.refunded_amount = 已退 + 在途）：被拒的并发请求回滚后
-        # 不得残留占用，否则后续合法退款会被永久挤小额度。
-        assert dmoney(fresh.refunded_amount) == total, (
-            f"配额占用与实际已退不一致：refunded_amount={fresh.refunded_amount} 实际 {total}"
+        # 60 + 50 装不进 98：只允许一笔成功。
+        assert len(refunds) == 1, f"并发退款落库笔数异常：{[ (r.amount, r.status) for r in refunds ]}"
+        # 被拒的并发请求不得残留 status=0 预占单——否则它会把后续合法退款的可退额度
+        # 永久挤小，也是「零副作用」的对外承诺。
+        assert all(r.status == 1 for r in refunds), (
+            f"被拒请求残留预占单：{[ (r.amount, r.status) for r in refunds ]}"
         )
 
 
