@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { CopyableInput } from "@/components/ui/copy-button"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
-import { LoadError } from "@/apps/shared/load-error"
+import { PanelError } from "@/components/data-list"
 import { useRequest } from "@/apps/shared/use-request"
 import { IconCoin, IconChartBar, IconReceipt, IconWallet, IconLink } from "@tabler/icons-react"
 
@@ -42,9 +42,9 @@ export function DashboardPage() {
         {/* 业绩/资料加载失败：分开提示，避免把接口失败误判成「业绩为 0」；
             两者同时失败时合并成一条，只给一个重试入口 */}
         {overview.error && profile.error ? (
-          <LoadError className="mx-4 lg:mx-6" message={"首页数据加载失败，请稍后重试"} onRetry={reloadAll} />
+          <PanelError className="mx-4 lg:mx-6" error={"首页数据加载失败，请稍后重试"} onRetry={reloadAll} />
         ) : overview.error ? (
-          <LoadError className="mx-4 lg:mx-6" message={overview.error} onRetry={overview.reload} />
+          <PanelError className="mx-4 lg:mx-6" error={overview.error} onRetry={overview.reload} />
         ) : null}
 
         {/* 业绩四卡 */}
@@ -83,7 +83,7 @@ export function DashboardPage() {
                 overview.error ? (
                   <p className="text-xs text-muted-foreground">{"暂时无法获取专属链接，请稍后重试"}</p>
                 ) : (
-                  <LoadError message={profile.error} onRetry={profile.reload} />
+                  <PanelError error={profile.error} onRetry={profile.reload} />
                 )
               ) : profile.loading ? (
                 <Skeleton className="h-9 w-full" />

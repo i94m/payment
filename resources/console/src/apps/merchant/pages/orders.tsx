@@ -19,6 +19,7 @@ import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
+  ListError,
   actionsColumn,
   dateCell,
   copyableCell,
@@ -27,7 +28,8 @@ import {
 import type { ActionItem, StatusBadgeOption } from "@/components/data-list/"
 import { IconSearch, IconRefresh, IconBell, IconEye, IconDownload, IconLoader2 } from "@tabler/icons-react"
 import apiClient from "@/lib/api-client"
-import { getErrorMessage } from "@/apps/shared/error"
+import { getErrorMessage } from "@/lib/error"
+import { toIntParam } from "@/lib/form-utils"
 import { toast } from "sonner"
 
 // 状态口径与后端一致（0 待支付 / 1 已支付 / 2 已退款 / 3 已过期）；
@@ -107,7 +109,8 @@ export function OrdersPage() {
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
     if (outTradeNo.trim()) params.out_trade_no = outTradeNo.trim()
-    if (statusFilter !== "") params.status = Number(statusFilter)
+    const status = toIntParam(statusFilter)
+    if (status !== undefined) params.status = status
     if (startDate && endDate) {
       params.addtime = `${format(startDate, "yyyy-MM-dd")},${format(endDate, "yyyy-MM-dd")}`
     }
@@ -173,7 +176,7 @@ export function OrdersPage() {
   }
 
   const {
-    table, loading, keyword, setKeyword, applyFilters, summary, refresh,
+    table, loading, error, keyword, setKeyword, applyFilters, summary, refresh,
   } = useDataList<OrderData>({
     // keyword（平台订单号搜索框）映射为后端认的 trade_no
     fetchFn: (params) => {
@@ -273,7 +276,6 @@ export function OrdersPage() {
       ] as ActionItem<OrderData>[], { width: 230 }),
     ],
     perPage: 20,
-    onError: (err) => toast.error(getErrorMessage(err, "订单加载失败")),
   })
 
   return (
@@ -358,9 +360,13 @@ export function OrdersPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无订单记录"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无订单记录"}>
+              <DataTablePagination table={table} />
+            </DataTable>
+          )}
         </div>
       </div>
 

@@ -8,8 +8,8 @@ import { FilterCard } from "@/components/filter-card"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
-import { LoadError } from "@/apps/shared/load-error"
-import { getErrorMessage } from "@/apps/shared/error"
+import { PanelError } from "@/components/data-list"
+import { getErrorMessage } from "@/lib/error"
 import { IconCheck, IconChevronLeft, IconChevronRight, IconInbox } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -90,7 +90,7 @@ export function MessagesPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6 space-y-2">
-          {error && <LoadError message={error} onRetry={reload} />}
+          {error && <PanelError error={error} onRetry={reload} />}
 
           {loading && data.length === 0 && (
             <div className="space-y-2">

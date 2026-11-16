@@ -13,14 +13,14 @@ import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
+  ListError,
   copyableCell,
   dateCell,
   truncatedCell,
 } from "@/components/data-list/"
 import type { StatusBadgeOption } from "@/components/data-list/"
-import { getErrorMessage } from "@/apps/shared/error"
+import { toIntParam } from "@/lib/form-utils"
 import { IconSearch, IconRefresh } from "@tabler/icons-react"
-import { toast } from "sonner"
 
 // 状态口径与后端 Order.status 一致（0 待支付 / 1 已支付 / 2 已退款 / 3 已过期）
 const orderStatusOptions: StatusBadgeOption[] = [
@@ -57,7 +57,8 @@ export function OrdersPage() {
     const params: Record<string, unknown> = {}
     if (startDate) params.starttime = format(startDate, "yyyy-MM-dd")
     if (endDate) params.endtime = format(endDate, "yyyy-MM-dd")
-    if (statusFilter !== "") params.status = Number(statusFilter)
+    const status = toIntParam(statusFilter)
+    if (status !== undefined) params.status = status
     return params
   }, [startDate, endDate, statusFilter])
 
@@ -67,7 +68,7 @@ export function OrdersPage() {
   }
 
   const {
-    table, loading, setKeyword, applyFilters, refresh,
+    table, loading, error, setKeyword, applyFilters, refresh,
   } = useDataList<AgentOrderData>({
     fetchFn: (params) => agentPanelApi.orders(params),
     filters: filterParams,
@@ -127,7 +128,6 @@ export function OrdersPage() {
       },
     ],
     perPage: 15,
-    onError: (err) => toast.error(getErrorMessage(err, "订单加载失败")),
   })
 
   return (
@@ -177,9 +177,13 @@ export function OrdersPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无订单记录"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无订单记录"}>
+              <DataTablePagination table={table} />
+            </DataTable>
+          )}
         </div>
       </div>
     </div>

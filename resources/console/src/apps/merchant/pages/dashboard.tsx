@@ -6,7 +6,7 @@ import type { MerchantOverview } from "@/api/dashboard"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
-import { LoadError } from "@/apps/shared/load-error"
+import { PanelError } from "@/components/data-list"
 import { useRequest } from "@/apps/shared/use-request"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import {
@@ -81,7 +81,7 @@ export function DashboardPage() {
         )}
 
         {/* 统计加载失败：页面级错误条 + 重试 */}
-        {error && <LoadError className="mx-4 lg:mx-6" message={error} onRetry={reload} />}
+        {error && <PanelError className="mx-4 lg:mx-6" error={error} onRetry={reload} />}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4 dark:*:data-[slot=card]:bg-card">

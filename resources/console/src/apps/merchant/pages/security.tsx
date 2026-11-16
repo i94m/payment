@@ -11,8 +11,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/data-list/confirm-dialog"
-import { LoadError } from "@/apps/shared/load-error"
-import { getErrorMessage } from "@/apps/shared/error"
+import { PanelError } from "@/components/data-list"
+import { getErrorMessage } from "@/lib/error"
 import { IconKey, IconWand } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -82,7 +82,7 @@ export function SecurityPage() {
           </h2>
         </div>
         <div className="px-4 lg:px-6 space-y-4">
-          {loadError && <LoadError message={loadError} onRetry={() => { setLoadError(null); load() }} />}
+          {loadError && <PanelError error={loadError} onRetry={() => { setLoadError(null); load() }} />}
           <div className="grid gap-1.5">
             <Label>{"商户ID (pid)"}</Label>
             <CopyableText value={String(apiKey?.pid ?? "")} className="font-mono break-all" />

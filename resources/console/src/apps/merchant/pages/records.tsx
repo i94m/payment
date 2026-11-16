@@ -5,11 +5,9 @@ import { recordsApi } from "@/api"
 import type { MerchantRecordData } from "@/api"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
-import { useDataList, dateCell, secondaryCell, truncatedCell } from "@/components/data-list/"
-import { getErrorMessage } from "@/apps/shared/error"
+import { useDataList, ListError, dateCell, secondaryCell, truncatedCell } from "@/components/data-list/"
 import { Button } from "@/components/ui/button"
 import { IconRefresh } from "@tabler/icons-react"
-import { toast } from "sonner"
 
 const BIZ_TYPE_LABELS: Record<string, string> = {
   pay: "收款",
@@ -23,7 +21,7 @@ const BIZ_TYPE_LABELS: Record<string, string> = {
 }
 
 export function RecordsPage() {
-  const { table, loading, refresh } = useDataList<MerchantRecordData>({
+  const { table, loading, error, refresh } = useDataList<MerchantRecordData>({
     fetchFn: (params) => recordsApi.list({ page: params.page, per_page: params.per_page }),
     columns: [
       { accessorKey: "created_at", enableSorting: false, header: () => "创建时间", cell: ({ row }) => dateCell(row.original.created_at), meta: { headClassName: "min-w-[150px]" } },
@@ -54,7 +52,6 @@ export function RecordsPage() {
       { accessorKey: "remark", enableSorting: false, header: () => "备注", cell: ({ row }) => truncatedCell(row.original.remark || "—", 140) },
     ],
     perPage: 15,
-    onError: (err) => toast.error(getErrorMessage(err, "资金明细加载失败")),
   })
 
   return (
@@ -67,9 +64,13 @@ export function RecordsPage() {
           </Button>
         </FilterCard>
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无资金明细"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无资金明细"}>
+              <DataTablePagination table={table} />
+            </DataTable>
+          )}
         </div>
       </div>
     </div>

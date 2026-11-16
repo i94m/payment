@@ -13,8 +13,8 @@ import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { numStr } from "@/lib/form-schema"
-import { LoadError } from "@/apps/shared/load-error"
-import { getErrorMessage } from "@/apps/shared/error"
+import { PanelError } from "@/components/data-list"
+import { getErrorMessage } from "@/lib/error"
 import { toast } from "sonner"
 
 // 收款页设置：随机金额开启时最小/最大金额必填且仅支持整数；建单限流为非负整数（0=不限）
@@ -104,7 +104,7 @@ export function PaypageMchPage() {
         </div>
         <div className="px-4 lg:px-6 space-y-4">
           {settingsError && (
-            <LoadError message={settingsError} onRetry={() => setLoadTick((n) => n + 1)} />
+            <PanelError error={settingsError} onRetry={() => setLoadTick((n) => n + 1)} />
           )}
           <Field>
             <FieldLabel htmlFor="pay-link">{"收款链接"}</FieldLabel>

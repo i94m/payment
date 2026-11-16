@@ -1,5 +1,5 @@
 import * as React from "react"
-import { getErrorMessage } from "./error"
+import { getErrorMessage } from "@/lib/error"
 
 export interface RequestState<T> {
   data: T | null

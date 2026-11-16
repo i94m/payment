@@ -10,14 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Field, FieldLabel, FieldError, RequiredMark } from "@/components/ui/field"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
-import { dateCell, secondaryCell, truncatedCell } from "@/components/data-list/"
+import { dateCell, secondaryCell, truncatedCell, ListError, PanelError } from "@/components/data-list/"
 import { useReactTable, getCoreRowModel, type ColumnDef } from "@tanstack/react-table"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { numStr } from "@/lib/form-schema"
-import { LoadError } from "@/apps/shared/load-error"
-import { getErrorMessage } from "@/apps/shared/error"
+import { getErrorMessage } from "@/lib/error"
 import { IconWallet, IconClock, IconSnowflake, IconSend, IconChevronRight } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -190,7 +189,7 @@ export function SettlePage() {
                   </div>
                 </div>
               ) : infoError ? (
-                <LoadError message={infoError} onRetry={() => { setInfoLoading(true); loadInfo() }} />
+                <PanelError error={infoError} onRetry={() => { setInfoLoading(true); loadInfo() }} />
               ) : infoLoading ? (
                 <Skeleton className="h-16 w-full" />
               ) : null}
@@ -313,9 +312,14 @@ export function SettlePage() {
               <CardTitle className="text-base">{"结算记录"}</CardTitle>
             </CardHeader>
             <CardContent>
-              {listError && <LoadError className="mb-3" message={listError} onRetry={() => setListTick((n) => n + 1)} />}
-              <DataTable table={table} loading={loading} emptyMessage={"暂无结算记录"} />
-              <DataTablePagination table={table} />
+              {listError ? (
+                <ListError error={listError} onRetry={() => { setListTick((n) => n + 1) }} />
+              ) : (
+                <>
+                  <DataTable table={table} loading={loading} emptyMessage={"暂无结算记录"} />
+                  <DataTablePagination table={table} />
+                </>
+              )}
             </CardContent>
           </Card>
         </div>
