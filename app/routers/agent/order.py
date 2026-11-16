@@ -1,11 +1,14 @@
 """代理端订单记录：只读列表（归属本代理的订单），日期/状态筛选。
 
-对齐老系统 agent/order.php：七列展示（订单号/金额/实收/商品名称/创建/支付/状态），
-状态原样返回（不做商户侧扣量遮蔽）。
+对齐老系统 agent/order.php：七列展示（订单号/金额/实收/商品名称/创建/支付/状态）。
+
+扣量单（is_deducted）与商户端/仪表盘口径一致：状态遮蔽为未支付、无实收、
+无支付时间，且按「商户视角」参与状态筛选（筛已支付排除扣量单，筛未支付包含
+扣量单）—— 否则代理可凭列表状态与实收反推平台扣量率。
 """
 from fastapi import APIRouter, Query
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlmodel import col, select
 
 from app.core.deps import SessionDep
@@ -17,14 +20,15 @@ router = APIRouter()
 
 
 def _dump(o: Order) -> dict:
+    deducted = bool(o.is_deducted)
     return {
         "trade_no": o.trade_no,
         "money": str(o.money),
-        "realmoney": str(o.realmoney) if o.realmoney is not None else "",
+        "realmoney": "" if deducted else (str(o.realmoney) if o.realmoney is not None else ""),
         "subject": o.subject,
         "created_at": o.created_at.strftime("%Y-%m-%d %H:%M:%S") if o.created_at else "",
-        "paid_at": o.paid_at.strftime("%Y-%m-%d %H:%M:%S") if o.paid_at else "",
-        "status": o.status,
+        "paid_at": "" if deducted else (o.paid_at.strftime("%Y-%m-%d %H:%M:%S") if o.paid_at else ""),
+        "status": 0 if deducted else o.status,
     }
 
 
@@ -40,7 +44,15 @@ async def order_list(session: SessionDep, auth: AgentUser,
     if endtime:
         conditions.append(col(Order.created_at) <= f"{endtime} 23:59:59")
     if status is not None:
-        conditions.append(col(Order.status) == status)
+        if status == 1:
+            # 代理视角的「已支付」= 平台已支付且未被扣量
+            conditions.append(col(Order.status) == 1)
+            conditions.append(col(Order.is_deducted) == False)  # noqa: E712
+        elif status == 0:
+            # 代理视角的「未支付」包含扣量单
+            conditions.append(or_(col(Order.status) == 0, col(Order.is_deducted) == True))  # noqa: E712
+        else:
+            conditions.append(col(Order.status) == status)
 
     q = select(Order).where(*conditions).order_by(col(Order.id).desc())
     total = (await session.exec(

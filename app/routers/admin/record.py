@@ -15,6 +15,7 @@ from app.core.security import PermissionChecker
 from app.lib.export import export_csv
 from app.models import Merchant, MerchantRecord
 from app.responses import paginated_query_async, suc
+from app.routers.common.params import parse_int
 from app.routers.merchant.record import BIZ_TYPES
 
 router = APIRouter()
@@ -24,7 +25,7 @@ def _build_query(body: dict):
     query = select(MerchantRecord).order_by(col(MerchantRecord.id).desc())
     # 商户列表「资金明细」快捷跳转：/records?merchant_id=xx
     if body.get("merchant_id"):
-        query = query.where(MerchantRecord.merchant_id == int(body["merchant_id"]))
+        query = query.where(MerchantRecord.merchant_id == parse_int(body["merchant_id"], "merchant_id"))
     if body.get("biz_type"):
         query = query.where(MerchantRecord.biz_type == body["biz_type"])
     keyword = str(body.get("keyword") or "").strip()
@@ -75,14 +76,9 @@ async def record_list(session: SessionDep, page: int = Query(1, ge=1),
                       per_page: int = Query(20, ge=1, le=100), body: dict | None = None):
     body = body or {}
     # DataList 把 page/per_page 放在 body 里，此处兜底兼容
-    try:
-        page = max(int(body.get("page", page) or page), 1)
-    except (TypeError, ValueError):
-        pass
-    try:
-        per_page = min(max(int(body.get("per_page", per_page) or per_page), 1), 100)
-    except (TypeError, ValueError):
-        pass
+    page = parse_int(body.get("page", page), "page", default=page, minimum=1)
+    per_page = parse_int(body.get("per_page", per_page), "per_page",
+                         default=per_page, minimum=1, maximum=100)
     query = _build_query(body)
     data = await paginated_query_async(session, query, page, per_page, dump_fn=_dump_record)
     # 补商户号/用户名
