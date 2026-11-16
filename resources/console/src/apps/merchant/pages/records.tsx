@@ -68,7 +68,7 @@ function RecordsTable() {
 
   return (
     <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-      <DataTablePagination table={table} />
+      <DataTablePagination table={table} total={total} />
     </DataTable>
   )
 }

@@ -3,6 +3,7 @@ import type { RouteObject } from "react-router-dom"
 // 通知中心入口隐藏开关（见 lib/features）：关闭时仅移除入口与直链可达性，页面代码保留
 import { FEATURE_NOTIFICATION_CENTER } from "@/lib/features"
 import { FeatureGate } from "@/components/auth/feature-gate"
+import { RouteErrorBoundary } from "@/components/route-error-boundary"
 
 // 路由级懒加载：各页面拆成独立 chunk，首屏只加载当前路由对应代码。
 // 页面均为命名导出，需映射为 default（React.lazy 要求 default 导出）。
@@ -31,7 +32,7 @@ export type PermissionRouteObject = RouteObject & {
 }
 
 // permission 与后端 PERMISSION_TREE 的 key 对齐
-export const routes: PermissionRouteObject[] = [
+const pageRoutes: PermissionRouteObject[] = [
   { path: "/", element: <DashboardPage /> },
   { path: "/user-center", element: <UserCenterPage /> },
   // 通知中心：入口隐藏后直链落到 404（页面组件保留在 AdminNotificationsPage）
@@ -54,3 +55,11 @@ export const routes: PermissionRouteObject[] = [
   { path: "/500", element: <Error500 /> },
   { path: "*", element: <Error404 /> },
 ]
+
+// 每个页面套一层路由级错误边界：单页渲染崩溃（含 lazy chunk 加载失败）只替换内容区，
+// 侧边栏/顶栏保留，切换路由自动复位；整站仍然有 App 级 ErrorBoundary 兜底。
+export const routes: PermissionRouteObject[] = pageRoutes.map((route) =>
+  route.element
+    ? { ...route, element: <RouteErrorBoundary>{route.element}</RouteErrorBoundary> }
+    : route,
+)

@@ -8,6 +8,8 @@ import { FilterCard } from "@/components/filter-card"
 import { Badge } from "@/components/ui/badge"
 import { IconBell, IconCheck, IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
+import { PanelError } from "@/components/data-list/list-error"
 
 const bizCls: Record<string, string> = {
   alert: "bg-destructive/10 text-destructive",
@@ -21,14 +23,16 @@ export function AdminNotificationsPage() {
   const [page, setPage] = React.useState(1)
   const [onlyUnread, setOnlyUnread] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
+  const [loadError, setLoadError] = React.useState<unknown>(null)
   const perPage = 15
   const totalPages = Math.ceil(total / perPage) || 1
 
   const load = React.useCallback(() => {
     setLoading(true)
+    setLoadError(null)
     messagesApi.list({ page, per_page: perPage, unread: onlyUnread ? 1 : 0 })
       .then((res) => { setData(res.items); setTotal(res.total) })
-      .catch(() => {})
+      .catch((err) => setLoadError(err))
       .finally(() => setLoading(false))
   }, [page, onlyUnread])
 
@@ -40,7 +44,7 @@ export function AdminNotificationsPage() {
       toast.success("已全部标记为已读")
       load()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -48,7 +52,7 @@ export function AdminNotificationsPage() {
     if (m.is_read) return
     messagesApi.read(m.id)
       .then(() => setData((prev) => prev.map((it) => (it.id === m.id ? { ...it, is_read: true } : it))))
-      .catch(() => {})
+      .catch((err) => toast.error(getErrorMessage(err, "标记已读失败")))
   }
 
   return (
@@ -66,42 +70,48 @@ export function AdminNotificationsPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6 space-y-2">
-          {loading && data.length === 0 && (
-            <p className="text-sm text-muted-foreground py-6 text-center">...</p>
-          )}
-          {!loading && data.length === 0 && (
-            <p className="text-sm text-muted-foreground py-6 text-center">{"暂无通知"}</p>
-          )}
-          {data.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => markRead(m)}
-              className={`w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent ${m.is_read ? "opacity-70" : ""}`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  {!m.is_read && <span className="size-2 rounded-full bg-destructive" />}
-                  <span className="text-sm font-medium">{m.title}</span>
-                  <Badge variant="outline" className={bizCls[m.biz_type] ?? ""}>{m.biz_type}</Badge>
+          {loadError ? (
+            <PanelError error={loadError} onRetry={load} />
+          ) : (
+            <>
+              {loading && data.length === 0 && (
+                <p className="text-sm text-muted-foreground py-6 text-center">...</p>
+              )}
+              {!loading && data.length === 0 && (
+                <p className="text-sm text-muted-foreground py-6 text-center">{"暂无通知"}</p>
+              )}
+              {data.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => markRead(m)}
+                  className={`w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent ${m.is_read ? "opacity-70" : ""}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {!m.is_read && <span className="size-2 rounded-full bg-destructive" />}
+                      <span className="text-sm font-medium">{m.title}</span>
+                      <Badge variant="outline" className={bizCls[m.biz_type] ?? ""}>{m.biz_type}</Badge>
+                    </div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">{m.created_at}</span>
+                  </div>
+                  {m.content && <p className="mt-1 text-sm text-muted-foreground">{m.content}</p>}
+                </button>
+              ))}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <Button size="sm" variant="outline" disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                    <IconChevronLeft className="size-4" />
+                  </Button>
+                  <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
+                  <Button size="sm" variant="outline" disabled={page >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                    <IconChevronRight className="size-4" />
+                  </Button>
                 </div>
-                <span className="text-xs text-muted-foreground whitespace-nowrap">{m.created_at}</span>
-              </div>
-              {m.content && <p className="mt-1 text-sm text-muted-foreground">{m.content}</p>}
-            </button>
-          ))}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <Button size="sm" variant="outline" disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                <IconChevronLeft className="size-4" />
-              </Button>
-              <span className="text-sm text-muted-foreground">{page} / {totalPages}</span>
-              <Button size="sm" variant="outline" disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
-                <IconChevronRight className="size-4" />
-              </Button>
-            </div>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -14,6 +14,8 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
+import { PanelError } from "@/components/data-list/list-error"
 import { IconRefresh } from "@tabler/icons-react"
 
 // 设置项键由后端注册表动态下发，schema 放宽为字符串 KV；
@@ -118,6 +120,7 @@ function SettingField({ item, control, clearError, disabled }: {
 export function PaySettingsPage() {
   const [items, setItems] = React.useState<SettingItem[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [loadError, setLoadError] = React.useState<unknown>(null)
   // 分卡片保存：记录正在保存的组 key
   const [savingKey, setSavingKey] = React.useState<string | null>(null)
   // 表单态统一存字符串(输入框友好),保存时按 item.type 转回注册表类型
@@ -128,12 +131,16 @@ export function PaySettingsPage() {
 
   const load = React.useCallback(() => {
     setLoading(true)
+    setLoadError(null)
     accountApi.paySettings()
       .then((res) => {
         setItems(res.items)
         form.reset(Object.fromEntries(res.items.map((i) => [i.key, toDisplay(i)])))
       })
-      .catch(() => toast.error("加载失败"))
+      .catch((err) => {
+        setLoadError(err)
+        toast.error(getErrorMessage(err, "站点配置加载失败"))
+      })
       .finally(() => setLoading(false))
   }, [form])
 
@@ -211,7 +218,7 @@ export function PaySettingsPage() {
         // 站点名称等展示信息可能已变化，同步刷新（侧边栏/标签页标题）
         useSiteStore.getState().fetchSite()
       })
-      .catch((err) => toast.error((err as { message?: string })?.message || "操作失败"))
+      .catch((err) => toast.error(getErrorMessage(err, "操作失败")))
       .finally(() => setSavingKey(null))
   }
 
@@ -248,6 +255,10 @@ export function PaySettingsPage() {
                   </CardContent>
                 </Card>
               ))
+            ) : loadError ? (
+              <PanelError error={loadError} onRetry={load} />
+            ) : groups.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{"暂无可配置项"}</p>
             ) : (
               groups.map((group) => (
                 <Card key={group.key}>

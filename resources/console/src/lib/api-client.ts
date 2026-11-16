@@ -45,10 +45,14 @@ apiClient.interceptors.response.use(
 
     // 登录态已失效(后端 token 过期/被撤销,但前端 store 仍认为有效):
     // 清除认证(内存 store + localStorage)并跳转登录页。
-    // - 排除 /auth/login:它的 401 由登录页自行处理,不该触发登出
+    // - 排除 /auth/login、/auth/sso:它们的 401 由各自页面处理,不该触发登出
     // - 以 store.isAuthenticated 去重:同一会话只清一次;重新登录后自动恢复 401 处理
     //   (避免并发 401 反复触发,也避免「登录页 ↔ 受保护页」来回弹的死循环)
-    if (status === 401 && !url.includes("/auth/login")) {
+    if (
+      status === 401 &&
+      !url.includes("/auth/login") &&
+      !url.includes("/auth/sso")
+    ) {
       // 惰性 import 规避 api-client ↔ auth-store 循环依赖
       void import("@/stores/auth-store").then(({ useAuthStore }) => {
         const store = useAuthStore.getState()
@@ -58,6 +62,14 @@ apiClient.interceptors.response.use(
           window.location.hash = "#/login"
         }
       })
+    }
+
+    // 403（无权限/权限被回收）：统一跳转 403 页，而不是只弹一个 toast。
+    // 排除上传相关接口：上传策略/文件大小等业务性 403 仍由调用方提示。
+    if (status === 403 && !url.startsWith("/upload")) {
+      if (window.location.hash !== "#/403") {
+        window.location.hash = "#/403"
+      }
     }
 
     // 保留后端错误体(通常含 code/message，调用方可继续读 .message)，

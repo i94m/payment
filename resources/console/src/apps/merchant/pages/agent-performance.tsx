@@ -17,7 +17,7 @@ function fmtMoney(v: unknown): string {
 
 export function AgentPerformancePage() {
   const {
-    table, loading, keyword, setKeyword, applyFilters, summary,
+    table, total, loading, keyword, setKeyword, applyFilters, summary,
   } = useDataList<AgentPerformanceRow>({
     // keyword 搜索框映射为后端的 kw（代理名称模糊）
     fetchFn: (params) => {
@@ -125,7 +125,7 @@ export function AgentPerformancePage() {
 
         <div className="px-4 lg:px-6">
           <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
+            <DataTablePagination table={table} total={total} />
           </DataTable>
         </div>
       </div>

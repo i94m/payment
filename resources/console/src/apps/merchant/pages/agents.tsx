@@ -122,7 +122,7 @@ export function AgentsPage() {
   }
 
   const {
-    table, loading, keyword, setKeyword, applyFilters, refresh,
+    table, total, loading, keyword, setKeyword, applyFilters, refresh,
   } = useDataList<AgentData>({
     // keyword 搜索框映射为后端的 kw（名称/备注模糊）
     fetchFn: (params) => {
@@ -230,7 +230,7 @@ export function AgentsPage() {
 
         <div className="px-4 lg:px-6">
           <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
+            <DataTablePagination table={table} total={total} />
           </DataTable>
         </div>
       </div>
