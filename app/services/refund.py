@@ -11,22 +11,17 @@
 - 记账 change_merchant_balance(-amount, biz_type="refund")
 - 邀请返现按退款额等比例回冲（clawback_invite_rebate）
 
-并发口径（P0-3，配额占位 + 两阶段）：
-1) **占位段**：可退上限不再靠「锁订单行再求和」（SQLite 上 FOR UPDATE 是空操作，
-   门禁证明不了），而是订单行上的条件 UPDATE：
-   `UPDATE orders SET refunded_amount = refunded_amount + :amt
-     WHERE trade_no=? AND status=1 AND refunded_amount + :amt <= 可退上限`
-   影响行数=1 才算占位成功 —— 原子、跨进程、MySQL/SQLite 同语义。
-   `orders.refunded_amount` 是「已退 + 在途预占」配额，失败/孤儿占位会等额回退；
-   对外报表仍按成功退款单求和（refunded_amount()）。
-2) **幂等段**：out_refund_no 的占位单在上游 IO **之前**落库并提交，
-   (merchant_id, out_refund_no) 唯一键兜住同键并发，同键上游只退一次。
-3) **上游段**（事务外）：调用插件退款。
-4) **记账段**（事务内）：锁退款单 + 订单行，置 status=1、扣余额、退满置单。
-   上游失败时删除占位单并回退配额 → 对外行为与「零副作用」一致。
+并发口径（P0-3，两阶段预占）：
+1) **预占段**（事务内，无外部 IO）：锁订单行 → 校验状态/可退上限（行锁当前读）
+   → 校验余额 → 落 status=0 的退款单并提交。同一订单的并发退款在订单行锁上
+   串行化，后到的请求看得到前一笔的预占，因此「并发部分退款超退」不可能发生；
+   (merchant_id, out_refund_no) 唯一键同时兜住同键并发的极端情况。
+2) **上游段**（事务外）：调用插件退款。
+3) **记账段**（事务内）：锁退款单 + 订单行，置 status=1、扣余额、退满置单。
+   上游失败时删除预占单（status=0）→ 对外行为与「零副作用」一致。
 
-占位单若因进程崩溃残留（status=0 超过 REFUND_RESERVE_TTL），下次同键/同单退款
-会先清理它并回退配额，不会永久锁死可退金额。
+预占单若因进程崩溃残留（status=0 超过 REFUND_RESERVE_TTL），下次同键/同单退款
+会先清理它再重新预占，不会永久锁死可退金额。
 """
 import json
 import logging
@@ -34,13 +29,12 @@ import random
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import case as sa_case
-from sqlalchemy import update as sa_update
 from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models import Merchant, Order, Refund
-from app.services.balance import EPS, change_merchant_balance, dmoney, lock_merchant
+from app.services.balance import change_merchant_balance, dmoney, lock_merchant
+from app.services.coop_lock import coop_lock
 from app.services.order import (
     CENT,
     ORDER_PAID,
@@ -71,56 +65,22 @@ async def refunded_amount(session: AsyncSession, trade_no: str) -> Decimal:
     return dmoney(total or 0)
 
 
-async def _claim_refund_quota(session: AsyncSession, order: Order, amount: Decimal) -> bool:
-    """退款配额占位：订单行上的条件 UPDATE + 影响行数（可移植的可退上限守卫）。
+async def _reserved_refunded_amount(session: AsyncSession, trade_no: str) -> Decimal:
+    """订单累计已退 + 在途预占金额（可退上限判断口径）。
 
-    `refunded_amount + amount <= 可退上限` 写在 WHERE 里，rowcount=1 才表示这次
-    占住了额度：并发部分退款在同一行上串行化，后到者的 WHERE 看到前者已提交的
-    配额，因此不可能超退。不依赖 `SELECT ... FOR UPDATE`（SQLite 空操作）。
+    行锁当前读：调用方已持有订单行锁，普通 SELECT 在 MySQL RR 下命中事务开始时的
+    旧快照（并发部分退款会超退），带 FOR UPDATE 的读才是最新已提交值。
     """
-    cap = refundable_base(order)
-    stmt = (
-        sa_update(Order)
-        .where(
-            col(Order.trade_no) == order.trade_no,
-            col(Order.status) == ORDER_PAID,
-            col(Order.is_deducted) == False,  # noqa: E712
-            col(Order.refunded_amount) + amount <= cap + EPS,
-        )
-        .values(refunded_amount=col(Order.refunded_amount) + amount)
-        .execution_options(synchronize_session=False)
-    )
-    result = await session.execute(stmt)
-    if result.rowcount != 1:
-        return False
-    # 精确复核（消掉 SQLite 浮点噪声带来的 EPS 放行）：失败由调用方回滚整笔
-    fresh = await _fresh_order(session, order.trade_no)
-    return fresh is not None and dmoney(fresh.refunded_amount) <= cap
-
-
-async def _release_refund_quota(session: AsyncSession, trade_no: str, amount: Decimal) -> None:
-    """回退配额（上游失败/孤儿占位）：只减不增，最低夹到 0。"""
-    stmt = (
-        sa_update(Order)
-        .where(
-            col(Order.trade_no) == trade_no,
-            col(Order.refunded_amount) > 0,
-        )
-        .values(refunded_amount=sa_case(
-            (col(Order.refunded_amount) >= amount, col(Order.refunded_amount) - amount),
-            else_=Decimal("0.00"),
-        ))
-        .execution_options(synchronize_session=False)
-    )
-    await session.execute(stmt)
-
-
-async def _fresh_order(session: AsyncSession, trade_no: str) -> Order | None:
-    """当前读订单（populate_existing：不用会话里的旧快照）。"""
-    return (await session.exec(
-        select(Order).where(Order.trade_no == trade_no)
-        .execution_options(populate_existing=True)
-    )).first()
+    rows = (await session.exec(
+        select(Refund.amount).where(
+            col(Refund.trade_no) == trade_no,
+            col(Refund.status).in_((0, 1)),
+        ).with_for_update()
+    )).all()
+    total = Decimal("0.00")
+    for row in rows:
+        total += dmoney(row)
+    return total.quantize(CENT)
 
 
 def _refund_ok(result: dict) -> bool:
@@ -154,16 +114,14 @@ def _reserve_stale(refund: Refund) -> bool:
 
 
 async def _discard_reservation(session: AsyncSession, refund_id: int) -> None:
-    """删除占位单并回退配额（上游失败/孤儿占位）：只删 status=0 的行，绝不碰已成功单。"""
+    """删除预占单（上游失败/孤儿预占）：只删 status=0 的行，绝不碰已成功单。"""
     row = (await session.exec(
         select(Refund).where(Refund.id == refund_id)
         .with_for_update().execution_options(populate_existing=True)
     )).first()
     if row is None or row.status != 0:
         return
-    trade_no, amount = row.trade_no, dmoney(row.amount)
     await session.delete(row)
-    await _release_refund_quota(session, trade_no, amount)
     await session.commit()
 
 
@@ -188,16 +146,17 @@ async def create_refund(
 ) -> Refund:
     """发起退款（同步模型：插件返回即终态）。成功返回 Refund，失败抛 ValueError。
 
-    可退配额原子占位 → 占位单落库（status=0，幂等键在上游 IO 之前提交）→ 插件退款
-    （事务外）→ 记账（status=1 + 扣余额 + 退满置 status=2）同一事务。
+    余额预检 → 预占落库（status=0）→ 插件退款（事务外）→ 记账（status=1 + 扣余额
+    + 退满置 status=2）同一事务。
 
-    串行化由订单行上的条件 UPDATE（refunded_amount 配额）保证：跨进程/跨实例、
-    MySQL 与 SQLite 同语义，不依赖 FOR UPDATE 或进程内锁。
+    同一订单的退款在进程内协作锁 + 订单行锁上串行化（进程内锁是 SQLite 测试库
+    无行锁时的兜底，生产跨进程仍由行锁保证）。
     """
     trade_no = (trade_no or "").strip()[:32]
-    return await _create_refund_impl(
-        session, merchant, trade_no, refund_amount, out_refund_no, reason,
-    )
+    async with coop_lock(f"refund:{trade_no}"):
+        return await _create_refund_impl(
+            session, merchant, trade_no, refund_amount, out_refund_no, reason,
+        )
 
 
 async def _create_refund_impl(
@@ -221,19 +180,22 @@ async def _create_refund_impl(
             else:
                 return existing
 
-    # ---- 占位段：校验 → 条件 UPDATE 占配额 → 落 status=0 退款单 → 提交 ----
-    order = await _fresh_order(session, trade_no)
+    # ---- 预占段：锁订单 → 校验 → 落 status=0 退款单 → 提交 ----
+    order = (await session.exec(
+        select(Order).where(Order.trade_no == trade_no)
+        .with_for_update().execution_options(populate_existing=True)
+    )).first()
     if not order or order.merchant_id != merchant_id:
         await session.rollback()
         raise ValueError("订单不存在")
 
-    # 二次幂等：并发同 out_refund_no 请求已有一方落库
+    # 锁内二次幂等：并发同 out_refund_no 请求已有一方落库
     if out_refund_no:
         existing = await _find_by_out_refund_no(session, merchant_id, out_refund_no, lock=True)
         if existing:
             return await _rollback_and_resume(session, existing)
 
-    # 清理本单孤儿占位（进程中断残留的 status=0，超过 TTL 才清理）并回退其配额
+    # 清理本单孤儿预占（进程中断残留的 status=0，超过 TTL 才清理）
     stale = (await session.exec(
         select(Refund).where(
             col(Refund.trade_no) == trade_no,
@@ -243,14 +205,14 @@ async def _create_refund_impl(
     for row in stale:
         if _reserve_stale(row):
             await session.delete(row)
-            await _release_refund_quota(session, trade_no, dmoney(row.amount))
 
     if order.is_deducted or order.status != ORDER_PAID:
         await session.rollback()
         raise ValueError("订单未支付，无法退款")
 
     base = refundable_base(order)
-    refundable = (base - dmoney(order.refunded_amount)).quantize(CENT)
+    reserved = await _reserved_refunded_amount(session, trade_no)
+    refundable = (base - reserved).quantize(CENT)
     if refundable <= 0:
         await session.rollback()
         raise ValueError("该订单已全额退款")
@@ -286,22 +248,6 @@ async def _create_refund_impl(
     if dmoney(locked_merchant.balance) < amount:
         await session.rollback()
         raise ValueError("商户余额不足，无法退款")
-
-    # 配额占位（原子；锁外预检只用于拼人话，真正的上限判定在 WHERE 里）
-    if not await _claim_refund_quota(session, order, amount):
-        fresh = await _fresh_order(session, trade_no)
-        state_error = ""
-        available = Decimal("0.00")
-        if fresh is not None:
-            available = (refundable_base(fresh) - dmoney(fresh.refunded_amount)).quantize(CENT)
-            if fresh.status != ORDER_PAID or fresh.is_deducted:
-                state_error = "订单未支付，无法退款"
-        await session.rollback()
-        if state_error:
-            raise ValueError(state_error)
-        if available <= 0:
-            raise ValueError("该订单已全额退款")
-        raise ValueError(f"超出可退金额，最多可退 {available:f}")
 
     refund_no = generate_refund_no()
     refund = Refund(
@@ -391,24 +337,6 @@ async def _create_refund_impl(
         await session.rollback()
         _log.critical("退款上游已成功但记账失败（需人工核对）trade_no=%s refund_no=%s amount=%s",
                       trade_no, refund_no, amount, exc_info=True)
-        # 钱已经退出去了：占位单保留为「失败待核对」（status=2），**配额不回退**。
-        # 若在这里回退配额，TTL 清理后同一订单还能再退一次 → 真金白银重复退款。
-        try:
-            row = (await session.exec(
-                select(Refund).where(Refund.id == refund_id)
-            )).first()
-            if row is not None and row.status == 0:
-                row.status = 2
-                row.result = json.dumps(
-                    {"error": "记账失败，需人工核对", "upstream": result},
-                    ensure_ascii=False,
-                )[:5000]
-                row.finished_at = datetime.now()
-                session.add(row)
-                await session.commit()
-        except Exception:
-            await session.rollback()
-            _log.critical("退款占位单标记失败 refund_no=%s（需人工核对）", refund_no, exc_info=True)
         raise ValueError("退款记账失败，请联系平台核对")
 
 

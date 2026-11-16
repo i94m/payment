@@ -10,17 +10,19 @@
 
 最后一条是审计可信度的前提——否则「有记录」不再等于「做过」。
 
-**这 3 条是常驻门禁（`system.audit` 已随 PR #10 合入主线，xfail 标记已摘除）**：
-断言对象是最终实现的读口口径——403/401 走的是 `app/routers/admin/audit.py` 的
-`require_permission("system.audit")`，而不是「表里没数据所以为空」；`action` 参数是
-子串筛选；「失败不落痕」靠 `record_audit` 只在业务成功后调用。验收时核对过
-「修复前的树（`9334aa8`）上 `--runxfail` 全部失败，在最终树上全部通过」。
+（用例由玲在 #10 验收快照里写好；#10 合入 main 后这里摘掉 xfail 标记转正，
+随收尾 PR 一起进主线。）
 """
 import pytest
 from sqlmodel import select
 
 from app.core.security import hash_password, issue_token
-from app.models import SystemAdmin, SystemAdminPermission, SystemAuditLog, SystemPermission
+from app.models import (
+    SystemAdmin,
+    SystemAdminPermission,
+    SystemAuditLog,
+    SystemPermission,
+)
 
 
 async def _make_admin(session, username: str, *, super_admin: bool = True,

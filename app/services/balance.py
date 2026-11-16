@@ -10,18 +10,12 @@
 """
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import update as sa_update
-from sqlmodel import col, select
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models import Merchant, MerchantRecord
 
 CENT = Decimal("0.01")
-
-# 条件 UPDATE 比较用的容差：SQLite（测试库）把 Numeric 落成 float，金额相减可能带
-# ~1e-13 的浮点噪声，恰好落在边界上会被误判；MySQL DECIMAL 运算无此问题。
-# 真正的精确判定在「更新成功后按 Decimal 复核」里做，这里只避免误杀合法请求。
-EPS = Decimal("0.000001")
 
 
 def dmoney(v) -> Decimal:
@@ -110,83 +104,3 @@ async def change_frozen_balance(
     merchant.frozen_balance = after
     session.add(merchant)
     return merchant
-
-
-async def reserve_settlement_funds(
-    session: AsyncSession,
-    merchant_id: int,
-    amount: Decimal | str,
-    *,
-    hold: Decimal | str = "0.00",
-) -> tuple[bool, str, Merchant | None]:
-    """结算申请的资金预占（余额 -amount / 冻结 +amount），原子且可移植。
-
-    「可提余额够不够」不能只靠 `with_for_update`：SQLite（测试库/门禁用例）上它是
-    空操作，行锁也只在单进程内可见。这里把判定条件直接写进 UPDATE 的 WHERE，
-    用影响行数（rowcount）决定谁预占成功 —— MySQL / SQLite 语义一致，跨进程、
-    跨实例都成立（这才是唯一正确的串行化点；行锁只是 MySQL 上的附加保险）。
-
-    hold：可提余额口径里要额外预留的金额（D+1 开启时=当日收款）。
-
-    返回 (是否成功, 失败原因码, 预占后的商户)。原因码供调用方拼人话：
-    not_found / disabled / settle_off / insufficient。
-    """
-    amount = dmoney(amount)
-    hold = dmoney(hold)
-    if amount <= 0:
-        raise ValueError("结算金额必须大于0")
-
-    stmt = (
-        sa_update(Merchant)
-        .where(
-            col(Merchant.id) == merchant_id,
-            col(Merchant.status) == 1,
-            col(Merchant.settle_status) == 1,
-            # 可提余额 = 余额 - 预留 - D+1 当日收款，必须覆盖本次申请
-            col(Merchant.balance) - col(Merchant.remain_money) - hold >= amount - EPS,
-        )
-        .values(
-            balance=col(Merchant.balance) - amount,
-            frozen_balance=col(Merchant.frozen_balance) + amount,
-        )
-        .execution_options(synchronize_session=False)
-    )
-    result = await session.execute(stmt)
-    if result.rowcount != 1:
-        # 行存在但被状态/可提余额拦下：读出当前值给调用方拼错误文案
-        current = (await session.exec(
-            select(Merchant).where(Merchant.id == merchant_id)
-            .execution_options(populate_existing=True)
-        )).first()
-        if current is None:
-            return False, "not_found", None
-        if current.status != 1:
-            return False, "disabled", current
-        if current.settle_status != 1:
-            return False, "settle_off", current
-        return False, "insufficient", current
-
-    merchant = (await session.exec(
-        select(Merchant).where(Merchant.id == merchant_id)
-        .execution_options(populate_existing=True)
-    )).first()
-    if merchant is None:  # 理论上不可能（UPDATE 命中过）
-        raise ValueError(f"商户 {merchant_id} 不存在")
-
-    balance_after = dmoney(merchant.balance)
-    balance_before = (balance_after + amount).quantize(CENT, rounding=ROUND_HALF_UP)
-    if balance_before - dmoney(merchant.remain_money) - hold < amount:
-        # 精确复核（消掉 SQLite 浮点噪声带来的 EPS 放行）：失败则整笔回滚，
-        # 由调用方按「超出可提余额」返回，账上不会留下半截预占。
-        return False, "insufficient", merchant
-
-    session.add(MerchantRecord(
-        merchant_id=merchant_id,
-        biz_type="settle",
-        amount=-amount,
-        balance_before=balance_before,
-        balance_after=balance_after,
-        remark="结算申请冻结",
-    ))
-    return True, "", merchant
-
