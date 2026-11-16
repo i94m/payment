@@ -74,7 +74,7 @@ export function PayTypesPage() {
   }
 
   const {
-    table, loading, error, refresh, updateRow,
+    table, total, loading, error, refresh, updateRow,
   } = useDataList<PaymentTypeData>({
     // 支付方式为全量列表（后端无分页）
     fetchFn: async (params) => {
@@ -176,7 +176,7 @@ export function PayTypesPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>

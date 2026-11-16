@@ -281,7 +281,7 @@ export function SettlePage() {
             </CardHeader>
             <CardContent>
               <DataTable table={table} loading={loading} emptyMessage={"暂无数据"} />
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </CardContent>
           </Card>
         </div>

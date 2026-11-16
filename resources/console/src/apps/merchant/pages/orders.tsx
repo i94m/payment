@@ -72,7 +72,7 @@ export function OrdersPage() {
   }
 
   const {
-    table, loading, keyword, setKeyword, applyFilters, summary,
+    table, total, loading, keyword, setKeyword, applyFilters, summary,
   } = useDataList<OrderData>({
     // keyword（平台订单号搜索框）映射为后端认的 trade_no
     fetchFn: (params) => {
@@ -284,7 +284,7 @@ export function OrdersPage() {
 
         <div className="px-4 lg:px-6">
           <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
+            <DataTablePagination table={table} total={total} />
           </DataTable>
         </div>
       </div>

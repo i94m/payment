@@ -74,7 +74,7 @@ export function AnnouncesPage() {
   }
 
   const {
-    table, loading, error, refresh,
+    table, total, loading, error, refresh,
   } = useDataList<AnnounceData>({
     fetchFn: (params) => announcesApi.list(params as never),
     columns: [
@@ -139,7 +139,7 @@ export function AnnouncesPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>

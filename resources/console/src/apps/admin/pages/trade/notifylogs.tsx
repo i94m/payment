@@ -48,7 +48,7 @@ export function NotifyLogsPage() {
     kind === "merchant" ? "通知商户" : "上游回调"
 
   const {
-    table, loading, error, keyword, setKeyword, applyFilters, refresh,
+    table, total, loading, error, keyword, setKeyword, applyFilters, refresh,
   } = useDataList<NotifyLogData>({
     // keyword 统一映射为后端认的 trade_no 过滤
     fetchFn: (params) => {
@@ -181,7 +181,7 @@ export function NotifyLogsPage() {
             <ListError error={error} onRetry={refresh} />
           ) : (
             <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-              <DataTablePagination table={table} />
+              <DataTablePagination table={table} total={total} />
             </DataTable>
           )}
         </div>
