@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from . import (
     auth, common, order, merchant, channel, settle,
     settings, dashboard, notifylog, permission, announce, record, queue, message,
+    audit,
 )
 
 router = APIRouter()
@@ -20,3 +21,4 @@ router.include_router(notifylog.router, prefix="/notifylog", tags=["admin-notify
 router.include_router(permission.router, prefix="/permission", tags=["admin-permission"])
 router.include_router(queue.router, prefix="/queue", tags=["admin-queue"])
 router.include_router(message.router, prefix="/message", tags=["admin-message"])
+router.include_router(audit.router, prefix="/audit", tags=["admin-audit"])

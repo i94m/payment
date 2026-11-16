@@ -165,17 +165,23 @@ async def order_detail(trade_no: str, session: SessionDep):
 
 
 @router.post("/refill", dependencies=[Depends(PermissionChecker("order.refill"))])
-async def order_refill(session: SessionDep, cache: CacheDep, body: dict):
+async def order_refill(session: SessionDep, cache: CacheDep, request: Request, auth: AdminUser,
+                       body: dict):
     """手动补单：跳过上游验证直接记账（金额用订单自身 realmoney）。
 
     扣量单（is_deducted=1）走扣量回补：补入账 + 补返佣 + 排队补发通知。
+    补单是「无凭证入账」，必须写审计（P1-7）：谁、哪一笔、补了多少。
     """
     from app.services.order import undo_deduct
+    from app.services.audit import record_audit
 
     trade_no = str(body.get("trade_no", "") or "")
     order = await get_order_by_trade_no(session, trade_no)
     if not order:
         return err(404, "订单不存在")
+    audit_after = {"trade_no": trade_no, "merchant_id": order.merchant_id,
+                   "status": order.status,
+                   "realmoney": str(order.realmoney if order.realmoney is not None else order.money)}
     if order.is_deducted:
         if not await undo_deduct(session, order):
             return err(-1, "扣量补单失败")
@@ -183,6 +189,11 @@ async def order_refill(session: SessionDep, cache: CacheDep, body: dict):
             await enqueue("notify_merchant_job", trade_no=trade_no)
         except Exception:
             pass
+        await record_audit(
+            session, action="order.refill", actor=auth, request=request,
+            target_type="order", target_id=trade_no, after=audit_after,
+            remark="扣量单回补",
+        )
         return suc("扣量单已回补入账并通知")
     result = await process_paid_order(
         trade_no, order.api_trade_no or "MANUAL",
@@ -195,6 +206,11 @@ async def order_refill(session: SessionDep, cache: CacheDep, body: dict):
                 await enqueue("notify_merchant_job", trade_no=trade_no)
             except Exception:
                 pass
+        await record_audit(
+            session, action="order.refill", actor=auth, request=request,
+            target_type="order", target_id=trade_no, after=audit_after,
+            remark=f"手动补单({result.status})",
+        )
         return suc("补单成功")
     if result.status == "mismatch":
         return err(-1, "金额校验失败")

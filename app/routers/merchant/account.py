@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.core.deps import CacheDep, SessionDep
-from app.core.security import MerchantUser, hash_password, verify_password
+from app.core.security import MerchantUser, hash_password, revoke_all_tokens, verify_password
 from app.lib.sign import derive_public_key, pem_to_flat
 from app.models import Merchant
 from app.responses import err, suc
@@ -22,7 +22,13 @@ class ChangePasswordRequest(BaseModel):
 
 
 @router.post("/changePassword")
-async def change_password(body: ChangePasswordRequest, auth: MerchantUser, session: SessionDep):
+async def change_password(body: ChangePasswordRequest, auth: MerchantUser, session: SessionDep,
+                          cache: CacheDep):
+    """商户自助改密。
+
+    P1-10：改密后吊销该商户其它所有登录令牌，只保留当前会话
+    （被盗令牌不能靠改密继续存活，当前操作者也不会被自己踢下线）。
+    """
     m = auth.user
     if not verify_password(body.old_password, m.password):
         return err(-1, "原密码错误")
@@ -30,6 +36,7 @@ async def change_password(body: ChangePasswordRequest, auth: MerchantUser, sessi
         return err(-1, "新密码至少 6 位")
     m.password = hash_password(body.new_password)
     session.add(m)
+    await revoke_all_tokens("merchant", m.id, session, cache=cache, except_jti=auth.jti)
     await session.commit()
     return suc("密码修改成功")
 

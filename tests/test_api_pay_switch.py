@@ -119,49 +119,52 @@ async def test_disabled_keeps_paypage_and_cashier(client, session):
 
 @pytest.mark.asyncio
 async def test_admin_settings_page_hides_switch(client, session):
-    """开关不在站点配置页展示（页面白名单收敛），但配置功能保留：PATCH 仍可调、API 照常受控。"""
+    """开关不在站点配置页展示，且 PATCH 写入被白名单拒绝（P1-9：只隐藏不拦截等于没拦）；
+    运行期仍可由服务层/运维直接写库配置（页面隐藏 ≠ 功能下线）。"""
     resp = await client.get("/admin-api/setting", headers=await _admin_headers(session))
     keys = {i["key"] for i in resp.json()["data"]["items"]}
     assert "api_pay_enable" not in keys
 
-    # 写入走同一校验通道（页面隐藏 ≠ 只读）
+    # 页面不展示的键不允许经配置页 PATCH 改写
     resp2 = await client.patch("/admin-api/setting", json={"api_pay_enable": False},
                                headers=await _admin_headers(session))
-    assert resp2.json()["code"] == 0
+    assert resp2.status_code == 422
+    assert "api_pay_enable" in resp2.json()["message"]
+
+    # 服务层写入仍然生效（运维/直接写库的受控通道）
+    await set_settings(session, {"api_pay_enable": False})
     resp3 = await client.post("/api/orders", json=await _order_params())
     assert "API支付接口未开放" in resp3.json()["message"]
 
 
 @pytest.mark.asyncio
 async def test_api_order_rate_limit_configurable(client, session):
-    """下单限流为运行期配置项：默认 60、可经 PATCH 调整、0=不限合法；不在设置页展示。"""
+    """下单限流为运行期配置项：默认 60、可经服务层调整、0=不限合法；不在设置页展示且不可经 PATCH 改写。"""
     h = await _admin_headers(session)
     resp = await client.get("/admin-api/setting", headers=h)
     keys = {i["key"] for i in resp.json()["data"]["items"]}
     assert "api_order_rate_limit" not in keys
 
-    resp2 = await client.patch("/admin-api/setting",
-                               json={"api_order_rate_limit": 120}, headers=h)
-    assert resp2.json()["code"] == 0
-    # PATCH 后从服务层读回（页面 items 不含该键）
-    from app.services.settings import get_int_setting
+    rejected = await client.patch("/admin-api/setting",
+                                  json={"api_order_rate_limit": 120}, headers=h)
+    assert rejected.status_code == 422
+
+    from app.services.settings import get_int_setting, set_settings as _ss
+    await _ss(session, {"api_order_rate_limit": 120})
     assert await get_int_setting(session, "api_order_rate_limit", 60) == 120
 
-    # 0=不限 合法；类型不符整体拒绝
-    ok0 = await client.patch("/admin-api/setting",
-                             json={"api_order_rate_limit": 0}, headers=h)
-    assert ok0.json()["code"] == 0
-    bad = await client.patch("/admin-api/setting",
-                             json={"api_order_rate_limit": "abc"}, headers=h)
-    assert bad.status_code == 422
+    # 0=不限 合法
+    await _ss(session, {"api_order_rate_limit": 0})
+    assert await get_int_setting(session, "api_order_rate_limit", 60) == 0
 
 
 @pytest.mark.asyncio
 async def test_settings_page_whitelist_deduct_and_settle(client, session):
     """页面白名单 = 站点名称 + 扣量 + 结算组（自动结算/D+1 除外）：
-    注册开关、D+1 开关不再展示，PATCH 仍可调（页面隐藏 ≠ 只读）。"""
+    注册开关、D+1 开关不再展示；PATCH 只接受页面白名单内的键（P1-9），
+    其余配置走服务层/直接写库。"""
     from app.constants.settings import ADMIN_SETTING_KEYS
-    from app.services.settings import get_all_settings, setting_enabled
+    from app.services.settings import get_all_settings, set_settings as _ss, setting_enabled
 
     h = await _admin_headers(session)
     resp = await client.get("/admin-api/setting", headers=h)
@@ -171,9 +174,13 @@ async def test_settings_page_whitelist_deduct_and_settle(client, session):
     assert "merchant_reg_open" not in keys
     assert "settle_d1_enable" not in keys
 
-    # D+1 经 PATCH 写入后运行期读取生效
-    ok = await client.patch("/admin-api/setting", json={"settle_d1_enable": True}, headers=h)
-    assert ok.json()["code"] == 0
+    # 页面外键被 PATCH 拒绝
+    denied = await client.patch("/admin-api/setting",
+                                json={"settle_d1_enable": True}, headers=h)
+    assert denied.status_code == 422
+
+    # 服务层写入后运行期读取生效
+    await _ss(session, {"settle_d1_enable": True})
     settings = await get_all_settings(session)
     assert setting_enabled(settings["settle_d1_enable"]) is True
 

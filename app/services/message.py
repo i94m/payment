@@ -3,6 +3,7 @@
 站内消息（merchant_messages）始终落库；邮件按商户订阅开关叠加，
 实际发信通道由支付设置 mail_channel/mail_config 决定（空=不发）。
 """
+import asyncio
 import json
 import logging
 
@@ -11,6 +12,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.models import Merchant, MerchantMessage
 
 _log = logging.getLogger(__name__)
+
+# 单次发信总超时（秒）：SMTP 卡死时也不把调用方事务拖成长事务
+MAIL_TIMEOUT = 20
 
 
 async def send_merchant_message(
@@ -43,7 +47,12 @@ async def send_merchant_message(
 
 
 async def send_mail(session: AsyncSession, to: str, subject: str, body: str) -> bool:
-    """经 mail 插件发信；mail_channel 未配置时静默跳过。"""
+    """经 mail 插件发信；mail_channel 未配置时静默跳过。
+
+    统一走插件的 `send_async`（原生异步或线程池包装），并加总超时兜底：
+    历史上 SMTP 插件在事件循环里返回未 await 的 Future，导致「永远报成功」，
+    且最坏阻塞事件循环 30s（密码重置验证码、结算打款都在链路上）。
+    """
     from app.services.plugin import PluginRegistry
     from app.services.settings import get_setting
 
@@ -59,4 +68,16 @@ async def send_mail(session: AsyncSession, to: str, subject: str, body: str) -> 
     if not plugin:
         _log.warning("邮件插件未安装或未启用: %s", channel)
         return False
-    return plugin.send(to, subject, f"<p>{body}</p>")
+    try:
+        ok = await asyncio.wait_for(
+            plugin.send_async(to, subject, f"<p>{body}</p>"), timeout=MAIL_TIMEOUT,
+        )
+    except (TimeoutError, asyncio.TimeoutError):
+        _log.warning("发信超时（%ss）: to=%s subject=%s", MAIL_TIMEOUT, to, subject)
+        return False
+    except Exception:
+        _log.warning("发信异常: to=%s subject=%s", to, subject, exc_info=True)
+        return False
+    if not ok:
+        _log.warning("发信失败: to=%s subject=%s channel=%s", to, subject, channel)
+    return bool(ok)

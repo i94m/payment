@@ -1,16 +1,18 @@
 """商户端认证（JWT guard=merchant）：登录（验证码）/SSO/登出/找回密码。"""
 from datetime import datetime
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlmodel import select
 
 from app.core.deps import CacheDep, SessionDep
+from app.core.limiter import rate_limit
 from app.core.security import (
     MerchantUser,
     dump_user_tokens,
     hash_password,
     issue_token,
+    revoke_all_tokens,
     revoke_token,
     revoke_user_token_by_id,
     verify_password,
@@ -20,6 +22,10 @@ from app.responses import err, suc
 from app.services.merchant import generate_merchant_pid
 
 router = APIRouter()
+
+# 找回密码验证码：连续错误次数上限与计数窗口（P1-11）
+RESET_MAX_ATTEMPTS = 5
+RESET_ATTEMPT_WINDOW = 15 * 60
 
 
 class LoginRequest(BaseModel):
@@ -322,7 +328,7 @@ class ForgotRequest(BaseModel):
     email: str
 
 
-@router.post("/forgot")
+@router.post("/forgot", dependencies=[rate_limit(times=10, minutes=1)])
 async def forgot_password(body: ForgotRequest, request: Request, session: SessionDep, cache: CacheDep):
     email = (body.email or "").strip().lower()
     if not email:
@@ -355,8 +361,14 @@ class ResetPasswordRequest(BaseModel):
     password: str
 
 
-@router.post("/reset")
+@router.post("/reset", dependencies=[rate_limit(times=10, minutes=1)])
 async def reset_password(body: ResetPasswordRequest, request: Request, session: SessionDep, cache: CacheDep):
+    """凭邮件验证码重置密码。
+
+    P1-11：6 位码 15 分钟有效，没有失败次数上限时可被在线爆破；
+    这里按商户维度计失败次数（5 次/窗口），达上限即作废验证码。
+    P1-10：重置成功吊销该商户全部登录令牌（改密后被盗会话立即失效）。
+    """
     email = (body.email or "").strip().lower()
     if len(body.password or "") < 6:
         return err(-1, "新密码至少 6 位")
@@ -365,11 +377,32 @@ async def reset_password(body: ResetPasswordRequest, request: Request, session: 
     )).first()
     if not m or m.status != 1:
         return err(-1, "验证码错误或已过期")
-    cached = await cache.get(f"pwdreset:code:{m.id}")
+
+    code_key = f"pwdreset:code:{m.id}"
+    fail_key = f"pwdreset:fail:{m.id}"
+    try:
+        fails = int(await cache.get(fail_key) or 0)
+    except (TypeError, ValueError):
+        fails = 0
+    if fails >= RESET_MAX_ATTEMPTS:
+        await cache.delete(code_key)
+        return err(-1, "验证码错误次数过多，请重新获取验证码")
+
+    cached = await cache.get(code_key)
     if not cached or str(cached) != body.code.strip():
+        try:
+            await cache.set(fail_key, str(fails + 1), ex=RESET_ATTEMPT_WINDOW)
+        except Exception:
+            pass
+        if fails + 1 >= RESET_MAX_ATTEMPTS:
+            await cache.delete(code_key)
+            return err(-1, "验证码错误次数过多，请重新获取验证码")
         return err(-1, "验证码错误或已过期")
-    await cache.delete(f"pwdreset:code:{m.id}")
+
+    await cache.delete(code_key)
+    await cache.delete(fail_key)
     m.password = hash_password(body.password)
     session.add(m)
+    await revoke_all_tokens("merchant", m.id, session, cache=cache)
     await session.commit()
     return suc("密码重置成功，请使用新密码登录")
