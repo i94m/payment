@@ -15,12 +15,15 @@ import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
+  ListError,
   secondaryCell,
   dateCell,
   truncatedCell,
 } from "@/components/data-list/"
 import { IconSearch, IconRefresh, IconDownload } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
+import { digitsOnly, toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 
 /** 搜索字段（search_field 参数） */
@@ -60,7 +63,8 @@ export function AdminRecordsPage() {
 
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
-    if (merchantId.trim()) params.merchant_id = merchantId.trim()
+    const mid = toIntParam(merchantId)
+    if (mid !== undefined) params.merchant_id = mid
     if (bizType) params.biz_type = bizType
     if (searchField) params.search_field = searchField
     if (startDate && endDate) {
@@ -68,6 +72,15 @@ export function AdminRecordsPage() {
     }
     return params
   }, [merchantId, bizType, searchField, startDate, endDate])
+
+  // 日期区间是成对参数：只选一端会被后端静默忽略，这里显式提示
+  const applyFilterParams = () => {
+    if (!!startDate !== !!endDate) {
+      toast.warning("请同时选择开始日期与结束日期")
+      return
+    }
+    applyFilters()
+  }
 
   const handleReset = () => {
     setSearchField("")
@@ -79,7 +92,7 @@ export function AdminRecordsPage() {
   }
 
   const {
-    table, loading, keyword, setKeyword, applyFilters,
+    table, loading, error, keyword, setKeyword, applyFilters, refresh,
   } = useDataList<AdminRecordData>({
     fetchFn: async (params) => {
       const { keyword: kw, ...rest } = params as { keyword?: string }
@@ -89,7 +102,6 @@ export function AdminRecordsPage() {
     },
     filters: filterParams,
     perPage: 20,
-    onError: () => toast.error("操作失败"),
     columns: [
       {
         // 商户号 + 用户名
@@ -180,7 +192,8 @@ export function AdminRecordsPage() {
   const handleExport = async () => {
     try {
       const params: Record<string, string> = {}
-      if (merchantId.trim()) params.merchant_id = merchantId.trim()
+      const mid = toIntParam(merchantId)
+      if (mid !== undefined) params.merchant_id = String(mid)
       if (bizType) params.biz_type = bizType
       if (searchField) params.search_field = searchField
       if (keyword.trim()) params.keyword = keyword.trim()
@@ -195,8 +208,8 @@ export function AdminRecordsPage() {
       a.download = `records_${Date.now()}.csv`
       a.click()
       URL.revokeObjectURL(url)
-    } catch {
-      toast.error("操作失败")
+    } catch (err) {
+      toast.error(getErrorMessage(err, "导出失败"))
     }
   }
 
@@ -225,8 +238,9 @@ export function AdminRecordsPage() {
             <Input
               placeholder={"商户 ID"}
               className="h-9"
+              inputMode="numeric"
               value={merchantId}
-              onChange={(e) => setMerchantId(e.target.value)}
+              onChange={(e) => setMerchantId(digitsOnly(e.target.value))}
             />
             <Select value={bizType || "_all"} onValueChange={(v) => setBizType(v === "_all" ? "" : v)}>
               <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
@@ -253,7 +267,7 @@ export function AdminRecordsPage() {
 
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => applyFilters()}>
+              <Button size="sm" onClick={() => applyFilterParams()}>
                 <IconSearch className="size-4" />
                 {"查询"}
               </Button>
@@ -283,9 +297,13 @@ export function AdminRecordsPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} />
+            </DataTable>
+          )}
         </div>
       </div>
     </div>

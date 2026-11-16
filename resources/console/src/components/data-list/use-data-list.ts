@@ -6,10 +6,9 @@ import {
   getSortedRowModel,
   type ColumnDef,
   type RowSelectionState,
-  type SortingState,
   type Updater,
 } from "@tanstack/react-table"
-import type { PaginatedResponse, StatisticItem } from "@/api"
+import type { PaginatedResponse } from "@/api"
 import { useServerPagination } from "@/hooks/use-server-pagination"
 
 interface UseDataListOptions<T> {
@@ -35,10 +34,29 @@ export function useDataList<T>({
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({})
   const [deleteId, setDeleteId] = React.useState<number | null>(null)
   const [batchDeleteOpen, setBatchDeleteOpen] = React.useState(false)
+  // 列表请求失败的错误对象：页面用它渲染内联错误态（ListError）而不是空表格
+  const [error, setError] = React.useState<unknown>(null)
+
+  // 包一层：记录错误供内联错误态使用，同时保留原 fetchFn 的异常语义（分页 hook 仍需 catch 通知）
+  const fetchFnRef = React.useRef(fetchFn)
+  fetchFnRef.current = fetchFn
+  const trackedFetch = React.useCallback(
+    async (params: { page: number; per_page: number; keyword?: string; [key: string]: unknown }) => {
+      try {
+        const res = await fetchFnRef.current(params)
+        setError(null)
+        return res
+      } catch (err) {
+        setError(err)
+        throw err
+      }
+    },
+    [],
+  )
 
   const { data, total, keyword, appliedKeyword, loading, statistics, summary, setKeyword, applyFilters, refresh, updateRow, pagination, onPaginationChange, sorting, setSorting } =
     useServerPagination<T>({
-      fetchFn,
+      fetchFn: trackedFetch,
       perPage,
       onError,
       filters,
@@ -79,8 +97,10 @@ export function useDataList<T>({
       clearSelection()
       setBatchDeleteOpen(false)
       refresh()
-    } catch {
-      onError?.(new Error("Batch delete failed"))
+    } catch (err) {
+      // 把真实错误交给页面/对话框展示（原实现包装成英文 Error 会丢掉后端原因）
+      onError?.(err)
+      throw err
     }
   }
 
@@ -89,6 +109,7 @@ export function useDataList<T>({
     data,
     total,
     loading,
+    error,
     statistics,
     summary,
     keyword,

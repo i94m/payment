@@ -3,10 +3,12 @@
 import * as React from "react"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
 import { cn } from "@/lib/utils"
 import { dashboardApi } from "@/api"
 import type { AdminOverview, DayStat, HomeConfig, RatelimitStats } from "@/api/dashboard"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { ListError } from "@/components/data-list/list-error"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -148,24 +150,60 @@ export function DashboardPage() {
   }, [])
 
   const [refreshing, setRefreshing] = React.useState(false)
+  const [loadError, setLoadError] = React.useState<unknown>(null)
   const getData = React.useCallback(async () => {
     setRefreshing(true)
     try {
       const data = await dashboardApi.overview()
       setOverview(data as AdminOverview)
-    } catch { /* 401 已由 api-client 处理 */ } finally {
+    } catch (err) {
+      // 401 已由 api-client 跳转到登录页；其余错误要显式提示，不能把「0」当成真实统计
+      toast.error(getErrorMessage(err, "统计数据刷新失败"))
+    } finally {
       setRefreshing(false)
     }
   }, [])
 
-  React.useEffect(() => {
-    Promise.all([
-      dashboardApi.overview().then((d) => setOverview(d as AdminOverview)),
-      dashboardApi.homeConfig().then(applyConfig),
+  // 拉取并落到 state：调用方负责 loading / error（首次加载与重试共用）
+  const applyAll = React.useCallback(async () => {
+    const [ov, cfg] = await Promise.all([
+      dashboardApi.overview(),
+      dashboardApi.homeConfig(),
     ])
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    setOverview(ov as AdminOverview)
+    applyConfig(cfg)
   }, [applyConfig])
+
+  // 首次加载：loading 初值为 true，这里不再重复置位（避免 effect 内同步 setState）
+  React.useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        await applyAll()
+        if (alive) setLoadError(null)
+      } catch (err) {
+        if (alive) setLoadError(err)
+      } finally {
+        if (alive) setLoading(false)
+      }
+    })()
+    return () => { alive = false }
+  }, [applyAll])
+
+  // 失败重试：由点击触发，先回到骨架态再拉取
+  const retryLoad = () => {
+    setLoading(true)
+    setLoadError(null)
+    void (async () => {
+      try {
+        await applyAll()
+      } catch (err) {
+        setLoadError(err)
+      } finally {
+        setLoading(false)
+      }
+    })()
+  }
 
   const trend: { date: string; count: number; money: number }[] = overview?.trend ?? []
   const kpis = [
@@ -203,7 +241,7 @@ export function DashboardPage() {
       })
       toast.success("金额路由已保存")
     } catch (e) {
-      toast.error((e as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(e, "操作失败"))
     } finally {
       setRouteSaving(null)
     }
@@ -239,7 +277,7 @@ export function DashboardPage() {
         const cfg = await dashboardApi.homeConfig()
         applyConfig(cfg)
       } catch (e) {
-        toast.error((e as { message?: string })?.message || "操作失败")
+        toast.error(getErrorMessage(e, "操作失败"))
       } finally {
         setRlSaving(false)
       }
@@ -258,7 +296,7 @@ export function DashboardPage() {
       setConfig(cfg)
       loadRatelimit(String(cid), cfg.ratelimit)
     } catch (e) {
-      toast.error((e as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(e, "操作失败"))
     } finally {
       setRlSaving(false)
     }
@@ -270,6 +308,11 @@ export function DashboardPage() {
 
   return (
     <div className="flex flex-1 flex-col">
+      {loadError ? (
+        <div className="px-4 py-6 lg:px-6">
+          <ListError error={loadError} onRetry={retryLoad} title="仪表盘数据加载失败" />
+        </div>
+      ) : (
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
           {/* 统计卡片（shadcn dashboard-01 SectionCards 样式） */}
@@ -504,6 +547,7 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }
