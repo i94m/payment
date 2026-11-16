@@ -10,6 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { useAuthStore } from "@/stores/auth-store"
 import { IconLock } from "@tabler/icons-react"
+import { getErrorMessage } from "@/lib/error"
 import { toast } from "sonner"
 
 // 修改密码：与后端口径一致，至少 6 位且非纯数字
@@ -47,7 +48,7 @@ export function PasswordPage() {
       form.reset()
       setTimeout(() => logout(), 1500)
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     } finally {
       setSaving(false)
     }

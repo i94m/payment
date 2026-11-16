@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
-import { useDataList } from "@/components/data-list/"
+import { useDataList, ListError } from "@/components/data-list/"
 import { IconSearch, IconRefresh, IconCoin, IconChartBar, IconReceipt, IconWallet } from "@tabler/icons-react"
 
 function fmtMoney(v: unknown): string {
@@ -17,7 +17,7 @@ function fmtMoney(v: unknown): string {
 
 export function AgentPerformancePage() {
   const {
-    table, total, loading, keyword, setKeyword, applyFilters, summary,
+    table, total, loading, error, keyword, setKeyword, applyFilters, refresh, summary,
   } = useDataList<AgentPerformanceRow>({
     // keyword 搜索框映射为后端的 kw（代理名称模糊）
     fetchFn: (params) => {
@@ -64,7 +64,6 @@ export function AgentPerformancePage() {
       },
     ],
     perPage: 15,
-    onError: () => {},
   })
 
   // 商户整体口径汇总（含无代理订单），随当前筛选外的全量数据返回
@@ -124,9 +123,13 @@ export function AgentPerformancePage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} total={total} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} total={total} />
+            </DataTable>
+          )}
         </div>
       </div>
     </div>

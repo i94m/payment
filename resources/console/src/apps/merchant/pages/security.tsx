@@ -11,6 +11,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/data-list/confirm-dialog"
+import { PanelError } from "@/components/data-list"
+import { getErrorMessage } from "@/lib/error"
 import { IconKey, IconWand } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -23,14 +25,16 @@ export function SecurityPage() {
   const [rsaPair, setRsaPair] = React.useState<{ public_key: string; private_key: string } | null>(null)
   // 商户公钥手动编辑（支持 OpenSSL/代码生成的密钥对上传）
   const [pubEdit, setPubEdit] = React.useState("")
+  const [loadError, setLoadError] = React.useState<string | null>(null)
 
   const load = React.useCallback(() => {
     accountApi.apiKey()
       .then((res) => {
         setApiKey(res)
         setPubEdit(res.public_key || "")
+        setLoadError(null)
       })
-      .catch(() => toast.error("加载失败"))
+      .catch((err) => setLoadError(getErrorMessage(err, "接口密钥加载失败")))
   }, [])
 
   React.useEffect(() => { load() }, [load])
@@ -43,7 +47,7 @@ export function SecurityPage() {
       setRsaPair(pair)
       load()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -63,7 +67,7 @@ export function SecurityPage() {
       toast.success(pubEdit.trim() ? "商户公钥已保存" : "商户公钥已清除")
       load()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -78,6 +82,7 @@ export function SecurityPage() {
           </h2>
         </div>
         <div className="px-4 lg:px-6 space-y-4">
+          {loadError && <PanelError error={loadError} onRetry={() => { setLoadError(null); load() }} />}
           <div className="grid gap-1.5">
             <Label>{"商户ID (pid)"}</Label>
             <CopyableText value={String(apiKey?.pid ?? "")} className="font-mono break-all" />
