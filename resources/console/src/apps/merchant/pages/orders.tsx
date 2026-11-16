@@ -25,24 +25,84 @@ import {
   truncatedCell,
 } from "@/components/data-list/"
 import type { ActionItem, StatusBadgeOption } from "@/components/data-list/"
-import { IconSearch, IconRefresh, IconBell, IconEye, IconDownload } from "@tabler/icons-react"
+import { IconSearch, IconRefresh, IconBell, IconEye, IconDownload, IconLoader2 } from "@tabler/icons-react"
 import apiClient from "@/lib/api-client"
+import { getErrorMessage } from "@/apps/shared/error"
 import { toast } from "sonner"
 
+// 状态口径与后端一致（0 待支付 / 1 已支付 / 2 已退款 / 3 已过期）；
+// 扣量单由后端按 status=0 返回，不在此处额外推断。
 const orderStatusOptions: StatusBadgeOption[] = [
   { label: "待支付", value: 0, variant: "secondary" },
   { label: "已支付", value: 1, variant: "default" },
+  { label: "已退款", value: 2, variant: "outline" },
   { label: "已过期", value: 3, variant: "outline" },
 ]
 
-export function OrdersPage() {
+/**
+ * 详情接口（GET /order/{trade_no}）复用开放 API 查单字段：
+ * 商品名/时间/退款信息分别是 name/addtime/endtime/refund_*，与列表字段名不同，
+ * 这里做一次兜底映射，避免详情弹窗出现一列「—」。
+ */
+type OrderDetailData = OrderData & {
+  name?: string
+  addtime?: string
+  endtime?: string
+  refund_status?: "NONE" | "PARTIAL" | "FULL"
+  refunded_amount?: string
+}
 
+const REFUND_LABELS: Record<string, string> = {
+  NONE: "未退款",
+  PARTIAL: "部分退款",
+  FULL: "全额退款",
+}
+
+const STATUS_CLASS: Record<string, string> = {
+  default: "bg-primary/10 text-primary",
+  secondary: "bg-secondary text-secondary-foreground",
+  destructive: "bg-destructive/10 text-destructive",
+  outline: "border text-muted-foreground",
+}
+
+function StatusCell({ status }: { status: number }) {
+  const opt = orderStatusOptions.find((o) => o.value === status)
+  return (
+    <span
+      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[opt?.variant ?? "outline"]}`}
+    >
+      {opt?.label ?? `未知(${status})`}
+    </span>
+  )
+}
+
+/** 通知状态：-1 失败 / 0 成功 / ≥1 重试中；未支付订单不展示 */
+function NotifyStatusCell({ status, notifyStatus }: { status: number; notifyStatus?: number }) {
+  if (status !== 1) return <span className="text-xs text-muted-foreground">—</span>
+  const ns = notifyStatus ?? 0
+  const map: Record<string, { label: string; cls: string }> = {
+    failed: { label: "失败", cls: "bg-destructive/10 text-destructive" },
+    ok: { label: "已通知", cls: "bg-primary/10 text-primary" },
+    retry: { label: "重试中", cls: "bg-amber-500/10 text-amber-600" },
+  }
+  const item = ns < 0 ? map.failed : ns === 0 ? map.ok : map.retry
+  return (
+    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${item.cls}`}>
+      {item.label}
+    </span>
+  )
+}
+
+export function OrdersPage() {
   const [outTradeNo, setOutTradeNo] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState("")
   const [startDate, setStartDate] = React.useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = React.useState<Date | undefined>(undefined)
-  const [detailOrder, setDetailOrder] = React.useState<OrderData | null>(null)
+  const [detailOrder, setDetailOrder] = React.useState<OrderDetailData | null>(null)
+  const [detailOpen, setDetailOpen] = React.useState(false)
+  const [detailLoading, setDetailLoading] = React.useState(false)
   const [notifyTarget, setNotifyTarget] = React.useState<string | null>(null)
+  const [exporting, setExporting] = React.useState(false)
 
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
@@ -59,20 +119,61 @@ export function OrdersPage() {
     applyFilters()
   }
 
+  /** 查询前拦截倒置的日期区间，避免把空结果误读成「没有订单」 */
+  const handleSearch = () => {
+    if (startDate && endDate && startDate > endDate) {
+      toast.error("开始日期不能晚于结束日期")
+      return
+    }
+    applyFilters()
+  }
+
+  const openDetail = async (tradeNo: string) => {
+    setDetailOpen(true)
+    setDetailOrder(null)
+    setDetailLoading(true)
+    try {
+      setDetailOrder(await ordersApi.detail(tradeNo) as OrderDetailData)
+    } catch (err) {
+      setDetailOpen(false)
+      toast.error(getErrorMessage(err, "订单详情加载失败"))
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
   const doNotify = async () => {
     if (!notifyTarget) return
     try {
       await ordersApi.resendNotify(notifyTarget)
-      toast.success("通知发送成功")
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    } finally {
+      toast.success("通知已重新发送")
       setNotifyTarget(null)
+      refresh()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "通知发送失败"))
+    }
+  }
+
+  const exportCsv = async () => {
+    setExporting(true)
+    try {
+      // 导出走 CSV 接口（POST，带当前筛选；需 Authorization 头，故用 axios blob 下载）
+      const blob = await apiClient.post("/order/export", filterParams, { responseType: "blob" })
+      const url = URL.createObjectURL(blob as unknown as Blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `orders-${Date.now()}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      toast.error(getErrorMessage(err, "导出失败，请稍后重试"))
+    } finally {
+      setExporting(false)
     }
   }
 
   const {
-    table, loading, keyword, setKeyword, applyFilters, summary,
+    table, loading, keyword, setKeyword, applyFilters, summary, refresh,
   } = useDataList<OrderData>({
     // keyword（平台订单号搜索框）映射为后端认的 trade_no
     fetchFn: (params) => {
@@ -131,36 +232,16 @@ export function OrdersPage() {
         accessorKey: "status",
         enableSorting: false,
         header: () => "状态",
-        cell: ({ row }) => {
-          const opt = orderStatusOptions.find((o) => o.value === row.original.status)
-          const variantCls: Record<string, string> = {
-            default: "bg-primary/10 text-primary",
-            secondary: "bg-secondary text-secondary-foreground",
-            destructive: "bg-destructive/10 text-destructive",
-            outline: "border text-muted-foreground",
-          }
-          return (
-            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${variantCls[opt?.variant ?? "default"]}`}>
-              {opt?.label ?? row.original.status}
-            </span>
-          )
-        },
+        cell: ({ row }) => <StatusCell status={row.original.status} />,
         meta: { headClassName: "w-[80px]" },
       },
       {
         accessorKey: "notify_status",
         enableSorting: false,
         header: () => "通知状态",
-        cell: ({ row }) => {
-          const ns = row.original.notify_status ?? 0
-          const map: Record<number, { label: string; cls: string }> = {
-            [-1]: { label: "失败", cls: "bg-destructive/10 text-destructive" },
-            0: { label: ns === 0 && row.original.status !== 1 ? "—" : "已通知", cls: "bg-primary/10 text-primary" },
-          }
-          const item = map[ns] ?? { label: "重试中", cls: "bg-amber-500/10 text-amber-600" }
-          if (row.original.status !== 1) return <span className="text-xs text-muted-foreground">—</span>
-          return <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${item.cls}`}>{item.label}</span>
-        },
+        cell: ({ row }) => (
+          <NotifyStatusCell status={row.original.status} notifyStatus={row.original.notify_status} />
+        ),
         meta: { headClassName: "w-[90px]" },
       },
       {
@@ -174,24 +255,25 @@ export function OrdersPage() {
         {
           label: "详情",
           icon: <IconEye className="size-4" />,
-          onClick: async (item) => {
-            try {
-              setDetailOrder(await ordersApi.detail(item.trade_no))
-            } catch {
-              toast.error("加载失败")
-            }
-          },
+          onClick: (item) => { void openDetail(item.trade_no) },
         },
         {
           label: "重发通知",
           icon: <IconBell className="size-4" />,
-          separatorBefore: true,
-          onClick: (item) => setNotifyTarget(item.trade_no),
+          title: "仅已支付订单可重发通知",
+          onClick: (item) => {
+            // 未支付/过期订单没有可重发的通知：直接提示，避免无意义的失败请求
+            if (item.status !== 1) {
+              toast.info("仅已支付订单可重发通知")
+              return
+            }
+            setNotifyTarget(item.trade_no)
+          },
         },
-      ] as ActionItem<OrderData>[]),
+      ] as ActionItem<OrderData>[], { width: 230 }),
     ],
     perPage: 20,
-    onError: () => toast.error("操作失败"),
+    onError: (err) => toast.error(getErrorMessage(err, "订单加载失败")),
   })
 
   return (
@@ -205,7 +287,7 @@ export function OrdersPage() {
                 className="h-9"
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") applyFilters() }}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSearch() }}
               />
             </div>
             <Input
@@ -213,6 +295,7 @@ export function OrdersPage() {
               className="h-9"
               value={outTradeNo}
               onChange={(e) => setOutTradeNo(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSearch() }}
             />
             <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
               <SelectTrigger className="h-9 w-full">
@@ -239,8 +322,8 @@ export function OrdersPage() {
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => applyFilters()}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={handleSearch}>
               <IconSearch className="size-4" />
               {"查询"}
             </Button>
@@ -248,26 +331,18 @@ export function OrdersPage() {
               <IconRefresh className="size-4" />
               {"重置"}
             </Button>
+            <Button variant="ghost" size="sm" disabled={loading} onClick={refresh}>
+              <IconRefresh className="size-4" />
+              {"刷新"}
+            </Button>
             <Button
               variant="outline"
               size="sm"
               className="ml-auto"
-              onClick={async () => {
-                // 导出走 CSV 接口（POST，带当前筛选；需 Authorization 头，故用 axios blob 下载）
-                try {
-                  const blob = await apiClient.post("/order/export", filterParams, { responseType: "blob" })
-                  const url = URL.createObjectURL(blob as unknown as Blob)
-                  const a = document.createElement("a")
-                  a.href = url
-                  a.download = `orders-${Date.now()}.csv`
-                  a.click()
-                  URL.revokeObjectURL(url)
-                } catch {
-                  toast.error("操作失败")
-                }
-              }}
+              disabled={exporting}
+              onClick={exportCsv}
             >
-              <IconDownload className="size-4" />
+              {exporting ? <IconLoader2 className="size-4 animate-spin" /> : <IconDownload className="size-4" />}
               {"导出CSV"}
             </Button>
           </div>
@@ -283,35 +358,56 @@ export function OrdersPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+          <DataTable table={table} loading={loading} emptyMessage={"暂无订单记录"}>
             <DataTablePagination table={table} />
           </DataTable>
         </div>
       </div>
 
       {/* 订单详情 */}
-      <Dialog open={!!detailOrder} onOpenChange={(open) => !open && setDetailOrder(null)}>
+      <Dialog
+        open={detailOpen}
+        onOpenChange={(open) => {
+          if (!open) { setDetailOpen(false); setDetailOrder(null) }
+        }}
+      >
         <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{"详情"}</DialogTitle>
-            <DialogDescription className="font-mono text-xs">{detailOrder?.trade_no}</DialogDescription>
+            <DialogTitle>{"订单详情"}</DialogTitle>
+            <DialogDescription className="font-mono text-xs">
+              {detailOrder?.trade_no ?? "加载中…"}
+            </DialogDescription>
           </DialogHeader>
-          {detailOrder && (
+          {detailLoading || !detailOrder ? (
+            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+              <IconLoader2 className="size-4 animate-spin" />
+              {"正在加载订单详情…"}
+            </div>
+          ) : (
             <div className="text-sm">
               <div className="flex items-center justify-between py-1.5">
                 <span className="text-muted-foreground">{"状态"}</span>
-                <span className="font-medium">{orderStatusOptions.find((o) => o.value === detailOrder.status)?.label}</span>
+                <StatusCell status={detailOrder.refund_status === "FULL" ? 2 : detailOrder.status} />
               </div>
               <Separator />
-              <Row label={"商品名称"} value={detailOrder.subject} />
+              <Row label={"商品名称"} value={detailOrder.subject || detailOrder.name} wrap />
               <Row label={"支付方式"} value={detailOrder.type} />
               <Row label={"金额"} value={`¥${detailOrder.money}`} />
               <Row label={"实付金额"} value={detailOrder.realmoney ? `¥${detailOrder.realmoney}` : "—"} />
               <Row label={"商户到账"} value={detailOrder.merchant_income ? `¥${detailOrder.merchant_income}` : "—"} />
+              <Row
+                label={"退款信息"}
+                value={
+                  detailOrder.refund_status && detailOrder.refund_status !== "NONE"
+                    ? `${REFUND_LABELS[detailOrder.refund_status] ?? detailOrder.refund_status} ¥${detailOrder.refunded_amount ?? "0.00"}`
+                    : "未退款"
+                }
+              />
               <Row label={"商户订单号"} value={detailOrder.out_trade_no} mono />
               <Row label={"扩展参数"} value={detailOrder.param} mono wrap />
-              <Row label={"创建时间"} value={detailOrder.created_at} />
-              <Row label={"支付时间"} value={detailOrder.paid_at || "—"} />
+              <Row label={"创建时间"} value={detailOrder.created_at || detailOrder.addtime} />
+              <Row label={"支付时间"} value={detailOrder.paid_at || detailOrder.endtime || "—"} />
+              <Row label={"通知状态"} value={<NotifyStatusCell status={detailOrder.status} notifyStatus={detailOrder.notify_status} />} />
             </div>
           )}
         </DialogContent>
@@ -321,7 +417,7 @@ export function OrdersPage() {
         open={!!notifyTarget}
         onOpenChange={(open) => { if (!open) setNotifyTarget(null) }}
         title={"重发通知"}
-        description={"确认重发商户异步通知？"}
+        description={`确认向商户重新发送该订单的异步通知？${notifyTarget ? `（${notifyTarget}）` : ""}`}
         cancelLabel={"取消"}
         confirmLabel={"确定"}
         onConfirm={doNotify}
@@ -330,11 +426,11 @@ export function OrdersPage() {
   )
 }
 
-function Row({ label, value, mono, wrap }: { label: string; value?: string | null; mono?: boolean; wrap?: boolean }) {
+function Row({ label, value, mono, wrap }: { label: string; value?: React.ReactNode; mono?: boolean; wrap?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1.5">
       <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className={`text-right ${mono ? "font-mono text-xs" : ""} ${wrap ? "break-all" : "truncate"}`} title={value ?? ""}>
+      <span className={`text-right ${mono ? "font-mono text-xs" : ""} ${wrap ? "break-all" : "truncate"}`}>
         {value || "—"}
       </span>
     </div>

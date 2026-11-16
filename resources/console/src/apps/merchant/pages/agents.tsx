@@ -27,6 +27,7 @@ import {
   IconSearch, IconRefresh, IconPlus, IconEdit, IconLogin,
   IconCopy, IconTrash,
 } from "@tabler/icons-react"
+import { getErrorMessage } from "@/apps/shared/error"
 import { toast } from "sonner"
 
 // 名称必填 ≤64；密码长度在提交时按新增/编辑分别校验（编辑可留空不改）
@@ -88,7 +89,7 @@ export function AgentsPage() {
       setDialogOpen(false)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     } finally {
       setSaving(false)
     }
@@ -102,7 +103,7 @@ export function AgentsPage() {
       setDeleteTarget(null)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -111,7 +112,7 @@ export function AgentsPage() {
       const res = await agentsApi.sso(item.id)
       window.open(res.url, "_blank")
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -190,7 +191,7 @@ export function AgentsPage() {
       ] as ActionItem<AgentData>[], { width: 340 }),
     ],
     perPage: 15,
-    onError: () => toast.error("操作失败"),
+    onError: (err) => toast.error(getErrorMessage(err, "数据加载失败")),
   })
 
   const handleReset = () => {

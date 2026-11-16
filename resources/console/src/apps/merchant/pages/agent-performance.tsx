@@ -10,6 +10,8 @@ import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import { useDataList } from "@/components/data-list/"
 import { IconSearch, IconRefresh, IconCoin, IconChartBar, IconReceipt, IconWallet } from "@tabler/icons-react"
+import { getErrorMessage } from "@/apps/shared/error"
+import { toast } from "sonner"
 
 function fmtMoney(v: unknown): string {
   return Number(v ?? 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -64,7 +66,7 @@ export function AgentPerformancePage() {
       },
     ],
     perPage: 15,
-    onError: () => {},
+    onError: (err) => toast.error(getErrorMessage(err, "数据加载失败")),
   })
 
   // 商户整体口径汇总（含无代理订单），随当前筛选外的全量数据返回

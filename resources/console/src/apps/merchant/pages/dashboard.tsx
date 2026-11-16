@@ -6,6 +6,8 @@ import type { MerchantOverview } from "@/api/dashboard"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
+import { LoadError } from "@/apps/shared/load-error"
+import { useRequest } from "@/apps/shared/use-request"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import {
   ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig,
@@ -22,43 +24,64 @@ function fmtMoney(v: number | string): string {
 }
 
 export function DashboardPage() {
-  const [loading, setLoading] = React.useState(true)
-  const [overview, setOverview] = React.useState<MerchantOverview | null>(null)
-
-  React.useEffect(() => {
-    dashboardApi.overview()
-      .then((res) => setOverview(res as MerchantOverview))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+  // 首页统计整块加载：失败时保留错误提示与重试，避免「静默吞错」后展示一屏 0
+  // APP_MODULE 为运行时常量，overview() 的联合返回类型在此按商户端收窄
+  const { data: overview, error, loading, reload } = useRequest<MerchantOverview>(
+    () => dashboardApi.overview() as Promise<MerchantOverview>,
+  )
 
   const yCount = overview?.yesterday.count ?? 0
   const todayCount = overview?.today.count ?? 0
 
   const kpis = [
-    { key: "balance", label: "可用余额", icon: IconWallet, value: `¥${fmtMoney(overview?.balance ?? 0)}`, note: "账户可用余额" },
-    { key: "todayCount", label: "今日订单", icon: IconChartBar, value: `${todayCount}`, note: `昨日 ${yCount} 单` },
-    { key: "todayMoney", label: "今日金额", icon: IconCoin, value: fmtMoney(overview?.today.money ?? 0), note: "今日收款总金额" },
     {
-      key: "successRate", label: "近7日成功率", icon: IconTarget,
-      value: `${overview?.success_rate ?? "—"}%`,
+      key: "balance",
+      label: "可用余额",
+      icon: IconWallet,
+      value: overview ? `¥${fmtMoney(overview.balance)}` : "—",
+      note: "账户可用余额",
+    },
+    {
+      key: "todayCount",
+      label: "今日订单",
+      icon: IconChartBar,
+      value: overview ? `${todayCount}` : "—",
+      note: `昨日 ${yCount} 单`,
+    },
+    {
+      key: "todayMoney",
+      label: "今日金额",
+      icon: IconCoin,
+      value: overview ? fmtMoney(overview.today.money) : "—",
+      note: "今日收款总金额",
+    },
+    {
+      key: "successRate",
+      label: "近7日成功率",
+      icon: IconTarget,
+      value: overview ? `${overview.success_rate ?? "—"}%` : "—",
       note: overview?.rate ? `${"我的费率"} ${overview.rate}%` : "近7日支付成功率",
     },
   ]
+
+  const announcements = overview?.announcements ?? []
 
   return (
     <div className="flex flex-1 flex-col">
       <div className="@container/main flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         {/* 平台公告（发布中，仅内容） */}
-        {overview && overview.announcements.length > 0 && (
+        {announcements.length > 0 && (
           <div className="flex flex-col gap-3 px-4 lg:px-6">
-            {overview.announcements.map((a) => (
+            {announcements.map((a) => (
               <Alert key={a.id} variant="info">
                 <AlertDescription className="mt-0 whitespace-pre-wrap break-all">{a.content}</AlertDescription>
               </Alert>
             ))}
           </div>
         )}
+
+        {/* 统计加载失败：页面级错误条 + 重试 */}
+        {error && <LoadError className="mx-4 lg:mx-6" message={error} onRetry={reload} />}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4 dark:*:data-[slot=card]:bg-card">
@@ -93,22 +116,26 @@ export function DashboardPage() {
               </CardAction>
             </CardHeader>
             <CardContent className="px-2 pt-0 sm:px-4">
-              <ChartContainer config={trendChartConfig} className="min-h-[160px] w-full">
-                <AreaChart data={overview?.trend ?? []}>
-                  <defs>
-                    <linearGradient id="fillMoney" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--color-money)" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="var(--color-money)" stopOpacity={0.1} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={4} minTickGap={24} tick={{ fontSize: 11 }} />
-                  <YAxis yAxisId="money" tickLine={false} axisLine={false} width={56} tick={{ fontSize: 11 }} />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                  <Area yAxisId="money" dataKey="money" type="natural" fill="url(#fillMoney)" stroke="var(--color-money)" />
-                  <Area yAxisId="money" dataKey="count" type="natural" stroke="var(--color-count)" fill="none" />
-                </AreaChart>
-              </ChartContainer>
+              {loading && !overview ? (
+                <Skeleton className="h-[160px] w-full" />
+              ) : (
+                <ChartContainer config={trendChartConfig} className="min-h-[160px] w-full">
+                  <AreaChart data={overview?.trend ?? []}>
+                    <defs>
+                      <linearGradient id="fillMoney" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--color-money)" stopOpacity={0.8} />
+                        <stop offset="95%" stopColor="var(--color-money)" stopOpacity={0.1} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid vertical={false} />
+                    <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={4} minTickGap={24} tick={{ fontSize: 11 }} />
+                    <YAxis yAxisId="money" tickLine={false} axisLine={false} width={56} tick={{ fontSize: 11 }} />
+                    <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                    <Area yAxisId="money" dataKey="money" type="natural" fill="url(#fillMoney)" stroke="var(--color-money)" />
+                    <Area yAxisId="money" dataKey="count" type="natural" stroke="var(--color-count)" fill="none" />
+                  </AreaChart>
+                </ChartContainer>
+              )}
             </CardContent>
           </Card>
         </div>
