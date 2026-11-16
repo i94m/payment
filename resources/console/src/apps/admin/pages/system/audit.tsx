@@ -21,10 +21,11 @@ import {
   secondaryCell,
 } from "@/components/data-list/"
 import type { ActionItem } from "@/components/data-list/"
-import { IconSearch, IconRefresh, IconEye } from "@tabler/icons-react"
+import { IconSearch, IconRefresh, IconEye, IconUserSearch } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
-import { toIntParam } from "@/lib/form-utils"
+import { digitsOnly, toIntParam } from "@/lib/form-utils"
+import { auditActionLabel } from "@/lib/audit-actions"
 
 // 操作人身份域：与后端 AuditResult.guard 对齐
 const GUARD_OPTIONS: { value: string; label: string }[] = [
@@ -44,29 +45,26 @@ const TARGET_OPTIONS: { value: string; label: string }[] = [
   { value: "setting", label: "站点配置" },
 ]
 
-// 已知动作名的中文说明；未收录的（如 merchant.status_*）直接显示原始 action，
-// 后端新增动作不需要改前端就能看见
-const ACTION_LABELS: Record<string, string> = {
-  "merchant.update": "修改商户资料",
-  "merchant.delete": "删除商户",
-  "merchant.password_reset": "重置商户密码",
-  "merchant.balance_adjust": "调整商户余额",
-  "merchant.status_enable": "启用商户",
-  "merchant.status_disable": "停用商户",
-  "channel.create": "新增支付通道",
-  "channel.update": "修改支付通道",
-  "channel.delete": "删除支付通道",
-  "plugin.install": "安装支付插件",
-  "order.refill": "订单手动补单",
-  "setting.update": "修改站点配置",
-  "settle.pay": "结算打款",
-  "settle.reject": "驳回结算",
-}
+// 已知动作名的中文说明在 `@/lib/audit-actions`（键由后端 record_audit 写入）。
+// 未收录的动作直接显示原始 action，后端新增动作不需要改前端就能看见。
 
 const labelOf = (map: Record<string, string> | { value: string; label: string }[], key: string) =>
   Array.isArray(map)
     ? (map.find((o) => o.value === key)?.label ?? (key || "—"))
     : (map[key] ?? (key || "—"))
+
+/** 动作单元格：中文说明 + 原始键（未收录的动作两行相同，只显示一行） */
+function ActionCell({ action }: { action: string }) {
+  const label = auditActionLabel(action)
+  return (
+    <div className="flex flex-col">
+      <span className="text-sm">{label}</span>
+      {label !== action && (
+        <span className="font-mono text-xs text-muted-foreground">{action}</span>
+      )}
+    </div>
+  )
+}
 
 /** 前后值快照：只读 JSON 展示，空对象/空值统一显示破折号 */
 function Snapshot({ title, data }: { title: string; data: Record<string, unknown> | null }) {
@@ -96,6 +94,17 @@ export function AuditPage() {
   const [endFilter, setEndFilter] = React.useState("")
   const [actions, setActions] = React.useState<string[]>([])
   const [detail, setDetail] = React.useState<AuditLogData | null>(null)
+  // 点列表里的「按此操作人筛选」时递增的重放信号：保证重复点同一行也会重新查询
+  const [quickActor, setQuickActor] = React.useState<{ guard: string; actorId: number } | null>(null)
+
+  // 「先选人再带 ID」：后端只认 actor_id（数字），所以从行数据里带出 ID + 身份域，
+  // 不让人手打姓名（姓名在后端是无结果的模糊值）
+  const filterByActor = (row: AuditLogData) => {
+    if (!row.actor_id) return
+    setGuardFilter(row.actor_guard || "")
+    setActorIdFilter(String(row.actor_id))
+    setQuickActor({ guard: row.actor_guard || "", actorId: row.actor_id })
+  }
 
   // 动作下拉数据源；加载失败只提示、不影响默认「全部动作」可用
   React.useEffect(() => {
@@ -145,12 +154,7 @@ export function AuditPage() {
         accessorKey: "action",
         enableSorting: false,
         header: () => "动作",
-        cell: ({ row }) => (
-          <div className="flex flex-col">
-            <span className="text-sm">{ACTION_LABELS[row.original.action] ?? row.original.action}</span>
-            <span className="font-mono text-xs text-muted-foreground">{row.original.action}</span>
-          </div>
-        ),
+        cell: ({ row }) => <ActionCell action={row.original.action} />,
         meta: { headClassName: "min-w-[180px]" },
       },
       {
@@ -158,15 +162,29 @@ export function AuditPage() {
         enableSorting: false,
         header: () => "操作人",
         cell: ({ row }) => (
-          <div className="flex flex-col">
-            <span className="text-sm">{row.original.actor_name || "—"}</span>
-            <span className="text-xs text-muted-foreground">
-              {labelOf(GUARD_OPTIONS, row.original.actor_guard)}
-              {row.original.actor_id ? ` #${row.original.actor_id}` : ""}
-            </span>
+          <div className="flex items-center gap-1">
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-sm">{row.original.actor_name || "—"}</span>
+              <span className="text-xs text-muted-foreground">
+                {labelOf(GUARD_OPTIONS, row.original.actor_guard)}
+                {row.original.actor_id ? ` #${row.original.actor_id}` : ""}
+              </span>
+            </div>
+            {row.original.actor_id ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="shrink-0 text-muted-foreground"
+                title={"按此操作人筛选"}
+                aria-label={`按操作人 ${row.original.actor_name || row.original.actor_id} 筛选`}
+                onClick={() => filterByActor(row.original)}
+              >
+                <IconUserSearch />
+              </Button>
+            ) : null}
           </div>
         ),
-        meta: { headClassName: "min-w-[140px]" },
+        meta: { headClassName: "min-w-[150px]" },
       },
       {
         accessorKey: "target_type",
@@ -198,6 +216,12 @@ export function AuditPage() {
     perPage: 20,
   })
 
+  // 点行内「按此操作人筛选」后，等 setGuardFilter/setActorIdFilter 落到 filtersRef
+  // 再发起查询（applyFilters 是同一次渲染之后的稳定回调）
+  React.useEffect(() => {
+    if (quickActor) applyFilters()
+  }, [quickActor, applyFilters])
+
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -211,7 +235,7 @@ export function AuditPage() {
                 <SelectItem value="_all">{"全部动作"}</SelectItem>
                 {actions.map((action) => (
                   <SelectItem key={action} value={action}>
-                    {ACTION_LABELS[action] ?? action}
+                    {auditActionLabel(action)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -229,9 +253,11 @@ export function AuditPage() {
             </Select>
             <Input
               className="h-9"
-              placeholder={"操作人 ID"}
+              inputMode="numeric"
+              aria-label={"操作人 ID（仅数字）"}
+              placeholder={"操作人 ID（仅数字）"}
               value={actorIdFilter}
-              onChange={(e) => setActorIdFilter(e.target.value)}
+              onChange={(e) => setActorIdFilter(digitsOnly(e.target.value))}
               onKeyDown={(e) => { if (e.key === "Enter") applyFilters() }}
             />
             <Select value={targetTypeFilter || "_all"} onValueChange={(v) => setTargetTypeFilter(v === "_all" ? "" : v)}>
@@ -268,6 +294,10 @@ export function AuditPage() {
             />
           </div>
 
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {"「操作人」只支持按数字 ID 精确筛选（后端不支持姓名或模糊匹配，输姓名查不到数据）；ID 在不同身份域下会重复，建议同时选「操作人域」，或点列表里操作人旁的按钮一键带入。审计行目前由后台操作与定时任务写入（后台账号 / 系统任务）。"}
+          </p>
+
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={() => applyFilters()}>
               <IconSearch className="size-4" />
@@ -295,13 +325,23 @@ export function AuditPage() {
         <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{"审计详情"}</DialogTitle>
-            <DialogDescription className="font-mono text-xs">
-              {detail && `#${detail.id} · ${detail.action} · ${detail.created_at}`}
+            <DialogDescription className="text-xs">
+              {detail && `#${detail.id} · ${auditActionLabel(detail.action)} · ${detail.created_at}`}
             </DialogDescription>
           </DialogHeader>
           {detail && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
+                <span className="text-muted-foreground">{"动作"}</span>
+                <span>
+                  {auditActionLabel(detail.action)}
+                  {auditActionLabel(detail.action) !== detail.action && (
+                    <>
+                      {" "}
+                      <span className="font-mono text-muted-foreground">{detail.action}</span>
+                    </>
+                  )}
+                </span>
                 <span className="text-muted-foreground">{"操作人"}</span>
                 <span>
                   {detail.actor_name || "—"}
