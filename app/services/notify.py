@@ -10,13 +10,13 @@ import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-import httpx
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.cache import CacheClient
 from app.lib.url_guard import UnsafeUrlError, assert_public_http_url
 from app.models import Merchant, NotifyLog, Order
+from app.services.http_client import get_notify_client
 from app.services.balance import dmoney
 from app.services.order import (
     get_order_by_trade_no,
@@ -27,8 +27,6 @@ from app.services.order import (
 from app.services.settings import get_all_settings, get_notify_ladder
 
 _log = logging.getLogger(__name__)
-
-NOTIFY_TIMEOUT = 10.0
 
 
 async def notify_merchant_once(
@@ -81,12 +79,14 @@ async def notify_merchant_once(
         _log.warning("通知地址不安全，已拦截 trade_no=%s url=%s: %s", trade_no, url, e)
     else:
         try:
-            async with httpx.AsyncClient(timeout=NOTIFY_TIMEOUT, follow_redirects=False) as client:
-                resp = await client.post(url, content=body,
-                                         headers={"Content-Type": "application/json; charset=utf-8"})
-                http_status = resp.status_code
-                response_text = (resp.text or "")[:2000]
-                success = 200 <= resp.status_code < 300
+            # P3-30：共享连接池（同一商户域名只握手一次），不跟随 3xx
+            resp = await get_notify_client().post(
+                url, content=body,
+                headers={"Content-Type": "application/json; charset=utf-8"},
+            )
+            http_status = resp.status_code
+            response_text = (resp.text or "")[:2000]
+            success = 200 <= resp.status_code < 300
         except Exception as e:
             response_text = f"EXCEPTION: {e}"
             _log.warning("通知商户失败 trade_no=%s attempt=%s: %s", trade_no, attempt, e)
