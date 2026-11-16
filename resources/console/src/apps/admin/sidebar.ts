@@ -1,7 +1,7 @@
 import {
   IconGauge, IconListDetails, IconBuildingStore, IconHistory,
   IconReceipt, IconSpeakerphone, IconRoute,
-  IconAdjustments, IconPlugConnected, IconBell,
+  IconAdjustments, IconPlugConnected, IconBell, IconShieldCheck,
 } from "@tabler/icons-react"
 import type { MenuSection } from "@/apps/merchant/sidebar"
 import { FEATURE_NOTIFICATION_CENTER } from "@/lib/features"
@@ -47,6 +47,13 @@ export function getAdminMenu(): MenuSection[] {
       items: [
         { title: "支付通道", url: "/pay/channels", icon: IconRoute, permission: "channel.view" },
         { title: "站点配置", url: "/setting/pay", icon: IconAdjustments, permission: "pay_setting.view" },
+      ],
+    },
+    {
+      label: "系统管理",
+      items: [
+        // 审计日志：只读，仅授予 system.audit 的账号可见（默认超管）
+        { title: "审计日志", url: "/system/audit", icon: IconShieldCheck, permission: "system.audit" },
       ],
     },
   ]
