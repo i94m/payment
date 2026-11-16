@@ -12,9 +12,15 @@
 `asyncio.sleep` 让出控制权，保证两个调用都读到「未提交的旧状态」后才有人提交，
 从而确定性复现 TOCTOU 窗口（不是靠 gather 随机交错）。
 
-这些用例在修复落地前是**预期失败**的（xfail，reason 标注对应条目）；修复合并后
-会转为 XPASS —— 届时删掉 xfail 标记即为回归门禁。用 `-rxX` 运行可同时看到
-XPASS/XFAIL 清单，用于逐条验收。
+**这 7 条是常驻门禁（P0 修复已合入主线，xfail 标记已摘除）**：断言对象是最终
+实现——结算打款/驳回的「进程内协作锁 + 结算单行锁 + 状态机复核」、结算申请的
+行锁内重算可提余额（`coop_lock` + `lock_merchant`）、退款可退上限的
+「订单行锁 + status∈{0,1} 退款单求和（`_reserved_refunded_amount`）」与
+`expire_at` 查单窗口，不是修复过程中的中间版本。SQLite 没有 `FOR UPDATE`，
+票据里的并发语义在这些用例上由 `coop_lock` 兜住，因此它同样是门禁的一部分：
+去掉它（或去掉锁内状态复核）用例就会红（变异验证见下方各用例的注入点说明）。
+验收时核对过「修复前的树（`9334aa8`）上 `--runxfail` 全部失败、最终树上全部通过」，
+所以它们确实拦得住回归，而不是恒绿的摆设。
 """
 import asyncio
 import os
@@ -22,7 +28,6 @@ import tempfile
 from datetime import datetime, timedelta
 from decimal import Decimal
 
-import pytest
 import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -41,21 +46,6 @@ from app.models import (
 from app.services.balance import dmoney
 from app.services.refund import create_refund
 from app.services.settle import apply_settlement, mark_settlement_paid, reject_settlement
-
-# 修复落地前的预期失败标记（reason 对应 review 条目）
-xfail_p0_1 = pytest.mark.xfail(
-    reason="P0-1 未修复：settle 打款/驳回无行锁，状态机存在 TOCTOU 窗口", strict=False,
-)
-xfail_p0_2 = pytest.mark.xfail(
-    reason="P0-2 未修复：可提余额校验在锁外，并发申请可透支预留余额", strict=False,
-)
-xfail_p0_3 = pytest.mark.xfail(
-    reason="P0-3 未修复：退款幂等键/累计退款校验存在并发洞", strict=False,
-)
-xfail_p0_4 = pytest.mark.xfail(
-    reason="P0-4 未修复：过期单既不在查单窗口内也无回补路径", strict=False,
-)
-
 
 # ============================================================
 # 并发底座：独立 sqlite 文件库 + WAL + 双会话 + 可控交错
@@ -205,7 +195,6 @@ async def _two_settlements(session: AsyncSession, merchant_id: int, amount: str 
 # P0-1 结算双击打款
 # ============================================================
 
-@xfail_p0_1
 async def test_settle_double_pay_processed_once(conc_engine, conc_seed, sessions):
     """同一结算单被并发打款两次：只允许一次成功，冻结额只扣一次。
 
@@ -239,7 +228,6 @@ async def test_settle_double_pay_processed_once(conc_engine, conc_seed, sessions
 # P0-1 打款与驳回并发
 # ============================================================
 
-@xfail_p0_1
 async def test_settle_pay_and_reject_are_mutually_exclusive(conc_engine, conc_seed, sessions):
     """打款与驳回并发：只能有一条路径生效，不允许「既打款又退回余额」。"""
     maker = async_sessionmaker(conc_engine, class_=AsyncSession, expire_on_commit=False)
@@ -277,7 +265,6 @@ async def test_settle_pay_and_reject_are_mutually_exclusive(conc_engine, conc_se
 # P0-2 并发结算申请（可提余额/预留余额）
 # ============================================================
 
-@xfail_p0_2
 async def test_concurrent_settle_apply_respects_reserved_balance(conc_engine, conc_seed, sessions):
     """两笔并发申请合计不得超过可提余额（余额-预留）：预留 50 必须留在账户里。"""
     mid = conc_seed["merchant_id"]
@@ -328,25 +315,30 @@ async def _paid_order(session: AsyncSession, mid: int, channel_id: int, trade_no
     return order
 
 
-def _slow_sum(monkeypatch, delay: float = 0.05) -> None:
-    """让「累计已退金额」读取后让出控制权：两个并发退款都读到旧累计值。"""
+def _delay_quota_read(monkeypatch, delay: float = 0.05) -> None:
+    """让「锁内配额读」之后让出控制权：并发退款的 TOCTOU 临界读就在这一层。
+
+    最终实现的配额口径是 `_reserved_refunded_amount`（订单行锁内对 status∈{0,1}
+    的退款单求和，含在途预占），串行化靠 `coop_lock("refund:<trade_no>")` +
+    订单行 `FOR UPDATE`。延迟必须打在这里：注入到 `refunded_amount()`（只算
+    成功单）已不在关键段——它测不到「在途预占」口径。
+    """
     import app.services.refund as refund_mod
 
-    orig = refund_mod.refunded_amount
+    orig = refund_mod._reserved_refunded_amount
 
     async def _slow(session, trade_no):
         val = await orig(session, trade_no)
         await asyncio.sleep(delay)
         return val
 
-    monkeypatch.setattr(refund_mod, "refunded_amount", _slow)
+    monkeypatch.setattr(refund_mod, "_reserved_refunded_amount", _slow)
 
 
-@xfail_p0_3
 async def test_concurrent_partial_refund_cannot_over_refund(
     monkeypatch, client, conc_engine, conc_seed, sessions,
 ):
-    """并发部分退款（60 + 50）不得突破可退上限 98，且余额与已退金额自洽。"""
+    """并发部分退款（60 + 50）不得突破可退上限 98，且余额/预占与已退金额自洽。"""
     mid = conc_seed["merchant_id"]
     maker = async_sessionmaker(conc_engine, class_=AsyncSession, expire_on_commit=False)
     async with maker() as s:
@@ -354,7 +346,7 @@ async def test_concurrent_partial_refund_cannot_over_refund(
         order = await _paid_order(s, mid, conc_seed["channel_id"], "2601010000000000000001")
     trade_no = order.trade_no
 
-    _slow_sum(monkeypatch)
+    _delay_quota_read(monkeypatch)
 
     a, b = sessions
     m_a = await a.get(Merchant, mid)
@@ -372,13 +364,19 @@ async def test_concurrent_partial_refund_cannot_over_refund(
         assert dmoney(m.balance) == dmoney("98.00") - total, (
             f"余额与已退金额不自洽：balance={m.balance} refunded={total}"
         )
+        # 60 + 50 装不进 98：只允许一笔成功。
+        assert len(refunds) == 1, f"并发退款落库笔数异常：{[ (r.amount, r.status) for r in refunds ]}"
+        # 被拒的并发请求不得残留 status=0 预占单——否则它会把后续合法退款的可退额度
+        # 永久挤小，也是「零副作用」的对外承诺。
+        assert all(r.status == 1 for r in refunds), (
+            f"被拒请求残留预占单：{[ (r.amount, r.status) for r in refunds ]}"
+        )
 
 
 # ============================================================
 # P0-3 同 out_refund_no 上游重复退
 # ============================================================
 
-@xfail_p0_3
 async def test_same_out_refund_no_hits_upstream_once(
     monkeypatch, client, conc_engine, conc_seed, sessions,
 ):
@@ -423,7 +421,6 @@ async def test_same_out_refund_no_hits_upstream_once(
 # P0-4 过期单回补
 # ============================================================
 
-@xfail_p0_4
 async def test_unpaid_scan_window_follows_expire_at(monkeypatch, conc_engine, conc_seed):
     """查单窗口按 expire_at 口径：仍在有效期内的待支付单（哪怕创建已久）必须继续查单。"""
     import app.core.cache as cache_module
@@ -478,13 +475,14 @@ async def test_unpaid_scan_window_follows_expire_at(monkeypatch, conc_engine, co
     assert "2601010000000000000010" in trades, "有效期内的待支付单被查单窗口漏掉"
 
 
-@xfail_p0_4
 async def test_expired_order_paid_upstream_has_backfill_path(monkeypatch, conc_engine, conc_seed):
     """过期单回补：上游确认已收款时必须存在受控回补路径（不得静默丢弃）。
 
-    口径（待 颖 在 PR 中确认的取舍）：本用例按「上游已确认收款 → 允许受控补记」
-    编写；若最终采用「人工审核后补记」口径，则断言改为管理端补单端点，且仍然
-    要求：过期单不得被静默忽略。
+    最终实现口径（P0-4）：过期单（status=3）仍进主动查单；上游回 paid 时
+    `process_paid_order` 放行 `late_pay_backfill_hours` 窗口内（默认 24h，0=关闭）
+    的补记，窗口外仍会被拒。本用例的过期单 expire_at = now-30min，落在窗口内，
+    因此必须入账；管理端手动补单走 `allow_expired=True` 直接跳过窗口判定，
+    两条路径共用同一个幂等记账入口。
     """
     import app.worker as worker_module
     from app.worker import jobs as worker_jobs
