@@ -164,47 +164,86 @@ async def _refund(client, trade_no, amount=None, out_refund_no=None):
 
 
 @pytest.mark.asyncio
-async def test_pending_refund_reserves_capacity(client, seeded, session, engine):
-    """在途（status=0）退款预占占住可退额度，防止并发部分退款超退。"""
+async def test_pending_refund_reserves_capacity(client, seeded, session, engine, monkeypatch):
+    """在途退款占住可退额度，防止并发部分退款超退。
+
+    新口径（#15 抽出的原子计数列）下配额是订单行上的 `orders.refunded_amount`
+    （已退 + 在途），占位在条件 UPDATE 成功时就生效；退款单只是流水记录，
+    「插一条 status=0 退款单」不再等于占额度。所以这里用真的在途请求来证明：
+    上游被挂住期间，第二笔按剩余额度被拒绝。
+    """
+    import asyncio
+
+    from plugins.epay.plugin import EpayPayment
+
     order = await _pay_order(client, session, "RSV-1")
 
-    # 模拟另一笔正在走上游的退款：预占 50（可退上限 98 → 剩 48）
-    session.add(Refund(
-        refund_no="R" + datetime.now().strftime("%y%m%d%H%M%S%f") + "001",
-        out_refund_no="HELD-1", trade_no=order.trade_no,
-        merchant_id=seeded["merchant"].id, amount=dmoney("50.00"),
-        status=0, created_at=datetime.now(),
-    ))
-    await session.commit()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    orig_refund = EpayPayment.refund
 
-    body = await _refund(client, order.trade_no, amount="60.00")
-    assert body["code"] != 0
-    assert "可退" in body["message"]
-    assert await _balance(engine, seeded["merchant"].id) == dmoney("98.00")
+    async def _holding_refund(self, order_view, refund_no, amount):
+        started.set()
+        await release.wait()
+        return await orig_refund(self, order_view, refund_no, amount)
 
-    # 预占额内仍可退
-    ok = await _refund(client, order.trade_no, amount="40.00", out_refund_no="RSV-OK")
+    monkeypatch.setattr(EpayPayment, "refund", _holding_refund)
+
+    inflight = asyncio.create_task(
+        _refund(client, order.trade_no, amount="50.00", out_refund_no="HELD-1"))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)  # 占位已提交，仍在等上游
+
+        # 在途 50 占住配额：可退上限 98 → 只剩 48，60 必须被拒
+        body = await _refund(client, order.trade_no, amount="60.00")
+        assert body["code"] != 0
+        assert "可退" in body["message"]
+        assert await _balance(engine, seeded["merchant"].id) == dmoney("98.00")
+
+        # 配额列此刻已经是 50（在途也计入），流水里只有一条 status=0 的记录
+        held = await _refetch(engine, order.trade_no)
+        assert dmoney(held.refunded_amount) == dmoney("50.00")
+    finally:
+        release.set()
+
+    first = await inflight
+    assert first["code"] == 0, first
+    assert await _balance(engine, seeded["merchant"].id) == dmoney("48.00")
+
+    # 预占额内仍可退：剩余 48 全退，累计 98 → 订单置全退
+    ok = await _refund(client, order.trade_no, amount="48.00", out_refund_no="RSV-OK")
     assert ok["code"] == 0, ok
-    assert await _balance(engine, seeded["merchant"].id) == dmoney("58.00")
+    assert await _balance(engine, seeded["merchant"].id) == dmoney("0.00")
+
+    fresh = await _refetch(engine, order.trade_no)
+    assert dmoney(fresh.refunded_amount) == dmoney("98.00")
+    assert fresh.status == 2
 
 
 @pytest.mark.asyncio
 async def test_orphan_refund_reservation_cleaned(client, seeded, session, engine):
-    """超时的孤儿预占会被清理，不会永久锁死可退额度。"""
+    """超时的孤儿预占会被清理并回退配额，不会永久锁死可退额度。"""
     order = await _pay_order(client, session, "RSV-2")
 
+    # 真实孤儿状态：占位时配额列已被加过，退款单停在 status=0 且早已超时
     session.add(Refund(
         refund_no="R" + datetime.now().strftime("%y%m%d%H%M%S%f") + "002",
         out_refund_no="ORPHAN-1", trade_no=order.trade_no,
         merchant_id=seeded["merchant"].id, amount=dmoney("98.00"),
         status=0, created_at=datetime.now() - timedelta(minutes=10),
     ))
+    await session.exec(update(Order).where(Order.trade_no == order.trade_no)
+                       .values(refunded_amount=dmoney("98.00")))
     await session.commit()
 
     body = await _refund(client, order.trade_no, amount="98.00", out_refund_no="ORPHAN-1")
     assert body["code"] == 0, body
     assert body["data"]["status"] == 1
     assert await _balance(engine, seeded["merchant"].id) == dmoney("0.00")
+
+    fresh = await _refetch(engine, order.trade_no)
+    assert dmoney(fresh.refunded_amount) == dmoney("98.00")  # 清理回退后又正确占位，未翻倍
+    assert fresh.status == 2
 
 
 @pytest.mark.asyncio
