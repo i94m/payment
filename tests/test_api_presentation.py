@@ -254,10 +254,12 @@ async def test_index_alias_single_mount(client, seeded, session):
     assert r.status_code == 200
     assert "count1" in r.json()["data"]
 
-    # /dashboard/index 与 /index/* 整组重复挂载已移除
+    # /dashboard/index 与 /index/* 整组重复挂载已移除。
+    # 注：构建产物存在时 SPA 兜底是 GET-only 的 `/{full_path:path}`，未挂载路径的
+    # POST 会被 Starlette 判为 405 而不是 404 —— 两者都证明该写接口不存在。
     assert (await client.get("/admin-api/dashboard/index", headers=h)).status_code == 404
     assert (await client.post("/admin-api/index/payroute", headers=h,
-                              json={"type_id": 1})).status_code == 404
+                              json={"type_id": 1})).status_code in (404, 405)
 
 
 @pytest.mark.asyncio

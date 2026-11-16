@@ -85,7 +85,7 @@ def default_map() -> dict[str, Any]:
 def merged_items(rows: list[Setting]) -> list[dict[str, Any]]:
     """DB 行 + 注册表合并为设置页配置项列表(按注册表顺序,前端按此渲染)。
 
-    仅返回 ADMIN_SETTING_KEYS 白名单内的项(站点名称/扣量/结算);
+    仅返回 ADMIN_SETTING_KEYS 白名单内的项(站点名称/订单回补窗口/扣量/结算);
     缺行补默认值,updated_at=None 表示「从未修改」。
     """
     by_key = {row.key: row for row in rows}

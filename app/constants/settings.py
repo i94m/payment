@@ -125,13 +125,15 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
     ]
 }
 
-# 站点配置页可见 key 白名单：站点名称 + 扣量 + 结算组（自动结算 / D+1 除外）。
+# 站点配置页可见 key 白名单：站点名称 + 订单回补窗口 + 扣量 + 结算组（自动结算 / D+1 除外）。
 # 注册开关、api_pay_enable / landing_enable / api_order_rate_limit 等不在页面上暴露
 # （仍由注册表提供默认值、运行期生效，可直接写库或 PATCH 接口调整），
 # 其余项同理只是不在设置页展示/编辑。
 ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable", "settle_d1_enable"}
+ADMIN_SETTING_ORDER_KEYS: set[str] = {"late_pay_backfill_hours"}
 ADMIN_SETTING_KEYS: set[str] = (
     {"site_name"}
+    | ADMIN_SETTING_ORDER_KEYS
     | {k for k in SETTINGS_REGISTRY if k.startswith("deduct_")}
     | {k for k, spec in SETTINGS_REGISTRY.items() if spec.group is SettingGroup.SETTLE}
 ) - ADMIN_SETTING_HIDDEN_KEYS

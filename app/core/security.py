@@ -380,3 +380,14 @@ async def check_permission(auth: AuthResult, permission: str, session) -> bool:
     if auth.is_super_admin:
         return True
     return permission in await auth.get_permission_keys(session)
+
+
+async def require_super_admin(auth: AdminUser) -> None:
+    """超管专属依赖（fail-closed）。
+
+    用于「权限键不足以表达风险」的操作：插件安装会把 .so 直接 import 进进程，
+    等价于任意代码执行，任何非超管账号都不应触发，哪怕被授予 channel.update。
+    """
+    if not auth.is_super_admin:
+        raise HTTPException(status_code=403,
+                            detail={"code": 403, "message": "该操作仅限超级管理员"})

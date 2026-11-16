@@ -1,13 +1,18 @@
-"""admin 结算管理：列表 / 打款标记 / 拒绝（退回余额）。"""
+"""admin 结算管理：列表 / 打款标记 / 拒绝（退回余额）。
+
+打款与驳回都是资金操作：业务侧改结算单与余额，审计侧记「谁批的」
+（system_audit_logs，P1-7）。
+"""
 from typing import Optional
 
-from fastapi import Depends, APIRouter, Query
+from fastapi import Depends, APIRouter, Query, Request
 from sqlmodel import col, func, select
 
 from app.core.deps import SessionDep
 from app.core.security import AdminUser, PermissionChecker
 from app.models import Merchant, Settlement
 from app.responses import err, paginate, suc
+from app.services.audit import record_audit
 from app.services.settle import mark_settlement_paid, reject_settlement
 
 router = APIRouter()
@@ -59,17 +64,43 @@ async def settle_list(session: SessionDep, page: int = Query(1, ge=1),
     ))
 
 
+async def _settle_snapshot(session, settle_id: int) -> dict:
+    """结算单审计快照（打款/驳回前后）。"""
+    s = await session.get(Settlement, settle_id)
+    if not s:
+        return {}
+    return {"settle_no": s.settle_no, "status": s.status,
+            "amount": str(s.amount), "real_amount": str(s.real_amount),
+            "account": s.account}
+
+
 @router.post("/{settle_id}/pay", dependencies=[Depends(PermissionChecker("settle.pay"))])
-async def pay(settle_id: int, session: SessionDep, body: dict | None = None):
+async def pay(settle_id: int, session: SessionDep, request: Request, auth: AdminUser,
+              body: dict | None = None):
+    before = await _settle_snapshot(session, settle_id)
     ok, msg = await mark_settlement_paid(session, settle_id, (body or {}).get("remark", ""))
     if not ok:
         return err(-1, msg)
+    await record_audit(
+        session, action="settle.pay", actor=auth, request=request,
+        target_type="settlement", target_id=settle_id,
+        before=before, after=await _settle_snapshot(session, settle_id),
+        remark=(body or {}).get("remark", ""),
+    )
     return suc("已标记打款")
 
 
 @router.post("/{settle_id}/reject", dependencies=[Depends(PermissionChecker("settle.reject"))])
-async def reject(settle_id: int, session: SessionDep, body: dict | None = None):
+async def reject(settle_id: int, session: SessionDep, request: Request, auth: AdminUser,
+                 body: dict | None = None):
+    before = await _settle_snapshot(session, settle_id)
     ok, msg = await reject_settlement(session, settle_id, (body or {}).get("remark", ""))
     if not ok:
         return err(-1, msg)
+    await record_audit(
+        session, action="settle.reject", actor=auth, request=request,
+        target_type="settlement", target_id=settle_id,
+        before=before, after=await _settle_snapshot(session, settle_id),
+        remark=(body or {}).get("remark", ""),
+    )
     return suc("已拒绝并退回余额")

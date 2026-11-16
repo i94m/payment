@@ -1,7 +1,7 @@
 """orders 退款配额累计列 refunded_amount
 
 Revision ID: 0006
-Revises: 0004
+Revises: 0005
 Create Date: 2026-11-17 00:00:00.000000
 
 退款并发上限的可移植守卫依赖这一列：
@@ -10,9 +10,9 @@ Create Date: 2026-11-17 00:00:00.000000
 影响行数判定，MySQL/SQLite 同语义（不依赖 FOR UPDATE）。
 
 合并注意（集成顺序 #8 → #10 → #9 → #12 → #11）：本 revision 在资金分支上挂在 0003
-（保证分支自身 `alembic heads` 单头）。合入时按顺序接在末尾：#8 的
-`0004_orders_status_paid_index` 先落（故此处改指 '0004'），#10 的
-`0005_system_audit_logs` 顺位后再次改指 '0005'，全链始终单头。
+（保证分支自身 `alembic heads` 单头）。合入时接在集成链末尾：
+#8 的 `0004_orders_status_paid_index` → #10 的 `0005_system_audit_logs` → 本 revision，
+全链始终单头。
 
 已存在退款的订单按「成功 + 在途」退款单求和回填，避免升级后老单可退额度被放宽。
 """
@@ -23,7 +23,7 @@ import sqlalchemy as sa
 
 
 revision: str = '0006'
-down_revision: Union[str, None] = '0004'
+down_revision: Union[str, None] = '0005'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
