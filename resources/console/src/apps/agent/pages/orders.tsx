@@ -13,18 +13,40 @@ import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
+  ListError,
   copyableCell,
   dateCell,
   truncatedCell,
 } from "@/components/data-list/"
 import type { StatusBadgeOption } from "@/components/data-list/"
+import { toIntParam } from "@/lib/form-utils"
 import { IconSearch, IconRefresh } from "@tabler/icons-react"
 
+// 状态口径与后端 Order.status 一致（0 待支付 / 1 已支付 / 2 已退款 / 3 已过期）
 const orderStatusOptions: StatusBadgeOption[] = [
   { label: "待支付", value: 0, variant: "secondary" },
   { label: "已支付", value: 1, variant: "default" },
+  { label: "已退款", value: 2, variant: "outline" },
   { label: "已过期", value: 3, variant: "outline" },
 ]
+
+const STATUS_CLASS: Record<string, string> = {
+  default: "bg-primary/10 text-primary",
+  secondary: "bg-secondary text-secondary-foreground",
+  destructive: "bg-destructive/10 text-destructive",
+  outline: "border text-muted-foreground",
+}
+
+function StatusCell({ status }: { status: number }) {
+  const opt = orderStatusOptions.find((o) => o.value === status)
+  return (
+    <span
+      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[opt?.variant ?? "outline"]}`}
+    >
+      {opt?.label ?? `未知(${status})`}
+    </span>
+  )
+}
 
 export function OrdersPage() {
   const [startDate, setStartDate] = React.useState<Date | undefined>(undefined)
@@ -35,7 +57,8 @@ export function OrdersPage() {
     const params: Record<string, unknown> = {}
     if (startDate) params.starttime = format(startDate, "yyyy-MM-dd")
     if (endDate) params.endtime = format(endDate, "yyyy-MM-dd")
-    if (statusFilter !== "") params.status = Number(statusFilter)
+    const status = toIntParam(statusFilter)
+    if (status !== undefined) params.status = status
     return params
   }, [startDate, endDate, statusFilter])
 
@@ -45,7 +68,7 @@ export function OrdersPage() {
   }
 
   const {
-    table, loading, setKeyword, applyFilters,
+    table, total, loading, error, setKeyword, applyFilters, refresh,
   } = useDataList<AgentOrderData>({
     fetchFn: (params) => agentPanelApi.orders(params),
     filters: filterParams,
@@ -100,25 +123,11 @@ export function OrdersPage() {
         accessorKey: "status",
         enableSorting: false,
         header: () => "状态",
-        cell: ({ row }) => {
-          const opt = orderStatusOptions.find((o) => o.value === row.original.status)
-          const variantCls: Record<string, string> = {
-            default: "bg-primary/10 text-primary",
-            secondary: "bg-secondary text-secondary-foreground",
-            destructive: "bg-destructive/10 text-destructive",
-            outline: "border text-muted-foreground",
-          }
-          return (
-            <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${variantCls[opt?.variant ?? "default"]}`}>
-              {opt?.label ?? row.original.status}
-            </span>
-          )
-        },
+        cell: ({ row }) => <StatusCell status={row.original.status} />,
         meta: { headClassName: "w-[80px]" },
       },
     ],
     perPage: 15,
-    onError: () => {},
   })
 
   return (
@@ -160,13 +169,21 @@ export function OrdersPage() {
               <IconRefresh className="size-4" />
               {"重置"}
             </Button>
+            <Button variant="ghost" size="sm" className="ml-auto" disabled={loading} onClick={refresh}>
+              <IconRefresh className="size-4" />
+              {"刷新"}
+            </Button>
           </div>
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无订单记录"}>
+              <DataTablePagination table={table} total={total} />
+            </DataTable>
+          )}
         </div>
       </div>
     </div>

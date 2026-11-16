@@ -22,6 +22,7 @@ import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
   ConfirmDialog,
+  ListError,
   actionsColumn,
   secondaryCell,
   switchCell,
@@ -31,6 +32,8 @@ import {
   IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconFlask, IconCopy, IconList, IconUpload,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
+import { toIntParam } from "@/lib/form-utils"
 
 // 通道表单值：字段均为字符串（提交前再转数值）；mode/weight/sort 已从表单移除，仅随编辑原值带回
 interface ChannelFormValues {
@@ -135,9 +138,13 @@ export function ChannelsPage() {
     payApi.channelStats().then(setStats).catch(() => {})
   }, [])
 
+  // 支付方式/插件下拉是建单与凭证渲染的前置数据，加载失败必须显式提示，
+  // 否则弹窗里会静默出现空下拉（看起来像「没有可用插件」）
   React.useEffect(() => {
-    payApi.payTypes().then(setPayTypes).catch(() => {})
-    payApi.plugins().then(setPlugins).catch(() => {})
+    payApi.payTypes().then(setPayTypes)
+      .catch((err) => toast.error(getErrorMessage(err, "支付方式加载失败")))
+    payApi.plugins().then(setPlugins)
+      .catch((err) => toast.error(getErrorMessage(err, "支付插件加载失败")))
     fetchStats()
   }, [fetchStats])
 
@@ -145,7 +152,8 @@ export function ChannelsPage() {
 
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
-    if (typeFilter !== "") params.payment_type_id = Number(typeFilter)
+    const tid = toIntParam(typeFilter)
+    if (tid !== undefined) params.payment_type_id = tid
     if (pluginFilter !== "") params.plugin_name = pluginFilter
     return params
   }, [typeFilter, pluginFilter])
@@ -165,7 +173,7 @@ export function ChannelsPage() {
       payApi.plugins().then(setPlugins).catch(() => {})
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     } finally {
       setSyncing(false)
     }
@@ -183,7 +191,7 @@ export function ChannelsPage() {
       payApi.plugins().then(setPlugins).catch(() => {})
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "上传失败")
+      toast.error(getErrorMessage(err, "上传失败"))
     } finally {
       setUploading(false)
     }
@@ -228,7 +236,7 @@ export function ChannelsPage() {
       })
       setDialogOpen(true)
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "加载失败")
+      toast.error(getErrorMessage(err, "加载失败"))
     }
   }
 
@@ -257,7 +265,7 @@ export function ChannelsPage() {
       })
       setDialogOpen(true)
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "加载失败")
+      toast.error(getErrorMessage(err, "加载失败"))
     }
   }
 
@@ -272,10 +280,11 @@ export function ChannelsPage() {
       window.open(data.cashier_url, "_blank")
       fetchStats()
     } catch (err) {
-      const e = err as { message?: string; errors?: unknown[] }
+      const e = err as { errors?: unknown[] }
       const debug = Array.isArray(e?.errors) && e.errors.length > 0 ? e.errors[0] : null
       setTestDebug(debug as ChannelTestDebug | null)
-      if (!debug) toast.error(e?.message || "操作失败")
+      // 有上游调试详情时用调试弹窗展示，否则回落到 toast 后端原因
+      if (!debug) toast.error(getErrorMessage(err, "测试支付失败"))
     } finally {
       setTesting(false)
     }
@@ -354,7 +363,7 @@ export function ChannelsPage() {
       setDialogOpen(false)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     } finally {
       setSaving(false)
     }
@@ -383,24 +392,21 @@ export function ChannelsPage() {
       toast.success("状态已更新")
       fetchStats()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
   const submitDelete = async () => {
     if (!deleteId) return
-    try {
-      await payApi.deleteChannel(deleteId)
-      setDeleteId(null)
-      refresh()
-      toast.success("删除成功")
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    }
+    // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
+    await payApi.deleteChannel(deleteId)
+    setDeleteId(null)
+    refresh()
+    toast.success("删除成功")
   }
 
   const {
-    table, loading, applyFilters, refresh, updateRow,
+    table, total, loading, error, applyFilters, refresh, updateRow,
   } = useDataList<ChannelData>({
     fetchFn: (params) => payApi.channels(params as never),
     filters: filterParams,
@@ -501,7 +507,6 @@ export function ChannelsPage() {
       ] as ActionItem<ChannelData>[], { header: "操作", width: 360 }),
     ],
     perPage: 20,
-    onError: () => toast.error("操作失败"),
   })
 
   return (
@@ -564,9 +569,13 @@ export function ChannelsPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} total={total} />
+            </DataTable>
+          )}
         </div>
       </div>
 

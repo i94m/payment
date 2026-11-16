@@ -7,6 +7,7 @@ export { ConfirmDialog } from "./confirm-dialog"
 export { StatisticsCards } from "./statistics-cards"
 export { FilterBar } from "./filter-bar"
 export type { FilterBarProps, FilterFieldConfig, FilterRadioOption } from "./filter-bar"
+export { ListError, PanelError } from "./list-error"
 export {
   selectColumn,
   actionsColumn,

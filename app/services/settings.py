@@ -5,18 +5,25 @@
 - settings 表（运行期即时生效）：站点、订单过期、通知阶梯、补单窗口、默认费率...
 
 合法 key / 类型 / 默认值 / 分组的唯一事实来源见 app/constants/settings.py。
-读取带 Redis 缓存（60s TTL），写入主动失效。
+读取带 Redis 缓存（60s TTL，密文存储），写入主动失效。
+
+缓存加密（P1-13）：整包 JSON 含 platform_rsa_private_key / mail_config 等敏感项，
+落 Redis 前用由 APP_SECRET_KEY 派生的独立 Fernet 密钥加密（前缀 `enc:v1:`）——
+拿到 Redis 快照但拿不到 APP_SECRET_KEY 时读不出私钥。不带前缀的历史明文缓存
+仍可读（一次性兼容，下次写入即转密文）。
 
 兼容性：get_all_settings 的值为注册表类型(int/bool/list[int]/str)；
 部署后 60s 内可能读到旧缓存的字符串值，get_notify_ladder /
 setting_enabled 均做了双形态兼容。
 """
 import base64
+import hashlib
 import json
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from sqlalchemy.exc import IntegrityError
@@ -31,10 +38,44 @@ from app.models import Setting
 CACHE_KEY = "pay_settings"
 CACHE_TTL = 60
 
+# 缓存密文前缀（无前缀 = 历史明文缓存，兼容读一次）
+_CACHE_ENC_PREFIX = "enc:v1:"
+_cache_fernet: Fernet | None = None
+
 
 def _cache_key() -> str:
     from app.core.config import config
     return f"{config.CACHE_PREFIX}{CACHE_KEY}" if config.CACHE_PREFIX else CACHE_KEY
+
+
+def _get_cache_fernet() -> Fernet:
+    """设置缓存专用派生密钥（与通道凭证/链接令牌的用途域隔离）。"""
+    global _cache_fernet
+    if _cache_fernet is None:
+        from app.core.config import config
+        digest = hashlib.sha256(
+            config.APP_SECRET_KEY.encode("utf-8") + b"|settings-cache").digest()
+        _cache_fernet = Fernet(base64.urlsafe_b64encode(digest))
+    return _cache_fernet
+
+
+def _encrypt_cache(payload: str) -> str:
+    return _CACHE_ENC_PREFIX + _get_cache_fernet().encrypt(
+        payload.encode("utf-8")).decode("ascii")
+
+
+def _decrypt_cache(raw: str) -> str | None:
+    """解密缓存载荷；历史明文（无前缀）原样返回；解密失败返回 None（视为未命中）。"""
+    text = str(raw or "")
+    if not text:
+        return None
+    if not text.startswith(_CACHE_ENC_PREFIX):
+        return text  # 历史明文缓存
+    try:
+        return _get_cache_fernet().decrypt(
+            text[len(_CACHE_ENC_PREFIX):].encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError, UnicodeError):
+        return None
 
 
 async def get_all_settings(session: AsyncSession, cache: CacheClient | None = None) -> dict[str, Any]:
@@ -42,9 +83,10 @@ async def get_all_settings(session: AsyncSession, cache: CacheClient | None = No
     if cache is not None:
         try:
             cached = await cache.get(_cache_key())
-            if cached:
+            payload = _decrypt_cache(cached) if cached else None
+            if payload:
                 merged = default_map()
-                merged.update(json.loads(cached))
+                merged.update(json.loads(payload))
                 return merged
         except Exception:
             pass
@@ -56,7 +98,8 @@ async def get_all_settings(session: AsyncSession, cache: CacheClient | None = No
 
     if cache is not None:
         try:
-            await cache.set(_cache_key(), json.dumps(stored, ensure_ascii=False), ex=CACHE_TTL)
+            await cache.set(_cache_key(), _encrypt_cache(
+                json.dumps(stored, ensure_ascii=False)), ex=CACHE_TTL)
         except Exception:
             pass
     return merged

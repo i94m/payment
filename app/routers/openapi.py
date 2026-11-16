@@ -89,6 +89,9 @@ async def create_payment_order(request: Request, session: SessionDep, cache: Cac
         order = await create_order(params, session, cache, request_host=request_host)
     except ValueError as e:
         return api_response(code=-1, message=str(e), http_status=400)
+    except InvalidOperation:
+        # money 为 NaN/Infinity 时 Decimal 比较/量化抛 InvalidOperation（非 ValueError）
+        return api_response(code=-1, message="金额格式错误", http_status=400)
 
     settings = await get_setting(session, "site_url", "", cache=cache)
     site = (str(settings) or str(request.base_url)).rstrip("/")
@@ -158,6 +161,8 @@ async def create_order_refund(trade_no: str, session: SessionDep, cache: CacheDe
             refund_amount = Decimal(str(refund_amount))
         except (InvalidOperation, ValueError):
             return api_response(code=-1, message="退款金额格式错误", http_status=400)
+        if not refund_amount.is_finite():
+            return api_response(code=-1, message="退款金额格式错误", http_status=400)
     else:
         refund_amount = None
 
@@ -170,6 +175,8 @@ async def create_order_refund(trade_no: str, session: SessionDep, cache: CacheDe
         )
     except ValueError as e:
         return api_response(code=-1, message=str(e), http_status=400)
+    except InvalidOperation:
+        return api_response(code=-1, message="退款金额格式错误", http_status=400)
     return api_response(data=refund_query_payload(refund))
 
 

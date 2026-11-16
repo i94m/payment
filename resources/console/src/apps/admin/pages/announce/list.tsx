@@ -15,6 +15,7 @@ import { DataTable, DataTablePagination } from "@/components/data-table/"
 import {
   useDataList,
   ConfirmDialog,
+  ListError,
   actionsColumn,
   dateCell,
   truncatedCell,
@@ -22,6 +23,7 @@ import {
 import type { ActionItem } from "@/components/data-list/"
 import { IconPlus, IconEdit, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
 
 // 公告表单：无标题，仅内容（必填）
 const announceSchema = z.object({
@@ -58,24 +60,21 @@ export function AnnouncesPage() {
       setEditing(null)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   })
 
   const doDelete = async () => {
     if (!deleteTarget) return
-    try {
-      await announcesApi.remove(deleteTarget.id)
-      toast.success("删除成功")
-      setDeleteTarget(null)
-      refresh()
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    }
+    // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
+    await announcesApi.remove(deleteTarget.id)
+    toast.success("删除成功")
+    setDeleteTarget(null)
+    refresh()
   }
 
   const {
-    table, loading, refresh,
+    table, total, loading, error, refresh,
   } = useDataList<AnnounceData>({
     fetchFn: (params) => announcesApi.list(params as never),
     columns: [
@@ -121,7 +120,6 @@ export function AnnouncesPage() {
       ] as ActionItem<AnnounceData>[], { width: 160 }),
     ],
     perPage: 20,
-    onError: () => toast.error("操作失败"),
   })
 
   const formOpen = creating || !!editing
@@ -137,9 +135,13 @@ export function AnnouncesPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} total={total} />
+            </DataTable>
+          )}
         </div>
       </div>
 

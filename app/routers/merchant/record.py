@@ -6,6 +6,7 @@ from app.core.deps import SessionDep
 from app.core.security import MerchantUser
 from app.models import MerchantRecord, Settlement
 from app.responses import paginate, suc
+from app.routers.common.params import parse_int
 
 router = APIRouter()
 
@@ -87,7 +88,7 @@ async def settlement_list(session: SessionDep, auth: MerchantUser,
         Settlement.merchant_id == auth.user.id
     ).order_by(col(Settlement.id).desc())
     if status is not None and status != "":
-        query = query.where(Settlement.status == int(status))
+        query = query.where(Settlement.status == parse_int(status, "status"))
     total = (await session.exec(select(func.count()).select_from(query.subquery()))).one()
     items = (await session.exec(query.offset((page - 1) * per_page).limit(per_page))).all()
     return suc(paginate(items=[_dump_settle(s) for s in items], total=total,

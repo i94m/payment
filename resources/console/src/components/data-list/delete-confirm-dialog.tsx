@@ -1,4 +1,6 @@
 import * as React from "react"
+import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -38,6 +40,8 @@ export function DeleteConfirmDialog({
     try {
       await onConfirm()
       onOpenChange(false)
+    } catch (err) {
+      toast.error(getErrorMessage(err, "删除失败，请稍后重试"))
     } finally {
       setLoading(false)
     }
