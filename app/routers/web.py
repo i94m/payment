@@ -199,10 +199,20 @@ async def paypage_opaque_page(request: Request, token: str, go: str = "",
 # ============================================================
 
 _BASE_CSS = """*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:#f5f6f7;min-height:100vh}
-.wrap{max-width:480px;margin:0 auto;padding:16px}
+html{-webkit-text-size-adjust:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:#f5f6f7;min-height:100vh;-webkit-font-smoothing:antialiased}
+.wrap{max-width:480px;margin:0 auto;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
 .card{background:#fff;border-radius:12px;padding:24px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
-.tips{color:#86909c;font-size:12px;text-align:center;margin-top:20px}"""
+.tips{color:#86909c;font-size:12px;text-align:center;margin-top:20px;line-height:1.6}
+.hidden{display:none !important}
+.btn{width:100%;padding:14px;border:none;border-radius:10px;background:#165dff;color:#fff;font-size:16px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.btn:disabled{background:#94bfff;cursor:not-allowed}
+.btn:active:not(:disabled){opacity:.85}
+.btn-plain{background:#f2f3f5;color:#1d2129;margin-top:10px}
+.btn-retry{width:auto;min-width:140px;margin:16px auto 0;padding:10px 24px;font-size:14px}
+.hint{color:#86909c;font-size:12px;text-align:center;margin-top:12px;line-height:1.6}
+.err-title{color:#1d2129;font-size:18px;font-weight:600;text-align:center;margin-bottom:8px}
+.err-msg{color:#86909c;font-size:14px;text-align:center;word-break:break-all;line-height:1.6}"""
 
 
 def _tpl(src: str, *, raw: frozenset[str] = frozenset()) -> callable:
@@ -226,14 +236,14 @@ _CASHIER_PAGE = """<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>收银台</title>
 <style>
 """ + _BASE_CSS + """
 .amount{text-align:center;padding:32px 24px}
 .amount .label{color:#86909c;font-size:14px;margin-bottom:8px}
 .amount .money{color:#1d2129;font-size:36px;font-weight:700}
-.amount .subject{color:#4e5969;font-size:14px;margin-top:8px;word-break:break-all}
+.amount .subject{color:#4e5969;font-size:14px;margin-top:8px;word-break:break-all;line-height:1.6}
 .badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;margin-top:10px}
 .badge.ok{background:#e8ffea;color:#00b42a}
 .badge.wait{background:#fff7e8;color:#ff7d00}
@@ -242,10 +252,10 @@ _CASHIER_PAGE = """<!DOCTYPE html>
 .type-item.active{border-color:#165dff;background:#f0f6ff}
 .type-item .icon{width:36px;height:36px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;margin-right:12px;color:#fff;font-weight:700;font-size:14px}
 .type-item .left{display:flex;align-items:center}
-.btn{width:100%;padding:14px;border:none;border-radius:10px;background:#165dff;color:#fff;font-size:16px;font-weight:600;cursor:pointer}
-.btn:disabled{background:#94bfff}
-.err-title{color:#1d2129;font-size:18px;font-weight:600;text-align:center;margin-bottom:8px}
-.err-msg{color:#86909c;font-size:14px;text-align:center;word-break:break-all}
+.types-loading,.types-empty{color:#86909c;font-size:14px;text-align:center;padding:24px 0}
+.pay-err{color:#f53f3f;background:#fff1f0;border:1px solid #ffccc7;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.6;margin-bottom:12px;word-break:break-all}
+.qr-title{font-size:15px;font-weight:600;text-align:center;margin-bottom:12px}
+.qr-content{word-break:break-all;font-size:12px;color:#4e5969;background:#f7f8fa;padding:10px;border-radius:8px;max-height:160px;overflow:auto;line-height:1.6}
 </style>
 </head>
 <body>
@@ -257,41 +267,84 @@ _CASHIER_PAGE = """<!DOCTYPE html>
     <div id="status-badge"></div>
   </div>
   <div class="card" id="types-card">
-    <div id="types"></div>
+    <div id="types"><div class="types-loading">正在加载支付方式…</div></div>
+    <div class="pay-err hidden" id="pay-err"></div>
     <button class="btn" id="pay-btn" disabled>立即支付</button>
   </div>
-  <div class="tips">支付完成后请勿关闭页面，将自动跳转</div>
+  <div class="card hidden" id="qr-card">
+    <div class="qr-title">请使用对应 App 完成付款</div>
+    <div class="qr-content" id="qr-content"></div>
+    <button class="btn btn-plain" id="qr-copy">复制支付信息</button>
+    <div class="hint">若无法直接打开，请复制上方链接到对应 App 内打开</div>
+  </div>
+  <div class="tips" id="tips">支付完成后请勿关闭页面，将自动跳转</div>
 </div>
 <script>
 var TRADE_NO = ''; /* 由服务端注入（_cashier_page_for） */
 var API = '/cashier';
-var types = [], chosen = '', timer = null;
+var types = [], chosen = '', timer = null, submitting = false;
+function $(id){ return document.getElementById(id); }
 function fmt(n){var d=parseFloat(n);return isNaN(d)?'--':d.toFixed(2)}
-function showError(msg){
-  document.getElementById('amount-label').textContent = '';
-  document.getElementById('money').style.display = 'none';
-  document.getElementById('status-badge').innerHTML = '';
-  document.getElementById('types-card').style.display = 'none';
-  var s = document.getElementById('subject');
+function stopPolling(){ if(timer){ clearInterval(timer); timer = null; } }
+function hideTypes(){ $('types-card').classList.add('hidden'); }
+function showError(msg, retry){
+  $('amount-label').textContent = '';
+  $('money').style.display = 'none';
+  $('status-badge').innerHTML = '';
+  hideTypes();
+  $('qr-card').classList.add('hidden');
+  $('tips').classList.add('hidden');
+  var s = $('subject');
   s.innerHTML = '';
   var t = document.createElement('div'); t.className = 'err-title'; t.textContent = '订单无法支付';
   var m = document.createElement('div'); m.className = 'err-msg';
   m.textContent = msg || '订单不存在或已失效';
   s.appendChild(t); s.appendChild(m);
-  if(timer) clearInterval(timer);
+  if(retry){
+    var b = document.createElement('button'); b.className = 'btn btn-retry'; b.textContent = '刷新重试';
+    b.addEventListener('click', function(){ location.reload(); });
+    s.appendChild(b);
+  }
+  stopPolling();
+}
+function showPayError(msg){
+  var box = $('pay-err');
+  box.textContent = msg || '发起支付失败，请重试';
+  box.classList.remove('hidden');
+  $('pay-err').scrollIntoView({block:'nearest'});
+}
+function clearPayError(){ $('pay-err').classList.add('hidden'); }
+function showQr(content){
+  hideTypes();
+  $('qr-card').classList.remove('hidden');
+  $('qr-content').textContent = content;
+  $('tips').textContent = '完成付款后本页会自动跳转';
+  $('qr-copy').onclick = function(){
+    var done = function(){ $('qr-copy').textContent = '已复制'; setTimeout(function(){ $('qr-copy').textContent = '复制支付信息'; }, 1500); };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(content).then(done, function(){});
+    } else {
+      var ta = document.createElement('textarea'); ta.value = content; document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); done(); }catch(e){}
+      document.body.removeChild(ta);
+    }
+  };
 }
 function renderStatus(st, backurl){
-  var badge = document.getElementById('status-badge');
+  var badge = $('status-badge');
   if(st === 1){
     badge.innerHTML = '<span class="badge ok">支付成功</span>';
-    document.getElementById('types-card').style.display = 'none';
+    hideTypes();
+    $('qr-card').classList.add('hidden');
+    $('tips').textContent = backurl ? '支付已完成，正在跳转…' : '支付已完成，可关闭本页';
+    stopPolling();
     if(backurl){ setTimeout(function(){ location.href = backurl; }, 1200); }
-    if(timer) clearInterval(timer);
   } else {
     badge.innerHTML = '<span class="badge wait">待支付</span>';
   }
 }
 async function loadStatus(){
+  if(!TRADE_NO) return;
   try{
     var r = await fetch(API + '/status?trade_no=' + encodeURIComponent(TRADE_NO));
     var j = await r.json();
@@ -299,58 +352,75 @@ async function loadStatus(){
   }catch(e){}
 }
 async function loadInfo(){
+  if(!TRADE_NO){ showError('链接无效，请从商户处重新发起付款', false); return; }
   try{
     var r = await fetch(API + '/types?trade_no=' + encodeURIComponent(TRADE_NO));
     var j = await r.json();
-    if(j.code !== 0){ showError(j.message); return; }
-    document.getElementById('money').textContent = fmt(j.data.money);
-    document.getElementById('subject').textContent = j.data.subject || '';
+    if(j.code !== 0){ showError(j.message, false); return; }
+    $('money').textContent = fmt(j.data.money);
+    $('subject').textContent = j.data.subject || '';
     renderStatus(j.data.status, j.data.return_url);
+    if(j.data.status !== 0){ return; }
     // 已拉起过 jump/scheme 支付：自动跳转上游（同一订单每会话只跳一次，
     // 用户返回收银台后可改选其它支付方式，避免来回跳死循环）
     var pt = j.data.pay_type, pi = j.data.pay_info;
-    if(j.data.status === 0 && (pt === 'jump' || pt === 'scheme') && pi){
+    if((pt === 'jump' || pt === 'scheme') && pi){
       var KEY = 'cashier_jump_' + TRADE_NO;
       var jumped = false;
       try{ jumped = !!sessionStorage.getItem(KEY); sessionStorage.setItem(KEY, '1'); }catch(e){}
       if(!jumped){ location.href = pi; return; }
     }
     types = j.data.types || [];
-    var box = document.getElementById('types');
+    var box = $('types');
+    if(types.length === 0){
+      box.innerHTML = '<div class="types-empty">商家暂未开通可用的支付方式，请稍后再试</div>';
+      $('pay-btn').disabled = true;
+      return;
+    }
     var colors = {alipay:'#1677ff', wxpay:'#00c250', qqpay:'#12b7f5', bank:'#f5a623'};
     box.innerHTML = types.map(function(t,i){
-      return '<div class="type-item" data-i="'+i+'"><span class="left"><span class="icon" style="background:'+(colors[t.code]||'#86909c')+'">'+(t.name||t.code).slice(0,2)+'</span>'+(t.name||t.code)+'</span><span>›</span></div>';
+      return '<div class="type-item" role="button" tabindex="0" data-i="'+i+'"><span class="left"><span class="icon" style="background:'+(colors[t.code]||'#86909c')+'">'+((t.name||t.code)+'').slice(0,1)+'</span>'+((t.name||t.code)+'')+'</span><span>›</span></div>';
     }).join('');
-    box.querySelectorAll('.type-item').forEach(function(el){
-      el.addEventListener('click', function(){
-        box.querySelectorAll('.type-item').forEach(function(x){x.classList.remove('active')});
-        el.classList.add('active');
-        chosen = types[+el.dataset.i].code;
-        document.getElementById('pay-btn').disabled = false;
-      });
+    var items = box.querySelectorAll('.type-item');
+    function choose(el){
+      items.forEach(function(x){x.classList.remove('active')});
+      el.classList.add('active');
+      chosen = types[+el.dataset.i].code;
+      $('pay-btn').disabled = false;
+      clearPayError();
+    }
+    items.forEach(function(el){
+      el.addEventListener('click', function(){ choose(el); });
+      el.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); choose(el); } });
     });
-    if(types.length === 1){ box.querySelector('.type-item').click(); }
-  }catch(e){ showError('网络错误，请刷新重试'); }
+    if(types.length === 1){ choose(items[0]); }
+    timer = setInterval(loadStatus, 3000);
+  }catch(e){ showError('网络错误，请检查网络后刷新重试', true); }
 }
-document.getElementById('pay-btn').addEventListener('click', async function(){
-  if(!chosen) return;
-  var btn = this; btn.disabled = true; btn.textContent = '正在发起支付...';
+$('pay-btn').addEventListener('click', async function(){
+  if(!chosen || submitting) return;
+  submitting = true;
+  var btn = this; btn.disabled = true; btn.textContent = '正在发起支付…';
+  clearPayError();
+  var navigating = false;
   try{
     var r = await fetch(API + '/pay', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({trade_no: TRADE_NO, type: chosen})});
     var j = await r.json();
     if(j.code === 0){
-      var p = j.data.pay_type, info = j.data.pay_info;
-      if(p === 'jump' || p === 'scheme'){ location.href = info; return; }
-      if(p === 'html'){ document.open(); document.write(info); document.close(); return; }
-      if(p === 'qrcode'){ alert('请使用手机扫码/付款：' + info); }
+      var p = j.data.pay_type, info = j.data.pay_info || '';
+      if(p === 'jump' || p === 'scheme'){ navigating = true; location.href = info; }
+      else if(p === 'html'){ navigating = true; document.open(); document.write(info); document.close(); }
+      else if(p === 'qrcode'){ showQr(info); }
+      else { showPayError('暂不支持的支付方式，请更换后重试'); }
     } else {
-      alert(j.message || '发起支付失败');
+      showPayError(j.message || '发起支付失败，请重试');
     }
-  }catch(e){ alert('网络错误，请重试'); }
-  btn.disabled = false; btn.textContent = '立即支付';
+  }catch(e){ showPayError('网络错误，请检查网络后重试'); }
+  submitting = false;
+  if(!navigating){ btn.disabled = false; btn.textContent = '立即支付'; }
 });
-loadInfo(); timer = setInterval(loadStatus, 3000);
+loadInfo();
 </script>
 </body>
 </html>"""
@@ -361,7 +431,7 @@ _RESULT_TPL = _tpl("""<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>{title}</title>
 <style>
 """ + _BASE_CSS + """
@@ -370,11 +440,11 @@ _RESULT_TPL = _tpl("""<!DOCTYPE html>
 .result.ok .mark{background:#00b42a}
 .result.err .mark{background:#ff7d00}
 .result h1{color:#1d2129;font-size:20px;font-weight:600;margin-bottom:8px}
-.result .msg{color:#86909c;font-size:14px;word-break:break-all}
+.result .msg{color:#86909c;font-size:14px;word-break:break-all;line-height:1.6}
 .result .money{color:#1d2129;font-size:30px;font-weight:700;margin-top:16px}
 .result .money .rmb{font-size:16px;font-weight:400;margin-right:2px}
 .result .no{color:#86909c;font-size:12px;margin-top:8px;word-break:break-all}
-.btn{display:inline-block;margin-top:24px;padding:12px 36px;border:none;border-radius:10px;background:#165dff;color:#fff;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none}
+.btn{display:inline-block;width:auto;margin-top:24px;padding:12px 36px;font-size:15px;text-decoration:none}
 </style>
 </head>
 <body>
@@ -383,27 +453,30 @@ _RESULT_TPL = _tpl("""<!DOCTYPE html>
     <div class="mark">{mark}</div>
     <h1>{title}</h1>
     <div class="msg">{message}</div>
-    <div class="money"><span class="rmb">￥</span>{money}</div>
-    <div class="no">订单号 {trade_no}</div>
+    <div class="money" style="display:{money_display}"><span class="rmb">￥</span>{money}</div>
+    <div class="no" style="display:{no_display}">订单号 {trade_no}</div>
     <a class="btn" id="act-btn" href="javascript:void(0)">{btn_label}</a>
   </div>
-  <div class="tips">支付完成后请勿关闭页面，将自动跳转</div>
+  <div class="tips">{tips}</div>
 </div>
 <script>
 var BACK = {back_js};
+var TRADE = {trade_no_js};
 var btn = document.getElementById('act-btn');
 if(BACK){ btn.href = BACK; }
 else if({is_err_js}){ btn.addEventListener('click', function(){ location.reload(); }); }
 else { btn.style.display = 'none'; }
-setInterval(async function(){
-  try{
-    var r = await fetch('/cashier/status?trade_no=' + encodeURIComponent({trade_no_js}));
-    var j = await r.json();
-    if(j.code === 0 && j.data && j.data.status === 1 && (j.data.return_url || BACK)){
-      location.href = j.data.return_url || BACK;
-    }
-  }catch(e){}
-}, 3000);
+if(TRADE){
+  setInterval(async function(){
+    try{
+      var r = await fetch('/cashier/status?trade_no=' + encodeURIComponent(TRADE));
+      var j = await r.json();
+      if(j.code === 0 && j.data && j.data.status === 1 && (j.data.return_url || BACK)){
+        location.href = j.data.return_url || BACK;
+      }
+    }catch(e){}
+  }, 3000);
+}
 </script>
 </body>
 </html>""", raw=frozenset({"back_js", "is_err_js", "trade_no_js"}))
@@ -415,6 +488,10 @@ def _render_result(kind: str, title: str, message: str, money: str,
     return _RESULT_TPL(
         kind=kind, mark="✓" if kind == "ok" else "!", title=title, message=message,
         money=money, trade_no=trade_no, btn_label="完成" if kind == "ok" else "刷新重试",
+        money_display="block" if money else "none",
+        no_display="block" if trade_no else "none",
+        tips=("支付已完成，正在跳转…" if back else "支付已完成，可关闭本页") if kind == "ok"
+              else "如已付款但页面未更新，请稍后刷新或联系商户",
         back_js=json.dumps(back or ""), trade_no_js=json.dumps(trade_no),
         is_err_js="true" if kind == "err" else "false",
     )
@@ -425,7 +502,7 @@ _SCHEME_TPL = _tpl("""<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>正在拉起支付</title>
 <style>
 """ + _BASE_CSS + """
@@ -433,12 +510,13 @@ _SCHEME_TPL = _tpl("""<!DOCTYPE html>
 .launch .spin{width:40px;height:40px;margin:0 auto 16px;border-radius:50%;border:3px solid #e5e6eb;border-top-color:#165dff;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .launch h1{color:#1d2129;font-size:18px;font-weight:600;margin-bottom:8px}
-.launch .msg{color:#86909c;font-size:13px}
+.launch .msg{color:#86909c;font-size:13px;line-height:1.6}
 .launch .money{color:#1d2129;font-size:30px;font-weight:700;margin-top:16px}
 .launch .money .rmb{font-size:16px;font-weight:400;margin-right:2px}
-.launch .no{color:#86909c;font-size:12px;margin-top:8px}
-.btn{display:none;margin:24px auto 0;padding:12px 36px;border:none;border-radius:10px;background:#165dff;color:#fff;font-size:15px;font-weight:600;cursor:pointer;text-decoration:none}
+.launch .no{color:#86909c;font-size:12px;margin-top:8px;word-break:break-all}
 .fallback{display:none;margin-top:16px}
+.fallback .msg{color:#86909c;font-size:13px}
+.fallback .btn{display:none;width:auto;margin:12px auto 0;padding:12px 36px;text-decoration:none}
 </style>
 </head>
 <body>
@@ -446,31 +524,34 @@ _SCHEME_TPL = _tpl("""<!DOCTYPE html>
   <div class="card launch">
     <div class="spin"></div>
     <h1>正在拉起支付</h1>
-    <div class="msg">请在手机上打开本链接完成付款</div>
+    <div class="msg">若未自动打开支付页面，请点击下方按钮</div>
     <div class="money"><span class="rmb">￥</span>{money}</div>
     <div class="no">订单号 {trade_no}</div>
     <div class="fallback" id="fallback">
-      <div class="msg">未自动拉起？请点击下方按钮</div>
+      <div class="msg">未自动拉起？请点击下方按钮完成付款</div>
       <a class="btn" id="retry" href="{scheme_url}">立即支付</a>
     </div>
   </div>
   <div class="tips">支付完成后请勿关闭页面，将自动跳转</div>
 </div>
 <script>
+var TRADE = {trade_no_js};
 location.href = {scheme_js};
 setTimeout(function(){
   document.getElementById('fallback').style.display = 'block';
   document.getElementById('retry').style.display = 'inline-block';
 }, 2500);
-setInterval(async function(){
-  try{
-    var r = await fetch('/cashier/status?trade_no=' + encodeURIComponent({trade_no_js}));
-    var j = await r.json();
-    if(j.code === 0 && j.data && j.data.status === 1){
-      location.href = j.data.return_url || '/';
-    }
-  }catch(e){}
-}, 3000);
+if(TRADE){
+  setInterval(async function(){
+    try{
+      var r = await fetch('/cashier/status?trade_no=' + encodeURIComponent(TRADE));
+      var j = await r.json();
+      if(j.code === 0 && j.data && j.data.status === 1){
+        location.href = j.data.return_url || '/';
+      }
+    }catch(e){}
+  }, 3000);
+}
 </script>
 </body>
 </html>""", raw=frozenset({"scheme_js", "trade_no_js"}))
@@ -488,7 +569,7 @@ _QRCODE_TPL = _tpl("""<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>扫码支付</title>
 <style>
 """ + _BASE_CSS + """
@@ -500,8 +581,10 @@ _QRCODE_TPL = _tpl("""<!DOCTYPE html>
 .qr-box{display:inline-block;padding:12px;border:1px solid #e5e6eb;border-radius:12px;background:#fff}
 .qr-box svg{width:220px;height:220px;display:block}
 .qr-raw{color:#86909c;font-size:12px;margin-top:12px;word-break:break-all}
-.qr-card .no{color:#86909c;font-size:12px;margin-top:8px}
+.qr-card .no{color:#86909c;font-size:12px;margin-top:8px;word-break:break-all}
 .badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;margin-top:12px;background:#fff7e8;color:#ff7d00}
+.badge.ok{background:#e8ffea;color:#00b42a}
+.reload{display:inline-block;margin-top:14px;font-size:12px;color:#165dff;text-decoration:none}
 </style>
 </head>
 <body>
@@ -510,22 +593,30 @@ _QRCODE_TPL = _tpl("""<!DOCTYPE html>
     <h1>扫码支付</h1>
     <div class="subject">{subject}</div>
     <div class="money"><span class="rmb">￥</span>{money}</div>
-    <div class="qr-box">{qr_html}</div>
-    <div class="badge">待支付</div>
+    <div class="qr-box" id="qr-box">{qr_html}</div>
+    <div class="badge" id="badge">待支付</div>
     <div class="no">订单号 {trade_no}</div>
+    <a class="reload" href="javascript:void(0)" onclick="location.reload()">刷新二维码</a>
   </div>
   <div class="tips">请使用对应 APP 扫码完成付款，支付后自动跳转</div>
 </div>
 <script>
-setInterval(async function(){
-  try{
-    var r = await fetch('/cashier/status?trade_no=' + encodeURIComponent({trade_no_js}));
-    var j = await r.json();
-    if(j.code === 0 && j.data && j.data.status === 1){
-      location.href = j.data.return_url || '/';
-    }
-  }catch(e){}
-}, 3000);
+var TRADE = {trade_no_js};
+if(TRADE){
+  setInterval(async function(){
+    try{
+      var r = await fetch('/cashier/status?trade_no=' + encodeURIComponent(TRADE));
+      var j = await r.json();
+      if(j.code === 0 && j.data && j.data.status === 1){
+        var b = document.getElementById('badge');
+        b.textContent = '支付成功';
+        b.className = 'badge ok';
+        document.getElementById('qr-box').style.opacity = '.35';
+        location.href = j.data.return_url || '/';
+      }
+    }catch(e){}
+  }, 3000);
+}
 </script>
 </body>
 </html>""", raw=frozenset({"qr_html", "trade_no_js"}))
@@ -562,18 +653,20 @@ _PAYPAGE_GO_TPL = _tpl("""<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>正在创建支付订单</title>
 <meta http-equiv="refresh" content="1;url={go_url}">
 <style>
 body{display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f5f6f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#1d2129}
-.box{text-align:center}
+.box{text-align:center;padding:0 24px}
 .spinner{width:32px;height:32px;margin:0 auto 16px;border:3px solid #e5e6eb;border-top-color:#165dff;border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.box p{font-size:15px}
+.box p{font-size:15px;line-height:1.6}
+.box .sub{font-size:12px;color:#86909c;margin-top:8px}
 </style>
 </head>
-<body><div class="box"><div class="spinner"></div><p>正在为您创建支付订单，请稍候…</p></div>
+<body><div class="box"><div class="spinner"></div><p>正在为您创建支付订单，请稍候…</p>
+<div class="sub">页面将自动跳转，请勿关闭</div>
 <script>
 var goUrl = {go_js};
 var jumped = false;
@@ -594,14 +687,14 @@ _PAYPAGE_ERR_TPL = _tpl("""<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>无法付款</title>
 <style>
 """ + _BASE_CSS + """
 .result{text-align:center;padding:40px 24px}
 .result .mark{width:64px;height:64px;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:34px;color:#fff;font-weight:700;background:#ff7d00}
 .result h1{color:#1d2129;font-size:20px;font-weight:600;margin-bottom:8px}
-.result .msg{color:#86909c;font-size:14px;word-break:break-all}
+.result .msg{color:#86909c;font-size:14px;word-break:break-all;line-height:1.6}
 </style>
 </head>
 <body>
@@ -611,7 +704,7 @@ _PAYPAGE_ERR_TPL = _tpl("""<!DOCTYPE html>
     <h1>无法付款</h1>
     <div class="msg">{message}</div>
   </div>
-  <div class="tips">请联系商户重新发起付款</div>
+  <div class="tips">请联系商户重新发起付款，或稍后重新打开本链接</div>
 </div>
 </body>
 </html>""")
@@ -626,15 +719,16 @@ _PAYPAGE_PAGE = r"""<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
 <title>向商户付款</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:#f5f6f7;min-height:100vh}
-.wrap{max-width:420px;margin:0 auto;padding:24px 16px}
+html{-webkit-text-size-adjust:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif;background:#f5f6f7;min-height:100vh;-webkit-font-smoothing:antialiased}
+.wrap{max-width:420px;margin:0 auto;padding:24px 16px;padding-bottom:calc(24px + env(safe-area-inset-bottom))}
 .card{background:#fff;border-radius:14px;padding:24px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
 .mch{display:flex;align-items:center;gap:10px}
-.mch .avatar{width:44px;height:44px;border-radius:10px;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700}
+.mch .avatar{width:44px;height:44px;border-radius:10px;background:#165dff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;flex-shrink:0}
 .mch .name{font-size:16px;font-weight:600;color:#1d2129}
 .mch .sub{font-size:12px;color:#86909c;margin-top:2px}
 .money-input{display:flex;align-items:baseline;gap:6px;justify-content:center;padding:20px 0 8px}
@@ -645,11 +739,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hira
 .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
 .keypad button{padding:16px 0;font-size:20px;border:none;border-radius:10px;background:#f2f3f5;color:#1d2129;cursor:pointer}
 .keypad button:active{background:#e5e6eb}
-.btn{width:100%;padding:14px;border:none;border-radius:10px;background:#165dff;color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-top:14px}
-.btn:disabled{background:#94bfff}
-.tips{color:#86909c;font-size:12px;text-align:center;margin-top:16px}
-.hidden{display:none}
-#msg{color:#86909c;text-align:center;padding:40px 0;font-size:14px}
+.btn{width:100%;padding:14px;border:none;border-radius:10px;background:#165dff;color:#fff;font-size:16px;font-weight:600;cursor:pointer;margin-top:14px;transition:opacity .15s}
+.btn:disabled{background:#94bfff;cursor:not-allowed}
+.btn:active:not(:disabled){opacity:.85}
+.tips{color:#86909c;font-size:12px;text-align:center;margin-top:16px;line-height:1.6}
+.hidden{display:none !important}
+#msg{color:#86909c;text-align:center;padding:32px 0;font-size:14px;line-height:1.6;word-break:break-all}
+.pay-err{color:#f53f3f;background:#fff1f0;border:1px solid #ffccc7;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.6;margin-top:12px;word-break:break-all}
+.btn-retry{width:auto;min-width:140px;margin:16px auto 0;padding:10px 24px;font-size:14px;display:block}
 </style>
 </head>
 <body>
@@ -672,6 +769,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hira
         <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
         <button data-k=".">.</button><button data-k="0">0</button><button data-k="del">删除</button>
       </div>
+      <div class="pay-err hidden" id="pay-err"></div>
       <button class="btn" id="pay-btn">付款</button>
     </div>
   </div>
@@ -681,26 +779,41 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hira
 var mt = location.pathname.match(/^\/p\/([A-Za-z0-9_-]{6,32})\/?$/);
 var TOKEN = (mt && mt[1]) || '';
 var submitting = false;
-function showErr(msg){
-  document.getElementById('form').classList.add('hidden');
-  document.getElementById('err').classList.remove('hidden');
-  document.getElementById('msg').textContent = msg || '页面不可用';
+function $(id){ return document.getElementById(id); }
+function showErr(msg, retry){
+  $('form').classList.add('hidden');
+  $('err').classList.remove('hidden');
+  var box = $('msg');
+  box.textContent = msg || '页面不可用';
+  if(retry){
+    var b = document.createElement('button');
+    b.className = 'btn btn-retry'; b.textContent = '重新加载';
+    b.addEventListener('click', function(){ location.reload(); });
+    box.appendChild(b);
+  }
 }
+function showPayErr(msg){
+  var box = $('pay-err');
+  box.textContent = msg || '发起失败，请重试';
+  box.classList.remove('hidden');
+}
+function clearPayErr(){ $('pay-err').classList.add('hidden'); }
 var PID = '';
 async function loadInfo(){
-  if(!TOKEN){ showErr('链接无效'); return; }
+  if(!TOKEN){ showErr('链接无效', false); return; }
   try{
     var j = await (await fetch('/paypage/info?token=' + encodeURIComponent(TOKEN))).json();
-    if(j.code !== 0){ showErr(j.message); return; }
+    if(j.code !== 0){ showErr(j.message, false); return; }
     PID = String(j.data.pid);
-    document.getElementById('mch-name').textContent = j.data.name;
-    document.getElementById('avatar').textContent = (j.data.name || '?').slice(0,1);
-  }catch(e){ showErr('网络错误，请重试'); }
+    $('mch-name').textContent = j.data.name;
+    $('avatar').textContent = (j.data.name || '?').slice(0,1);
+  }catch(e){ showErr('网络错误，请重试', true); }
 }
-document.getElementById('keypad').addEventListener('click', function(e){
+$('keypad').addEventListener('click', function(e){
   var k = e.target && e.target.dataset && e.target.dataset.k;
   if(!k) return;
-  var el = document.getElementById('money');
+  clearPayErr();
+  var el = $('money');
   if(k === 'del'){ el.value = el.value.slice(0, -1); return; }
   if(k === '.' && el.value.indexOf('.') >= 0) return;
   var next = el.value + k;
@@ -708,22 +821,23 @@ document.getElementById('keypad').addEventListener('click', function(e){
   if(parts[1] && parts[1].length > 2) return;
   if(!isNaN(parseFloat(next))) el.value = next;
 });
-document.getElementById('pay-btn').addEventListener('click', async function(){
+$('pay-btn').addEventListener('click', async function(){
   if(submitting) return;
-  var money = document.getElementById('money').value;
-  if(!money || parseFloat(money) <= 0){ alert('请输入付款金额'); return; }
+  var money = $('money').value;
+  if(!money || parseFloat(money) <= 0){ showPayErr('请输入付款金额'); return; }
+  clearPayErr();
   submitting = true;
   var btn = this; btn.disabled = true; btn.textContent = '正在发起...';
   try{
     var r = await fetch('/paypage/order', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({token: TOKEN, money: money,
-                            remark: document.getElementById('remark').value})});
+                            remark: $('remark').value})});
     var j = await r.json();
     if(j.code === 0 && j.data && j.data.cashier_url){
       location.href = j.data.cashier_url; return;
     }
-    alert((j && j.message) || '发起失败，请重试');
-  }catch(e){ alert('网络错误，请重试'); }
+    showPayErr((j && j.message) || '发起失败，请重试');
+  }catch(e){ showPayErr('网络错误，请检查网络后重试'); }
   submitting = false; btn.disabled = false; btn.textContent = '付款';
 });
 loadInfo();

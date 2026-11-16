@@ -14,6 +14,7 @@ import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
+  ListError,
   actionsColumn,
   dateCell,
   truncatedCell,
@@ -27,6 +28,7 @@ import {
   IconSearch, IconRefresh, IconPlus, IconEdit, IconLogin,
   IconCopy, IconTrash,
 } from "@tabler/icons-react"
+import { getErrorMessage } from "@/lib/error"
 import { toast } from "sonner"
 
 // 名称必填 ≤64；密码长度在提交时按新增/编辑分别校验（编辑可留空不改）
@@ -88,7 +90,7 @@ export function AgentsPage() {
       setDialogOpen(false)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     } finally {
       setSaving(false)
     }
@@ -102,7 +104,7 @@ export function AgentsPage() {
       setDeleteTarget(null)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -111,7 +113,7 @@ export function AgentsPage() {
       const res = await agentsApi.sso(item.id)
       window.open(res.url, "_blank")
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
@@ -122,7 +124,7 @@ export function AgentsPage() {
   }
 
   const {
-    table, total, loading, keyword, setKeyword, applyFilters, refresh,
+    table, total, loading, error, keyword, setKeyword, applyFilters, refresh,
   } = useDataList<AgentData>({
     // keyword 搜索框映射为后端的 kw（名称/备注模糊）
     fetchFn: (params) => {
@@ -190,7 +192,6 @@ export function AgentsPage() {
       ] as ActionItem<AgentData>[], { width: 340 }),
     ],
     perPage: 15,
-    onError: () => toast.error("操作失败"),
   })
 
   const handleReset = () => {
@@ -229,9 +230,13 @@ export function AgentsPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} total={total} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} total={total} />
+            </DataTable>
+          )}
         </div>
       </div>
 
