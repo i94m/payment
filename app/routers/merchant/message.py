@@ -3,6 +3,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
+from sqlalchemy import update as sa_update
 from sqlmodel import col, func, select
 
 from app.core.deps import SessionDep
@@ -66,14 +67,14 @@ async def mark_read(body: ReadRequest, session: SessionDep, auth: MerchantUser):
             msg.read_at = now
             session.add(msg)
     else:
-        rows = (await session.exec(
-            select(MerchantMessage).where(
+        # 全部已读：一条 UPDATE 批量置位（原实现逐行 SELECT + UPDATE）
+        await session.exec(
+            sa_update(MerchantMessage)
+            .where(
                 MerchantMessage.merchant_id == auth.user.id,
                 col(MerchantMessage.read_at).is_(None),
             )
-        )).all()
-        for msg in rows:
-            msg.read_at = now
-            session.add(msg)
+            .values(read_at=now)
+        )
     await session.commit()
     return suc("success")

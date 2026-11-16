@@ -430,17 +430,22 @@ async def test_agent_dashboard_and_order_list(client, seeded, session):
     assert _money(d["data"]["total"]["money"]) == Decimal("22.50")
     assert d["data"]["total"]["count"] == 3
 
-    # 订单列表：只见自己的单（含被扣量单——代理侧原样展示），倒序
+    # 订单列表：只见自己的单（含被扣量单——代理侧按商户口径遮蔽为「未支付」），倒序
     o = (await client.get("/agent-api/order/list", headers=h)).json()
     assert o["code"] == 0, o
     assert o["data"]["total"] == 4
     assert all(row["trade_no"] for row in o["data"]["items"])
+    # 扣量单不可从列表反推：状态/实收/支付时间全部按未支付返回
+    sent = next(row for row in o["data"]["items"] if _money(row["money"]) == Decimal("9.00"))
+    assert sent["status"] == 0 and sent["realmoney"] == "" and sent["paid_at"] == ""
 
-    # 状态筛选：待支付
+    # 状态筛选（代理视角）：待支付含扣量单；已支付排除扣量单
     o2 = (await client.get("/agent-api/order/list", params={"status": 0}, headers=h)).json()
-    assert o2["data"]["total"] == 0
+    assert o2["data"]["total"] == 1
+    assert _money(o2["data"]["items"][0]["money"]) == Decimal("9.00")
     o3 = (await client.get("/agent-api/order/list", params={"status": 1}, headers=h)).json()
-    assert o3["data"]["total"] == 4
+    assert o3["data"]["total"] == 3
+    assert all(row["status"] == 1 for row in o3["data"]["items"])
 
     # 日期筛选：仅前天那笔
     day = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")

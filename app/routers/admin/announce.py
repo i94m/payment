@@ -11,6 +11,7 @@ from app.core.deps import CacheDep, SessionDep
 from app.core.security import PermissionChecker
 from app.models import Announcement
 from app.responses import err, paginate, suc
+from app.routers.common.params import parse_int
 
 router = APIRouter()
 
@@ -42,7 +43,7 @@ async def announce_list(session: SessionDep, page: int = Query(1, ge=1),
     if body.get("keyword"):
         query = query.where(col(Announcement.content).contains(str(body["keyword"])))
     if body.get("status") is not None and body.get("status") != "":
-        query = query.where(Announcement.status == int(body["status"]))
+        query = query.where(Announcement.status == parse_int(body["status"], "status"))
     total = (await session.exec(select(func.count()).select_from(query.subquery()))).one()
     items = (await session.exec(query.offset((page - 1) * per_page).limit(per_page))).all()
     return suc(paginate(items=[_dump(a) for a in items], total=total,
