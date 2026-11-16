@@ -2,7 +2,7 @@
 
 覆盖点与实现的对应关系：
 - 凭据脱敏：列表/详情默认掩码、reveal 需 channel.update、掩码回传=不修改
-- 配置写白名单：PATCH 只能改 ADMIN_SETTING_KEYS
+- 配置写白名单：PATCH 只能改 ADMIN_SETTING_KEYS（订单回补窗口在表内）
 - 设置缓存加密：Redis 里不得出现平台私钥明文
 - SMTP 真实结果：不再「未 await 的 Future 恒真」
 - 存储驱动：绝对路径/`../` 越界在驱动层拒绝
@@ -227,6 +227,34 @@ async def test_settings_patch_rejects_hidden_keys(session, client, seeded):
     )).first()
     assert audit is not None
     assert audit.actor_name == "管理员"
+
+
+@pytest.mark.asyncio
+async def test_settings_page_allows_late_pay_backfill_window(session, client, seeded):
+    """`late_pay_backfill_hours`（P0-4 过期单回补窗口）必须在站点配置页白名单内。
+
+    P1-9 白名单收紧后该键一度不在 ADMIN_SETTING_KEYS 内：页面不展示、PATCH 直接
+    422，回补窗口就变成只能改库——回补口径是站点可调项，必须走配置页。
+    """
+    headers, _ = await _make_admin(session, "secbackfill")
+
+    resp = await client.get("/admin-api/setting", headers=headers)
+    items = {i["key"]: i for i in resp.json()["data"]["items"]}
+    assert "late_pay_backfill_hours" in items
+    assert items["late_pay_backfill_hours"]["group"] == "order"
+    assert items["late_pay_backfill_hours"]["default"] == 24
+
+    r = await client.patch("/admin-api/setting",
+                           json={"late_pay_backfill_hours": 48}, headers=headers)
+    assert r.status_code == 200
+
+    from app.services.settings import get_int_setting
+    assert await get_int_setting(session, "late_pay_backfill_hours") == 48
+
+    # 白名单只决定「能不能改」，类型仍由注册表校验：非法值整体拒绝
+    bad = await client.patch("/admin-api/setting",
+                             json={"late_pay_backfill_hours": "abc"}, headers=headers)
+    assert bad.status_code == 422
 
 
 @pytest.mark.asyncio

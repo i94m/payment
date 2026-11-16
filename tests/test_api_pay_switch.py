@@ -160,7 +160,7 @@ async def test_api_order_rate_limit_configurable(client, session):
 
 @pytest.mark.asyncio
 async def test_settings_page_whitelist_deduct_and_settle(client, session):
-    """页面白名单 = 站点名称 + 扣量 + 结算组（自动结算/D+1 除外）：
+    """页面白名单 = 站点名称 + 订单回补窗口 + 扣量 + 结算组（自动结算/D+1 除外）：
     注册开关、D+1 开关不再展示；PATCH 只接受页面白名单内的键（P1-9），
     其余配置走服务层/直接写库。"""
     from app.constants.settings import ADMIN_SETTING_KEYS
