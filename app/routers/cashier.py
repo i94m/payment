@@ -8,13 +8,14 @@
 """
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import select
 
 from app.core.deps import CacheDep, SessionDep
 from app.core.limiter import rate_limit
 from app.models import Merchant, Order, PaymentType
 from app.responses import err, suc_data
+from app.routers.common.params import parse_bool
 from app.services.channel import list_available_pay_types
 from app.services.order import (
     ORDER_PAID,
@@ -71,7 +72,11 @@ async def launch_payment(request: Request, session: SessionDep, cache: CacheDep,
         body = await request.json()
         trade_no = str(body.get("trade_no", "") or "")
         type_code = str(body.get("type", "") or "")
-        refresh = bool(body.get("refresh", False))
+        # 裸 bool() 会把字符串 "false"/"0" 判成真，导致每次都重新拉起上游；
+        # 统一走 parse_bool（非法值 400 + 字段名）。
+        refresh = parse_bool(body.get("refresh"), "refresh", default=False)
+    except HTTPException:
+        raise
     except Exception:
         return err(-1, "参数错误")
     if not trade_no or not type_code:
