@@ -417,6 +417,104 @@ async def test_settle_mark_paid_frozen_mismatch_refuses(client, seeded, session)
 
 
 @pytest.mark.asyncio
+async def test_settle_paid_survives_notify_failure(client, seeded, session, engine, monkeypatch):
+    """通知抛异常不回滚已完成的打款：结算单/余额/冻结额都按打款落库。"""
+    import app.services.message as message_module
+    from app.services.settle import apply_settlement, mark_settlement_paid
+
+    m = await _settle_ready_merchant(session)
+    merchant_id = m.id
+    settle, error = await apply_settlement(session, m, "50.00")
+    assert error == "", error
+    settle_id = settle.id
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("SMTP down")
+
+    monkeypatch.setattr(message_module, "send_merchant_message", _boom)
+    ok, msg = await mark_settlement_paid(session, settle_id)
+    assert ok is True and msg == ""  # 通知失败不影响资金操作的返回结果
+
+    from tests.test_deduct_refill import _fresh_maker
+    async with _fresh_maker(engine)() as s:
+        row = (await s.exec(
+            select(Settlement).where(Settlement.id == settle_id))).one()
+        assert row.status == 1 and row.paid_at is not None
+        fresh = await s.get(Merchant, merchant_id)
+        assert dmoney(fresh.balance) == dmoney("50.00")
+        assert dmoney(fresh.frozen_balance) == dmoney("0.00")
+        # 通知行没落库，但资金结果已在（不是整笔回滚，也不是半提交）
+        from app.models import MerchantMessage
+        assert (await s.exec(select(MerchantMessage).where(
+            MerchantMessage.merchant_id == merchant_id))).all() == []
+
+
+@pytest.mark.asyncio
+async def test_settle_reject_survives_notify_failure(client, seeded, session, engine, monkeypatch):
+    """通知抛异常不回滚已完成的驳回：冻结退回余额已落库。"""
+    import app.services.message as message_module
+    from app.services.settle import apply_settlement, reject_settlement
+
+    m = await _settle_ready_merchant(session)
+    merchant_id = m.id
+    settle, error = await apply_settlement(session, m, "60.00")
+    assert error == "", error
+    settle_id = settle.id
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("SMTP down")
+
+    monkeypatch.setattr(message_module, "send_merchant_message", _boom)
+    ok, msg = await reject_settlement(session, settle_id, remark="信息有误")
+    assert ok is True and msg == ""
+
+    from tests.test_deduct_refill import _fresh_maker
+    async with _fresh_maker(engine)() as s:
+        row = (await s.exec(
+            select(Settlement).where(Settlement.id == settle_id))).one()
+        assert row.status == 2
+        fresh = await s.get(Merchant, merchant_id)
+        assert dmoney(fresh.balance) == dmoney("100.00")
+        assert dmoney(fresh.frozen_balance) == dmoney("0.00")
+
+
+@pytest.mark.asyncio
+async def test_settle_notify_runs_after_funds_commit(client, seeded, session, monkeypatch):
+    """通知不在资金事务内：资金 commit 先发生，通知在其后才被调用。"""
+    import app.services.message as message_module
+    from app.services.settle import apply_settlement, mark_settlement_paid
+
+    m = await _settle_ready_merchant(session)
+    settle, error = await apply_settlement(session, m, "50.00")
+    assert error == "", error
+    settle_id = settle.id
+
+    events: list[str] = []
+    state: dict[str, object] = {}
+
+    async def _spy_send(sess, merchant, **kwargs):
+        events.append("notify")
+        # 打点时点断言：通知被调用时资金事务已经结束（没有开着的事务）
+        state["in_transaction"] = sess.in_transaction()
+
+    real_commit = session.commit
+
+    async def _spy_commit():
+        events.append("commit")
+        await real_commit()
+
+    monkeypatch.setattr(message_module, "send_merchant_message", _spy_send)
+    monkeypatch.setattr(session, "commit", _spy_commit)
+
+    ok, msg = await mark_settlement_paid(session, settle_id)
+    assert ok and msg == ""
+    # 顺序断言：先 commit 冻结扣减/状态机，再把通知投递出去
+    assert events[0] == "commit"
+    assert events.index("notify") == 1
+    assert state["in_transaction"] is False
+
+
+@pytest.mark.asyncio
 async def test_auto_settle_respects_d1_income(client, seeded, session):
     """自动结算的可提口径必须扣 D+1 当日收款（P2-23），否则 D+1 商户永远被拒。"""
     from app.services.settle import auto_settle_merchants

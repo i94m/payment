@@ -10,11 +10,14 @@
 - 打款/驳回：先 `lock_settlement` 锁结算单行，状态机判断与冻结扣减在同一事务内，
   双击打款或打款+驳回并发时只有一个请求能通过 status==0 校验。
 - 冻结扣减走 change_frozen_balance：不做 `max(...,0)` 截断，冻结不足显式报错。
+- 打款/驳回的通知（站内消息 + 订阅邮件）在资金事务 commit 之后才发：
+  SMTP 最坏 20s 不占结算行/商户行锁；通知失败只记日志，不回滚已完成的资金结果。
 """
 import logging
 import random
 from datetime import datetime
 from decimal import Decimal
+from typing import NamedTuple
 
 from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -275,23 +278,69 @@ async def _lock_settlement(session: AsyncSession, settle_id: int) -> Settlement 
     )).first()
 
 
+class _SettleNotice(NamedTuple):
+    """资金事务提交后再发的通知（商户实例 + 已渲染好的文案）。
+
+    文案在事务内渲染完（用到 `settle_no`/`real_amount`/`account`），提交后只做投递，
+    避免提交后访问已到期的 ORM 属性。
+    """
+
+    merchant: Merchant
+    title: str
+    content: str
+
+
+async def _deliver_settle_notice(session: AsyncSession, notice: _SettleNotice | None) -> None:
+    """在资金事务之外投递结算通知（站内消息落库 + 按订阅发邮件）。
+
+    调用点已在 `commit` 与协作锁之后：SMTP 最坏 20s 期间不持有结算行/商户行锁。
+    通知失败（含消息行写不进去）只记日志，绝不回滚已提交的打款/驳回——资金结果
+    已经落库，回头回滚会让管理员看到「报错但钱已经动了」。
+    """
+    if notice is None:
+        return
+
+    from app.services.message import send_merchant_message
+
+    merchant_id = notice.merchant.id
+    try:
+        await send_merchant_message(
+            session, notice.merchant,
+            title=notice.title, content=notice.content,
+            biz_type="settle", subscribe_flag="notify_settle",
+        )
+        # 消息行是独立事务：与资金事务解耦，单独提交
+        await session.commit()
+    except Exception:
+        try:
+            await session.rollback()
+        except Exception:  # pragma: no cover - 连接已断时 rollback 也会失败
+            pass
+        _log.warning(
+            "结算通知投递失败（资金结果已提交，不回滚） merchant_id=%s title=%s",
+            merchant_id, notice.title, exc_info=True,
+        )
+
+
 async def mark_settlement_paid(session: AsyncSession, settle_id: int, remark: str = "") -> tuple[bool, str]:
-    """平台打款标记（冻结扣减 + 站内消息 + 按订阅发邮件）。"""
+    """平台打款标记（冻结扣减先提交，再发站内消息/邮件）。"""
     async with coop_lock(f"settle:op:{settle_id}"):
-        return await _mark_settlement_paid_impl(session, settle_id, remark)
+        ok, msg, notice = await _mark_settlement_paid_impl(session, settle_id, remark)
+    if ok:
+        # 事务已提交、协作锁已释放：通知在两者之外，慢 SMTP 不再占锁
+        await _deliver_settle_notice(session, notice)
+    return ok, msg
 
 
 async def _mark_settlement_paid_impl(
     session: AsyncSession, settle_id: int, remark: str = "",
-) -> tuple[bool, str]:
-    from app.services.message import send_merchant_message
-
+) -> tuple[bool, str, _SettleNotice | None]:
     settle = await _lock_settlement(session, settle_id)
     if not settle:
-        return False, "结算单不存在"
+        return False, "结算单不存在", None
     if settle.status != 0:
         await session.rollback()
-        return False, "结算单状态不允许该操作"
+        return False, "结算单状态不允许该操作", None
 
     try:
         merchant = await change_frozen_balance(session, settle.merchant_id, -dmoney(settle.amount))
@@ -301,18 +350,17 @@ async def _mark_settlement_paid_impl(
         await session.rollback()
         _log.critical("结算打款冻结扣减异常 settle_no=%s merchant_id=%s amount=%s: %s",
                       settle_no, merchant_id, settle_amount, e)
-        return False, "冻结余额异常，请先核对资金流水再重试"
+        return False, "冻结余额异常，请先核对资金流水再重试", None
 
     settle.status = 1
     settle.paid_at = datetime.now()
     if remark:
         settle.remark = remark[:255]
     session.add(settle)
-    await send_merchant_message(
-        session, merchant,
+    notice = _SettleNotice(
+        merchant=merchant,
         title="结算已打款",
         content=f"结算单 {settle.settle_no} 已打款 {settle.real_amount} 元至 {settle.account}。",
-        biz_type="settle", subscribe_flag="notify_settle",
     )
     settle_no = settle.settle_no
     try:
@@ -321,27 +369,28 @@ async def _mark_settlement_paid_impl(
         # 提交失败（并发写冲突/连接中断）：整笔回滚，绝不能对管理员报"已打款"
         await session.rollback()
         _log.critical("结算打款提交失败 settle_no=%s", settle_no, exc_info=True)
-        return False, "打款提交失败，请重试"
-    return True, ""
+        return False, "打款提交失败，请重试", None
+    return True, "", notice
 
 
 async def reject_settlement(session: AsyncSession, settle_id: int, remark: str = "") -> tuple[bool, str]:
-    """拒绝结算 → 冻结退回余额。"""
+    """拒绝结算 → 冻结退回余额（退回先提交，再发站内消息/邮件）。"""
     async with coop_lock(f"settle:op:{settle_id}"):
-        return await _reject_settlement_impl(session, settle_id, remark)
+        ok, msg, notice = await _reject_settlement_impl(session, settle_id, remark)
+    if ok:
+        await _deliver_settle_notice(session, notice)
+    return ok, msg
 
 
 async def _reject_settlement_impl(
     session: AsyncSession, settle_id: int, remark: str = "",
-) -> tuple[bool, str]:
-    from app.services.message import send_merchant_message
-
+) -> tuple[bool, str, _SettleNotice | None]:
     settle = await _lock_settlement(session, settle_id)
     if not settle:
-        return False, "结算单不存在"
+        return False, "结算单不存在", None
     if settle.status != 0:
         await session.rollback()
-        return False, "结算单状态不允许该操作"
+        return False, "结算单状态不允许该操作", None
 
     try:
         await change_frozen_balance(session, settle.merchant_id, -dmoney(settle.amount))
@@ -350,7 +399,7 @@ async def _reject_settlement_impl(
         await session.rollback()
         _log.critical("结算驳回冻结扣减异常 settle_no=%s merchant_id=%s amount=%s: %s",
                       settle_no, merchant_id, settle_amount, e)
-        return False, "冻结余额异常，请先核对资金流水再重试"
+        return False, "冻结余额异常，请先核对资金流水再重试", None
 
     settle.status = 2
     if remark:
@@ -361,18 +410,18 @@ async def _reject_settlement_impl(
         biz_type="settle_reject", trade_no=settle.settle_no, remark="结算拒绝退回",
     )
     merchant = await session.get(Merchant, settle.merchant_id)
-    settle_no = settle.settle_no
+    notice = None
     if merchant:
-        await send_merchant_message(
-            session, merchant,
+        notice = _SettleNotice(
+            merchant=merchant,
             title="结算被驳回",
             content=f"结算单 {settle.settle_no} 被驳回，{settle.amount} 元已退回余额。原因：{remark or '无'}",
-            biz_type="settle", subscribe_flag="notify_settle",
         )
+    settle_no = settle.settle_no
     try:
         await session.commit()
     except Exception:
         await session.rollback()
         _log.critical("结算驳回提交失败 settle_no=%s", settle_no, exc_info=True)
-        return False, "驳回提交失败，请重试"
-    return True, ""
+        return False, "驳回提交失败，请重试", None
+    return True, "", notice
