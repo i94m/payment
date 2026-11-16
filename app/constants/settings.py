@@ -58,7 +58,8 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
         # ---- order ----
         SettingSpec("order_expire_minutes", SettingType.INT, 30, SettingGroup.ORDER, "订单过期时间（分钟）"),
         SettingSpec("query_unpaid_enable", SettingType.BOOL, True, SettingGroup.ORDER, "掉单主动查单开关"),
-        SettingSpec("query_unpaid_window", SettingType.INT, 10, SettingGroup.ORDER, "主动查单窗口（分钟，仅扫近 N 分钟内创建的待支付单）"),
+        SettingSpec("query_unpaid_window", SettingType.INT, 10, SettingGroup.ORDER,
+                    "主动查单窗口（分钟：扫 expire_at 不早于 now-N 的待支付单，订单有效期外再宽限 N 分钟）"),
         SettingSpec("late_pay_backfill_hours", SettingType.INT, 24, SettingGroup.ORDER,
                     "过期单回补窗口（小时，0=关闭；过期后该窗口内仍接受已验签的回调/查单入账，"
                     "窗口外的历史单只能后台手动补单）"),

@@ -11,7 +11,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlmodel import select
 
 from app.core.deps import CacheDep, SessionDep
-from app.logic.api_verify import verify_api_signature
+from app.logic.api_verify import ensure_not_replayed, verify_api_signature
 from app.models import Merchant
 
 _log = logging.getLogger(__name__)
@@ -62,6 +62,12 @@ async def get_api_user(request: Request, session: SessionDep,
 
     try:
         verify_api_signature(merchant.public_key, params)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={"code": -3, "message": str(e)})
+
+    # 签名一次性校验：同一签名 300s 内只受理一次（防截获重放；验签通过后才消耗签名）
+    try:
+        await ensure_not_replayed(cache, merchant.id, params)
     except ValueError as e:
         raise HTTPException(status_code=400, detail={"code": -3, "message": str(e)})
 

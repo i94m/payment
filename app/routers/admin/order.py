@@ -167,15 +167,19 @@ async def order_refill(session: SessionDep, cache: CacheDep, request: Request, a
     """手动补单：跳过上游验证直接记账（金额用订单自身 realmoney）。
 
     扣量单（is_deducted=1）走扣量回补：补入账 + 补返佣 + 排队补发通知。
+    过期单（status=3）走**受控回补路径**：管理员已确认上游确实收到款，
+    因此不受 late_pay_backfill_hours 窗口限制（P0-4）；返回值里会标明是过期回补。
     补单是「无凭证入账」，必须写审计（P1-7）：谁、哪一笔、补了多少。
     """
-    from app.services.order import undo_deduct
+    from app.services.order import ORDER_EXPIRED, ORDER_PAID, undo_deduct
     from app.services.audit import record_audit
 
     trade_no = str(body.get("trade_no", "") or "")
     order = await get_order_by_trade_no(session, trade_no)
     if not order:
         return err(404, "订单不存在")
+    if order.status == ORDER_PAID and not order.is_deducted:
+        return suc("订单已支付，无需补单")
     audit_after = {"trade_no": trade_no, "merchant_id": order.merchant_id,
                    "status": order.status,
                    "realmoney": str(order.realmoney if order.realmoney is not None else order.money)}
@@ -192,10 +196,12 @@ async def order_refill(session: SessionDep, cache: CacheDep, request: Request, a
             remark="扣量单回补",
         )
         return suc("扣量单已回补入账并通知")
+    was_expired = order.status == ORDER_EXPIRED
     result = await process_paid_order(
         trade_no, order.api_trade_no or "MANUAL",
         order.realmoney if order.realmoney is not None else order.money,
         order.buyer_id or "manual", session, cache,
+        allow_expired=True,  # 人工确认过的受控回补
     )
     if result.status in ("paid", "duplicate"):
         if result.status == "paid":
@@ -208,9 +214,11 @@ async def order_refill(session: SessionDep, cache: CacheDep, request: Request, a
             target_type="order", target_id=trade_no, after=audit_after,
             remark=f"手动补单({result.status})",
         )
-        return suc("补单成功")
+        return suc("过期单回补成功（请核对上游收款凭证）" if was_expired else "补单成功")
     if result.status == "mismatch":
         return err(-1, "金额校验失败")
+    if result.status == "invalid":
+        return err(-1, "订单状态不可补单，请核对订单状态后重试")
     return err(-1, _refill_error_text(result.status))
 
 
