@@ -1,11 +1,12 @@
 """admin 认证（SystemAdmin）。"""
 from datetime import datetime
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlmodel import select
 
 from app.core.deps import CacheDep, SessionDep
+from app.core.limiter import rate_limit
 from app.core.security import (
     AdminUser,
     dump_user_tokens,
@@ -14,7 +15,7 @@ from app.core.security import (
     revoke_user_token_by_id,
     verify_password,
 )
-from app.models import SystemAdmin
+from app.models import SystemAdmin, SystemAdminLogin
 from app.responses import err, suc
 
 router = APIRouter()
@@ -27,7 +28,7 @@ class LoginRequest(BaseModel):
     captcha_code: str = ""
 
 
-@router.post("/login")
+@router.post("/login", dependencies=[rate_limit(times=10, minutes=1)])
 async def login(body: LoginRequest, request: Request, session: SessionDep, cache: CacheDep):
     from app.lib.captcha import verify_captcha_code
     captcha_err = await verify_captcha_code(cache, body.captcha_key, body.captcha_code)
@@ -51,9 +52,15 @@ async def login(body: LoginRequest, request: Request, session: SessionDep, cache
         single_session=True,
         cache=cache,
     )
+    ip = request.client.host if request.client else None
     row.last_active_at = datetime.now()
-    row.last_active_ip = request.client.host if request.client else None
+    row.last_active_ip = ip
     session.add(row)
+    # system_admin_logins：登录留痕（此前是死表，P1-7 一并启用）
+    session.add(SystemAdminLogin(
+        admin_id=row.id, ip=(ip or "")[:45],
+        user_agent=(request.headers.get("user-agent", "") or "")[:500],
+    ))
     await session.commit()
 
     return suc({

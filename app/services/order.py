@@ -21,7 +21,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.cache import CacheClient, try_lock, release_lock
 from app.models import Counter, Merchant, Order, PaymentType
-from app.services.balance import change_merchant_balance, dmoney
+from app.services.balance import change_merchant_balance, dmoney, lock_merchant
 from app.services.pay_debug import write_pay_debug
 from app.services.channel import ResolvedChannel, choose_channel
 from app.services.plugin import PluginRegistry, maybe_await
@@ -89,6 +89,7 @@ class PaidResult:
     status: str           # paid/duplicate/mismatch/invalid/not_found/lock_failed
     order: Order | None = None
     should_notify: bool = False
+    late_pay: bool = False  # 过期单回补（受控路径）记账成功
 
 
 def _quant(v: Decimal | str | None) -> Decimal:
@@ -113,6 +114,16 @@ def _host_allowed(allowed_domains: str | None, host: str) -> bool:
         elif host == rule:
             return True
     return False
+
+
+def _is_http_url(url: str) -> bool:
+    """回调/回跳地址只接受 http(s)（SSRF 的目的地校验在投递侧，见 services/notify）。"""
+    try:
+        from urllib.parse import urlsplit
+        parts = urlsplit(url)
+    except Exception:
+        return False
+    return parts.scheme in ("http", "https") and bool(parts.netloc)
 
 
 # ============================================================
@@ -146,6 +157,10 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
         raise ValueError("商品名称不能为空")
     if not type_code:
         raise ValueError("支付方式不能为空")
+    if notify_url and not _is_http_url(notify_url):
+        raise ValueError("回调地址必须为 http/https 链接")
+    if return_url and not _is_http_url(return_url):
+        raise ValueError("回跳地址必须为 http/https 链接")
 
     merchant = (await session.exec(
         select(Merchant).where(Merchant.pid == int(pid))
@@ -207,10 +222,27 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
         raise ValueError("支付方式不存在或未启用")
 
     # 幂等：同商户同 out_trade_no 直接返回已有订单
+    # 一致性校验与并发冲突路径（下方 commit 冲突处理）同口径：金额/支付方式不一致
+    # 必须报错，不能静默返回旧单（否则商户以为按新金额下单、付款人付的却是旧金额）；
+    # 已过期订单不可再支付，同样要求换新单号（不能返回一张永远拉不起来的单）。
     existing = (await session.exec(
         select(Order).where(Order.out_trade_no == out_trade_no, Order.merchant_id == merchant.id)
     )).first()
     if existing:
+        if existing.money != money or existing.payment_type_code != pay_type.code:
+            raise ValueError("out_trade_no 已存在且金额或支付方式不一致")
+        if existing.status == ORDER_EXPIRED or (
+            existing.status == ORDER_PENDING
+            and existing.expire_at is not None
+            and existing.expire_at <= datetime.now()
+        ):
+            # 过期判定前置到建单入口（P2-22）：不能把一张已过期的单再返回给商户
+            # 去拉起支付，否则 payment 链接一律拉不起来却看起来"下单成功"。
+            if existing.status == ORDER_PENDING:
+                existing.status = ORDER_EXPIRED
+                session.add(existing)
+                await session.commit()
+            raise ValueError("out_trade_no 对应订单已过期，请使用新的商户订单号重新下单")
         return existing
 
     expire_minutes = await get_int_setting(session, "order_expire_minutes", cache)
@@ -361,7 +393,26 @@ async def process_payment(
 
     channel_id 指定时跳过通道路由、强制走该通道（管理端通道测试用）。
     上游报错时订单保持待支付（trade_no 保留），返回 ok=False。
+
+    状态/有效期前置校验（P2-22）：非待支付单不再拉起上游会话；已过 expire_at 的
+    待支付单当场置为已过期并拒绝 —— 过期判定不再依赖 5 分钟一轮的 cron 扫描，
+    过期后不会再生成新的付款链接。
     """
+    if order.status != ORDER_PENDING:
+        if order.status == ORDER_PAID:
+            return PayFlowResult(ok=False, error="订单已支付，请勿重复发起支付")
+        if order.status == ORDER_EXPIRED:
+            return PayFlowResult(ok=False, error="订单已过期，请重新下单")
+        return PayFlowResult(ok=False, error="订单状态不允许发起支付")
+    if order.expire_at is not None and order.expire_at <= datetime.now():
+        order.status = ORDER_EXPIRED
+        session.add(order)
+        try:
+            await session.commit()
+        except Exception:
+            await session.rollback()
+        return PayFlowResult(ok=False, error="订单已过期，请重新下单")
+
     resolved: ResolvedChannel | None = None
     if channel_id:
         # 指定通道（管理端通道测试）：跳过路由，直接解析该通道
@@ -543,6 +594,28 @@ async def undo_deduct(session: AsyncSession, order: Order) -> bool:
 # 回调幂等记账（单一漏斗：上游回调 / 主动查单补单 / 手动补单共用）
 # ============================================================
 
+async def late_pay_allowed(session: AsyncSession, order: Order,
+                           cache: CacheClient | None = None) -> bool:
+    """过期单回补窗口判定（P0-4 业务口径）。
+
+    背景：订单到期被置 status=3 后，上游可能仍收到款（付款人在过期瞬间完成支付、
+    回调重试晚到），旧逻辑一律以 invalid 拒绝 → 上游已收款但平台无法入账，只能改库。
+    口径：**钱已经收到，就必须能入账**，但只接受可验证来源（上游签名回调 / 主动查单），
+    且限定在 expire_at 之后的 `late_pay_backfill_hours` 小时内（默认 24，0=关闭），
+    避免无限期把早已结束的账单重新激活。窗口外的历史单只能由管理员在后台显式回补。
+    """
+    try:
+        hours = await get_int_setting(session, "late_pay_backfill_hours", cache)
+    except Exception:
+        hours = 24
+    if hours <= 0:
+        return False
+    base = order.expire_at or order.created_at
+    if base is None:
+        return False
+    return datetime.now() <= base + timedelta(hours=hours)
+
+
 async def process_paid_order(
     trade_no: str,
     api_trade_no: str,
@@ -550,10 +623,13 @@ async def process_paid_order(
     buyer_id: str,
     session: AsyncSession,
     cache: CacheClient | None = None,
+    allow_expired: bool = False,
 ) -> PaidResult:
     """幂等记账：状态机只允许 0→1；同事务更新订单 + 写流水 + 加余额。
 
     paid_realmoney 为上游声称的实付金额，与 order.realmoney 不符返回 mismatch。
+    allow_expired=True 是**受控回补路径**（管理端手动补单：人工确认已收款），
+    跳过 late_pay_backfill_hours 窗口；回调/主动查单按窗口判定。
     """
     lock_key = f"lock:order:{trade_no}"
     if cache is not None:
@@ -571,7 +647,14 @@ async def process_paid_order(
             return PaidResult(status="not_found")
         if order.status == ORDER_PAID:
             return PaidResult(status="duplicate", order=order)
-        if order.status != ORDER_PENDING:
+        late_pay = False
+        if order.status == ORDER_EXPIRED:
+            if not (allow_expired or await late_pay_allowed(session, order, cache)):
+                return PaidResult(status="invalid", order=order)
+            late_pay = True
+            _log.warning("过期单回补记账 trade_no=%s expire_at=%s allow_expired=%s",
+                         trade_no, order.expire_at, allow_expired)
+        elif order.status != ORDER_PENDING:
             return PaidResult(status="invalid", order=order)
 
         # 金额比对（services 统一做，插件只报数）
@@ -597,7 +680,7 @@ async def process_paid_order(
                 order.buyer_id = buyer_id[:64]
             order.notify_status = 0  # 不进入通知队列
             await session.commit()
-            return PaidResult(status="paid", order=order, should_notify=False)
+            return PaidResult(status="paid", order=order, should_notify=False, late_pay=late_pay)
 
         # 记账（充值单全额入账；普通单按落库金额，未算过则按费率兜底重算）
         if order.order_type == 1:
@@ -662,7 +745,7 @@ async def process_paid_order(
 
         await session.commit()
         should_notify = order.order_type != 1
-        return PaidResult(status="paid", order=order, should_notify=should_notify)
+        return PaidResult(status="paid", order=order, should_notify=should_notify, late_pay=late_pay)
     except Exception:
         await session.rollback()
         raise
@@ -700,6 +783,52 @@ async def _apply_invite_rebate(session: AsyncSession, trade_no: str, merchant_id
         )
     except Exception:
         _log.warning("邀请返现失败 trade_no=%s merchant_id=%s", trade_no, merchant_id, exc_info=True)
+
+
+async def clawback_invite_rebate(
+    session: AsyncSession, trade_no: str, merchant_id: int, refund_amount: Decimal,
+) -> Decimal:
+    """退款回冲邀请返现（P2-25）：按退款额 × invite_rebate_rate% 从邀请人余额扣回。
+
+    返现是跟着「到账」走的，退款后到账减少，返现必须同步回冲，否则邀请人可以靠
+    「下单→返现→退款」净赚返现。回冲失败不阻断退款主流程（只记 warning）；
+    邀请人余额不足时只扣可用部分（不为返现把余额打成负数）。
+    返回实际回冲金额。
+    """
+    refund_amount = dmoney(refund_amount)
+    if refund_amount <= 0:
+        return Decimal("0.00")
+    from app.services.settings import get_money_setting
+    try:
+        rate = await get_money_setting(session, "invite_rebate_rate")
+    except Exception:
+        return Decimal("0.00")
+    if rate <= 0:
+        return Decimal("0.00")
+    rebate = (refund_amount * rate / Decimal(100)).quantize(CENT)
+    if rebate <= 0:
+        return Decimal("0.00")
+    try:
+        from app.models import Merchant as _M
+        m = await session.get(_M, merchant_id)
+        if not m or not m.invited_by:
+            return Decimal("0.00")
+        inviter = await lock_merchant(session, m.invited_by)
+        available = dmoney(inviter.balance)
+        amount = min(rebate, max(available, Decimal("0.00"))).quantize(CENT)
+        if amount <= 0:
+            _log.warning("邀请返现回冲跳过（邀请人无可回冲余额） trade_no=%s inviter=%s",
+                         trade_no, m.invited_by)
+            return Decimal("0.00")
+        await change_merchant_balance(
+            session, m.invited_by, -amount,
+            biz_type="invite_rebate", trade_no=trade_no,
+            remark=f"退款回冲邀请返现（费率{rate}%）",
+        )
+        return amount
+    except Exception:
+        _log.warning("邀请返现回冲失败 trade_no=%s merchant_id=%s", trade_no, merchant_id, exc_info=True)
+        return Decimal("0.00")
 
 
 # ============================================================

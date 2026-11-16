@@ -11,7 +11,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlmodel import select
 
 from app.core.deps import CacheDep, SessionDep
-from app.logic.api_verify import verify_api_signature
+from app.logic.api_verify import ensure_not_replayed, verify_api_signature
 from app.models import Merchant
 
 _log = logging.getLogger(__name__)
@@ -55,13 +55,19 @@ async def get_api_user(request: Request, session: SessionDep,
     merchant = (await session.exec(
         select(Merchant).where(Merchant.pid == pid_int)
     )).first()
-    if not merchant:
-        raise HTTPException(status_code=400, detail={"code": -1, "message": "商户不存在"})
-    if merchant.status != 1:
-        raise HTTPException(status_code=400, detail={"code": -1, "message": "商户已被封禁"})
+    # P1-15：不存在与封禁统一文案，避免用错误信息差异枚举有效 pid
+    if not merchant or merchant.status != 1:
+        raise HTTPException(status_code=400,
+                            detail={"code": -1, "message": "商户不存在或已停用"})
 
     try:
         verify_api_signature(merchant.public_key, params)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail={"code": -3, "message": str(e)})
+
+    # 签名一次性校验：同一签名 300s 内只受理一次（防截获重放；验签通过后才消耗签名）
+    try:
+        await ensure_not_replayed(cache, merchant.id, params)
     except ValueError as e:
         raise HTTPException(status_code=400, detail={"code": -3, "message": str(e)})
 

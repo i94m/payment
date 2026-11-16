@@ -114,6 +114,17 @@ class BaseSms(ABC):
 
 
 class BaseMail(ABC):
-    """邮件插件基类（同步接口，站内通知用）。"""
+    """邮件插件基类。
+
+    `send` 是**同步**接口（兼容存量插件）；异步业务链路必须调 `send_async`，
+    默认实现把同步发送丢进线程池，避免在事件循环里做阻塞 IO。
+    """
+
     @abstractmethod
     def send(self, to: str, subject: str, body: str) -> bool: ...
+
+    async def send_async(self, to: str, subject: str, body: str) -> bool:
+        """异步发送（默认 = 线程池执行同步实现）。原生异步插件应覆盖此方法。"""
+        import asyncio
+
+        return await asyncio.to_thread(self.send, to, subject, body)

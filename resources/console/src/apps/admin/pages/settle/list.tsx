@@ -13,6 +13,7 @@ import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
   ConfirmDialog,
+  ListError,
   actionsColumn,
   secondaryCell,
   dateCell,
@@ -22,6 +23,7 @@ import {
 import type { ActionItem, StatusBadgeOption } from "@/components/data-list/"
 import { IconSearch, IconRefresh, IconCheck, IconBan } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { digitsOnly, toIntParam } from "@/lib/form-utils"
 import { useSearchParams } from "react-router-dom"
 
 const settleStatusOptions: StatusBadgeOption[] = [
@@ -41,7 +43,8 @@ export function SettlePage() {
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
     if (statusFilter !== "") params.status = Number(statusFilter)
-    if (merchantId.trim()) params.merchant_id = merchantId.trim()
+    const mid = toIntParam(merchantId)
+    if (mid !== undefined) params.merchant_id = mid
     return params
   }, [statusFilter, merchantId])
 
@@ -53,19 +56,16 @@ export function SettlePage() {
 
   const submitAction = async () => {
     if (!actionTarget) return
-    try {
-      if (actionTarget.type === "pay") await settleApi.markPaid(actionTarget.item.id)
-      else await settleApi.reject(actionTarget.item.id)
-      toast.success(actionTarget.type === "pay" ? "已确认打款" : "已驳回")
-      setActionTarget(null)
-      refresh()
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    }
+    // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
+    if (actionTarget.type === "pay") await settleApi.markPaid(actionTarget.item.id)
+    else await settleApi.reject(actionTarget.item.id)
+    toast.success(actionTarget.type === "pay" ? "已确认打款" : "已驳回")
+    setActionTarget(null)
+    refresh()
   }
 
   const {
-    table, loading, applyFilters, refresh,
+    table, total, loading, error, applyFilters, refresh,
   } = useDataList<AdminSettleData>({
     fetchFn: (params) => settleApi.adminList(params as never),
     filters: filterParams,
@@ -160,7 +160,6 @@ export function SettlePage() {
       ] as ActionItem<AdminSettleData>[], { width: 190 }),
     ],
     perPage: 20,
-    onError: () => toast.error("操作失败"),
   })
 
   return (
@@ -182,8 +181,9 @@ export function SettlePage() {
             <Input
               placeholder={"商户 ID"}
               className="h-9"
+              inputMode="numeric"
               value={merchantId}
-              onChange={(e) => setMerchantId(e.target.value)}
+              onChange={(e) => setMerchantId(digitsOnly(e.target.value))}
             />
           </div>
 
@@ -200,9 +200,13 @@ export function SettlePage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} total={total} />
+            </DataTable>
+          )}
         </div>
       </div>
 
