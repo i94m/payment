@@ -1,10 +1,8 @@
 import { create } from "zustand"
 import { STORAGE_PREFIX } from "@/lib/config"
+import { VALID_THEMES, type ColorTheme } from "@/lib/color-themes"
 
-type ColorTheme = "indigo" | "rose" | "orange" | "yellow" | "lime" | "cyan" | "purple" | "sky" | "stone"
 type ColorMode = "light" | "dark"
-
-const VALID_THEMES: ColorTheme[] = ["indigo", "rose", "orange", "yellow", "lime", "cyan", "purple", "sky", "stone"]
 
 // 主题切换功能已隐藏：颜色模式固定为亮色
 interface ThemeState {
@@ -15,9 +13,9 @@ interface ThemeState {
 function getInitialTheme(): ColorTheme {
   if (typeof window === "undefined") return "indigo"
   const saved = localStorage.getItem(`${STORAGE_PREFIX}color-theme`)
-  if (saved && VALID_THEMES.includes(saved as ColorTheme)) return saved as ColorTheme
+  if (saved && (VALID_THEMES as string[]).includes(saved)) return saved as ColorTheme
   const envDefault = import.meta.env.VITE_DEFAULT_THEME
-  if (envDefault && VALID_THEMES.includes(envDefault as ColorTheme)) return envDefault as ColorTheme
+  if (envDefault && (VALID_THEMES as string[]).includes(envDefault)) return envDefault as ColorTheme
   return "indigo"
 }
 

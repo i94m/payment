@@ -7,8 +7,8 @@
  *
  * 说明：默认主题（品牌橙）在 CSS 里是「无 data-theme 属性」，历史沿用的
  * store 键名是 "indigo"，这里保留该值以免破坏已持久化的用户选择；
- * 主题切换入口当前隐藏，theme-store 仍各自维护一份字面量，后续可由
- * store 直接 import 本文件的 VALID_THEMES 去重（该文件不在本任务的改动范围）。
+ * 主题切换入口当前隐藏，`stores/theme-store.ts` 直接 import 本文件的
+ * `VALID_THEMES` / `ColorTheme`，主题取值只有这一份来源。
  */
 export const COLOR_THEMES = [
   { value: "indigo", label: "Default", labelZh: "默认（品牌橙）", swatch: "oklch(0.686 0.201 43.5)" },
