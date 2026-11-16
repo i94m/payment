@@ -65,7 +65,9 @@ def test_rsa_key_parse_cached():
     for _ in range(20):
         sign_mod.make_rsa_sign(data, raw)      # 全部命中缓存
     per_call = (time.perf_counter() - t0) / 20
-    assert per_call < 0.005, f"缓存后单次签名应 <5ms（实测 {per_call*1000:.1f}ms）"
+    # 阈值 20ms：只用于区分「命中缓存」与「每次重新解析 PEM（~40ms/次）」。
+    # 原 5ms 在慢机器/CPU 降频时实测 5.1ms 直接误报（本机复现）。
+    assert per_call < 0.02, f"缓存后单次签名应 <20ms（实测 {per_call*1000:.1f}ms）"
 
     # 公钥验签同样缓存
     pub = sign_mod.derive_public_key(raw)
