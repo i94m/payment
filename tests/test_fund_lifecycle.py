@@ -479,6 +479,51 @@ async def test_settle_reject_survives_notify_failure(client, seeded, session, en
 
 
 @pytest.mark.asyncio
+async def test_settle_notify_failure_logs_traceable_fields(client, seeded, session, monkeypatch, caplog):
+    """通知失败只记日志 → warning 必须带结算单 ID/单号、商户 ID、动作，漏发才能人工补。
+
+    不加重投队列是拍板口径；代价是这条日志就是唯一的补发线索，字段缺一不可。
+    """
+    import logging
+
+    import app.services.message as message_module
+    from app.services.settle import apply_settlement, mark_settlement_paid, reject_settlement
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("SMTP down")
+
+    monkeypatch.setattr(message_module, "send_merchant_message", _boom)
+    caplog.set_level(logging.WARNING, logger="app.services.settle")
+
+    m = await _settle_ready_merchant(session)
+    merchant_id = m.id
+
+    paid, error = await apply_settlement(session, m, "50.00")
+    assert error == "", error
+    ok, msg = await mark_settlement_paid(session, paid.id)
+    assert ok is True and msg == ""
+
+    rejected, error = await apply_settlement(
+        session, await session.get(Merchant, merchant_id), "20.00")
+    assert error == "", error
+    ok, msg = await reject_settlement(session, rejected.id, remark="信息有误")
+    assert ok is True and msg == ""
+
+    warnings = [r.getMessage() for r in caplog.records if r.name == "app.services.settle"]
+
+    def _only(action: str) -> str:
+        hits = [w for w in warnings if f"action={action}" in w]
+        assert len(hits) == 1, warnings
+        return hits[0]
+
+    for action, settle in (("打款", paid), ("驳回", rejected)):
+        entry = _only(action)
+        assert f"settle_id={settle.id}" in entry, entry
+        assert f"settle_no={settle.settle_no}" in entry, entry
+        assert f"merchant_id={merchant_id}" in entry, entry
+
+
+@pytest.mark.asyncio
 async def test_settle_notify_runs_after_funds_commit(client, seeded, session, monkeypatch):
     """通知不在资金事务内：资金 commit 先发生，通知在其后才被调用。"""
     import app.services.message as message_module

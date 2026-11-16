@@ -279,15 +279,19 @@ async def _lock_settlement(session: AsyncSession, settle_id: int) -> Settlement 
 
 
 class _SettleNotice(NamedTuple):
-    """资金事务提交后再发的通知（商户实例 + 已渲染好的文案）。
+    """资金事务提交后再发的通知（商户实例 + 已渲染好的文案 + 漏发时可人工补的定位字段）。
 
     文案在事务内渲染完（用到 `settle_no`/`real_amount`/`account`），提交后只做投递，
-    避免提交后访问已到期的 ORM 属性。
+    避免提交后访问已到期的 ORM 属性。`settle_id`/`settle_no`/`action` 只用于失败日志：
+    通知不进重投队列，漏发靠这三项在日志里定位后人工补。
     """
 
     merchant: Merchant
     title: str
     content: str
+    settle_id: int
+    settle_no: str
+    action: str  # 打款 / 驳回
 
 
 async def _deliver_settle_notice(session: AsyncSession, notice: _SettleNotice | None) -> None:
@@ -317,8 +321,10 @@ async def _deliver_settle_notice(session: AsyncSession, notice: _SettleNotice | 
         except Exception:  # pragma: no cover - 连接已断时 rollback 也会失败
             pass
         _log.warning(
-            "结算通知投递失败（资金结果已提交，不回滚） merchant_id=%s title=%s",
-            merchant_id, notice.title, exc_info=True,
+            "结算通知投递失败（资金结果已提交，不回滚） settle_id=%s settle_no=%s "
+            "merchant_id=%s action=%s title=%s",
+            notice.settle_id, notice.settle_no, merchant_id, notice.action, notice.title,
+            exc_info=True,
         )
 
 
@@ -361,6 +367,9 @@ async def _mark_settlement_paid_impl(
         merchant=merchant,
         title="结算已打款",
         content=f"结算单 {settle.settle_no} 已打款 {settle.real_amount} 元至 {settle.account}。",
+        settle_id=settle.id,
+        settle_no=settle.settle_no,
+        action="打款",
     )
     settle_no = settle.settle_no
     try:
@@ -416,6 +425,9 @@ async def _reject_settlement_impl(
             merchant=merchant,
             title="结算被驳回",
             content=f"结算单 {settle.settle_no} 被驳回，{settle.amount} 元已退回余额。原因：{remark or '无'}",
+            settle_id=settle.id,
+            settle_no=settle.settle_no,
+            action="驳回",
         )
     settle_no = settle.settle_no
     try:
