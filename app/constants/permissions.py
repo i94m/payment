@@ -73,6 +73,11 @@ PERMISSION_TREE: list[tuple[str, str, list[tuple[str, str]]]] = [
         ]
     ),
     (
+        "通知中心", "message", [
+            ("查看", "message.view"),
+        ]
+    ),
+    (
         "站点配置", "pay_setting", [
             ("查看", "pay_setting.view"),
             ("更新", "pay_setting.update"),
@@ -81,6 +86,7 @@ PERMISSION_TREE: list[tuple[str, str, list[tuple[str, str]]]] = [
     (
         "系统管理", "system", [
             ("管理员账号", "system.admin"),
+            ("审计日志", "system.audit"),
         ]
     ),
 ]

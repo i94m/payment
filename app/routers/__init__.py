@@ -2,17 +2,20 @@ from fastapi import APIRouter
 
 from .admin import router as admin_router
 from .admin.common import public_router as common_public_router
-from .common import router as common_router, upload_file
+from .common import public_router as common_open_router, router as common_router, upload_file
 
 routers = APIRouter()
 
 # 管理后台（/admin-api）
 routers.include_router(admin_router, prefix="/admin-api", tags=["admin"])
+# 通用（fail-closed）：密钥/文件列表/广播认证等，统一先过 admin 身份
 routers.include_router(common_router, prefix="/admin-api", tags=["common"])
 # 公开端点多前缀挂载：admin/merchant/agent 三端 SPA 未登录时也可读取
 routers.include_router(common_public_router, prefix="/admin-api", tags=["common"])
 routers.include_router(common_public_router, prefix="/merchant-api", tags=["merchant"])
 routers.include_router(common_public_router, prefix="/agent-api", tags=["agent"])
+# 验证码 / 带签名的上传端点（公开，仅 /admin-api 前缀）
+routers.include_router(common_open_router, prefix="/admin-api", tags=["common"])
 
 # 商户后台（/merchant-api）
 from .merchant import router as merchant_router  # noqa: E402

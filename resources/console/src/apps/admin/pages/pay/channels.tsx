@@ -22,6 +22,7 @@ import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
   ConfirmDialog,
+  ListError,
   actionsColumn,
   secondaryCell,
   switchCell,
@@ -29,8 +30,12 @@ import {
 import type { ActionItem } from "@/components/data-list/"
 import {
   IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconFlask, IconCopy, IconList, IconUpload,
+  IconEye, IconEyeOff,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
+import { useAuthStore } from "@/stores/auth-store"
+import { toIntParam } from "@/lib/form-utils"
 
 // 通道表单值：字段均为字符串（提交前再转数值）；mode/weight/sort 已从表单移除，仅随编辑原值带回
 interface ChannelFormValues {
@@ -104,6 +109,17 @@ export function ChannelsPage() {
   // 当前插件凭证渲染 schema（随所选插件变化）
   const [currentInputs, setCurrentInputs] = React.useState<PluginInput[]>([])
 
+  // 凭证明文回显：列表/详情默认脱敏（密钥类字段为 ******），只有点「显示凭证」
+  // 才按 reveal=1 重新取一次；后端会再判一次 channel.update，无权限时静默返回
+  // 脱敏值 + config_revealed=false（不是 403），所以前端必须看这个标志而不是假定成功
+  const user = useAuthStore((s) => s.user)
+  const permissions = useAuthStore((s) => s.permissions)
+  const canRevealConfig = !!user?.is_super_admin || permissions.includes("*") || permissions.includes("channel.update")
+  const [configRevealed, setConfigRevealed] = React.useState(false)
+  const [revealing, setRevealing] = React.useState(false)
+  // 脱敏快照：隐藏凭证时用它还原表单，避免明文滞留在输入框里被顺手提交
+  const maskedConfigRef = React.useRef<Record<string, string>>({})
+
   // schema 依赖 editingId/currentInputs，useForm 每次渲染都会读取最新 resolver
   const channelForm = useForm<ChannelFormValues>({
     resolver: zodResolver(channelSchema(currentInputs)),
@@ -135,9 +151,13 @@ export function ChannelsPage() {
     payApi.channelStats().then(setStats).catch(() => {})
   }, [])
 
+  // 支付方式/插件下拉是建单与凭证渲染的前置数据，加载失败必须显式提示，
+  // 否则弹窗里会静默出现空下拉（看起来像「没有可用插件」）
   React.useEffect(() => {
-    payApi.payTypes().then(setPayTypes).catch(() => {})
-    payApi.plugins().then(setPlugins).catch(() => {})
+    payApi.payTypes().then(setPayTypes)
+      .catch((err) => toast.error(getErrorMessage(err, "支付方式加载失败")))
+    payApi.plugins().then(setPlugins)
+      .catch((err) => toast.error(getErrorMessage(err, "支付插件加载失败")))
     fetchStats()
   }, [fetchStats])
 
@@ -145,7 +165,8 @@ export function ChannelsPage() {
 
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
-    if (typeFilter !== "") params.payment_type_id = Number(typeFilter)
+    const tid = toIntParam(typeFilter)
+    if (tid !== undefined) params.payment_type_id = tid
     if (pluginFilter !== "") params.plugin_name = pluginFilter
     return params
   }, [typeFilter, pluginFilter])
@@ -165,7 +186,7 @@ export function ChannelsPage() {
       payApi.plugins().then(setPlugins).catch(() => {})
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     } finally {
       setSyncing(false)
     }
@@ -183,7 +204,7 @@ export function ChannelsPage() {
       payApi.plugins().then(setPlugins).catch(() => {})
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "上传失败")
+      toast.error(getErrorMessage(err, "上传失败"))
     } finally {
       setUploading(false)
     }
@@ -209,6 +230,8 @@ export function ChannelsPage() {
       const detail = await payApi.channelDetail(id)
       setEditingId(id)
       setCurrentInputs(detail.inputs || [])
+      maskedConfigRef.current = detail.config || {}
+      setConfigRevealed(false)
       channelForm.reset({
         name: detail.name,
         plugin_name: detail.plugin_name,
@@ -228,7 +251,7 @@ export function ChannelsPage() {
       })
       setDialogOpen(true)
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "加载失败")
+      toast.error(getErrorMessage(err, "加载失败"))
     }
   }
 
@@ -238,6 +261,8 @@ export function ChannelsPage() {
       const detail = await payApi.channelDetail(id)
       setEditingId(null)
       setCurrentInputs(detail.inputs || [])
+      maskedConfigRef.current = detail.config || {}
+      setConfigRevealed(false)
       channelForm.reset({
         name: detail.name,
         plugin_name: detail.plugin_name,
@@ -257,7 +282,35 @@ export function ChannelsPage() {
       })
       setDialogOpen(true)
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "加载失败")
+      toast.error(getErrorMessage(err, "加载失败"))
+    }
+  }
+
+  // 显示/隐藏凭证：显示时按 reveal=1 重新取详情，后端按 channel.update 再判一次权限；
+  // 隐藏时直接还原打开弹窗时的脱敏快照（不再发请求）
+  const toggleRevealConfig = async () => {
+    if (!editingId) return
+    if (configRevealed) {
+      channelForm.setValue("config", maskedConfigRef.current, { shouldDirty: false })
+      channelForm.clearErrors("config")
+      setConfigRevealed(false)
+      return
+    }
+    setRevealing(true)
+    try {
+      const detail = await payApi.channelDetail(editingId, { reveal: true })
+      if (!detail.config_revealed) {
+        // 有 channel.view 无 channel.update：不报错，只是不给明文
+        toast.error("无权限查看明文凭证", { description: "需要「支付通道-更新」权限" })
+        return
+      }
+      channelForm.setValue("config", detail.config || {}, { shouldDirty: false })
+      channelForm.clearErrors("config")
+      setConfigRevealed(true)
+    } catch (err) {
+      toast.error(getErrorMessage(err, "凭证读取失败"))
+    } finally {
+      setRevealing(false)
     }
   }
 
@@ -272,10 +325,11 @@ export function ChannelsPage() {
       window.open(data.cashier_url, "_blank")
       fetchStats()
     } catch (err) {
-      const e = err as { message?: string; errors?: unknown[] }
+      const e = err as { errors?: unknown[] }
       const debug = Array.isArray(e?.errors) && e.errors.length > 0 ? e.errors[0] : null
       setTestDebug(debug as ChannelTestDebug | null)
-      if (!debug) toast.error(e?.message || "操作失败")
+      // 有上游调试详情时用调试弹窗展示，否则回落到 toast 后端原因
+      if (!debug) toast.error(getErrorMessage(err, "测试支付失败"))
     } finally {
       setTesting(false)
     }
@@ -354,7 +408,7 @@ export function ChannelsPage() {
       setDialogOpen(false)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     } finally {
       setSaving(false)
     }
@@ -383,24 +437,21 @@ export function ChannelsPage() {
       toast.success("状态已更新")
       fetchStats()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     }
   }
 
   const submitDelete = async () => {
     if (!deleteId) return
-    try {
-      await payApi.deleteChannel(deleteId)
-      setDeleteId(null)
-      refresh()
-      toast.success("删除成功")
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    }
+    // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
+    await payApi.deleteChannel(deleteId)
+    setDeleteId(null)
+    refresh()
+    toast.success("删除成功")
   }
 
   const {
-    table, loading, applyFilters, refresh, updateRow,
+    table, total, loading, error, applyFilters, refresh, updateRow,
   } = useDataList<ChannelData>({
     fetchFn: (params) => payApi.channels(params as never),
     filters: filterParams,
@@ -501,7 +552,6 @@ export function ChannelsPage() {
       ] as ActionItem<ChannelData>[], { header: "操作", width: 360 }),
     ],
     perPage: 20,
-    onError: () => toast.error("操作失败"),
   })
 
   return (
@@ -564,9 +614,13 @@ export function ChannelsPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} total={total} />
+            </DataTable>
+          )}
         </div>
       </div>
 
@@ -759,7 +813,30 @@ export function ChannelsPage() {
               {/* 插件凭证（按 inputs schema 动态渲染） */}
               {currentInputs.length > 0 && (
                 <div className="col-span-2 space-y-2 rounded-lg border p-3">
-                  <p className="text-sm font-medium">{"通道凭证"}（{selectedPlugin?.showname}）</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">{"通道凭证"}（{selectedPlugin?.showname}）</p>
+                    {editingId && canRevealConfig && (
+                      <Button
+                        type="button" variant="ghost" size="sm"
+                        onClick={toggleRevealConfig} disabled={revealing}
+                      >
+                        {configRevealed
+                          ? <IconEyeOff className="size-4" />
+                          : <IconEye className="size-4" />}
+                        {configRevealed ? "隐藏凭证" : "显示凭证"}
+                      </Button>
+                    )}
+                  </div>
+                  {!configRevealed && (
+                    <p className="text-xs text-muted-foreground">
+                      {"凭证默认脱敏（密钥类显示为 ******），提交时保持 ****** 即不修改库内原值"}
+                    </p>
+                  )}
+                  {configRevealed && (
+                    <p className="text-xs text-amber-600">
+                      {"正在显示明文凭证：注意遮挡屏幕，隐藏后表单回到脱敏值"}
+                    </p>
+                  )}
                   {currentInputs.map((input) => (
                     <Controller
                       key={input.name}

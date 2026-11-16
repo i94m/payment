@@ -5,7 +5,7 @@
 - Redis INCR 路径 vs DB Counter 回退路径
 - 充值单不扣量；扣量单重复回调幂等
 - 邀请返佣在扣量时扣发、回补时补发
-- admin 手动补单：待支付直接记账 + 幂等（重复补单不重复入账）+ 过期单拒绝
+- admin 手动补单：待支付直接记账 + 幂等（重复补单不重复入账）+ 过期单受控回补（P0-4）
 - undo_deduct 对非扣量/未支付单拒绝
 - 掉单查单补单：未支付不误补 / 金额不符不补 / 已支付不重复 / 补单后通知留痕
 """
@@ -305,8 +305,17 @@ async def test_admin_refill_pending_then_idempotent(client, seeded, session, eng
 
 
 @pytest.mark.asyncio
-async def test_admin_refill_expired_rejected(client, seeded, session, engine):
-    """过期单（status=3）不可补单。"""
+async def test_admin_refill_expired_controlled_backfill(client, seeded, session, engine):
+    """过期单（status=3）走受控回补：管理员确认已收款后可补单入账（P0-4）。
+
+    原行为是「过期一律拒单」，导致上游已收款但平台无法入账、只能改库。
+    现在后台手动补单是显式的人为确认，不受 late_pay_backfill_hours 窗口限制。
+    """
+    m = await _get_merchant(session)
+    m.balance = dmoney("0")
+    session.add(m)
+    await session.commit()
+
     o = await _create_order(client, session, "EXP-1")
     from sqlalchemy import update
     await session.exec(update(Order).where(Order.trade_no == o.trade_no).values(status=3))
@@ -314,8 +323,20 @@ async def test_admin_refill_expired_rejected(client, seeded, session, engine):
 
     r = await client.post("/admin-api/order/refill", headers=await _admin_headers(session),
                           json={"trade_no": o.trade_no})
-    assert r.json()["code"] != 0
-    assert "补单失败" in r.json()["message"]
+    assert r.json()["code"] == 0, r.json()
+    assert "回补" in r.json()["message"]
+    # 不把内部状态枚举（invalid 等）甩给管理员
+    assert "invalid" not in r.json()["message"]
+
+    fresh = await _refetch(engine, o.trade_no)
+    assert fresh.status == 1 and fresh.notify_status == 1
+    assert await _balance(engine, m.id) == dmoney("98")
+
+    # 幂等：再补一次不入账
+    r2 = await client.post("/admin-api/order/refill", headers=await _admin_headers(session),
+                           json={"trade_no": o.trade_no})
+    assert r2.json()["code"] == 0
+    assert await _balance(engine, m.id) == dmoney("98")
 
 
 @pytest.mark.asyncio

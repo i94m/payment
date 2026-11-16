@@ -6,12 +6,15 @@ import type { PaypageSettings } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import { CopyableInput } from "@/components/ui/copy-button"
 import { Field, FieldDescription, FieldError, FieldLabel, RequiredMark } from "@/components/ui/field"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { numStr } from "@/lib/form-schema"
+import { PanelError } from "@/components/data-list"
+import { getErrorMessage } from "@/lib/error"
 import { toast } from "sonner"
 
 // 收款页设置：随机金额开启时最小/最大金额必填且仅支持整数；建单限流为非负整数（0=不限）
@@ -28,6 +31,9 @@ const paypageSchema = z.object({
 
 export function PaypageMchPage() {
   const [settings, setSettings] = React.useState<PaypageSettings | null>(null)
+  const [settingsLoading, setSettingsLoading] = React.useState(true)
+  const [settingsError, setSettingsError] = React.useState<string | null>(null)
+  const [loadTick, setLoadTick] = React.useState(0)
   const [saving, setSaving] = React.useState(false)
 
   const form = useForm<z.infer<typeof paypageSchema>>({
@@ -38,6 +44,8 @@ export function PaypageMchPage() {
   const randomEnable = form.watch("randomEnable")
 
   React.useEffect(() => {
+    setSettingsLoading(true)
+    setSettingsError(null)
     paypageApi.settings().then((res) => {
       setSettings(res)
       form.reset({
@@ -47,8 +55,11 @@ export function PaypageMchPage() {
         randomMax: String(Number(res.random_max)),
         ratelimit: res.random_ratelimit,
       })
-    }).catch(() => {})
-  }, [form])
+    }).catch((err) => {
+      // 加载失败不能留一屏默认值：否则用户误以为「随机金额未开启」并覆盖保存
+      setSettingsError(getErrorMessage(err, "收款页设置加载失败"))
+    }).finally(() => setSettingsLoading(false))
+  }, [form, loadTick])
 
   const save = form.handleSubmit(async (values) => {
     // 随机金额开启时校验区间（原 setErrors 手工字段错误 → form.setError）
@@ -64,11 +75,14 @@ export function PaypageMchPage() {
       })
       toast.success("保存成功")
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "保存失败"))
     } finally {
       setSaving(false)
     }
   })
+
+  // 设置加载失败时禁止编辑，避免把默认值当成真实配置覆盖保存
+  const formDisabled = !!settingsError
 
   const link = settings
     ? (typeof window !== "undefined" ? window.location.origin : "") + settings.link
@@ -89,9 +103,16 @@ export function PaypageMchPage() {
           <p className="text-xs text-muted-foreground mt-0.5">{"免登录收款页：付款人打开链接输入金额即可付款，支持代理归属"}</p>
         </div>
         <div className="px-4 lg:px-6 space-y-4">
+          {settingsError && (
+            <PanelError error={settingsError} onRetry={() => setLoadTick((n) => n + 1)} />
+          )}
           <Field>
             <FieldLabel htmlFor="pay-link">{"收款链接"}</FieldLabel>
-            <CopyableInput id="pay-link" value={link} className="w-full font-mono text-xs" />
+            {settingsLoading ? (
+              <Skeleton className="h-9 w-full" />
+            ) : (
+              <CopyableInput id="pay-link" value={link} className="w-full font-mono text-xs" />
+            )}
           </Field>
 
               <form onSubmit={save} className="space-y-3 rounded-lg border p-3">
@@ -100,7 +121,7 @@ export function PaypageMchPage() {
                   control={form.control}
                   render={({ field }) => (
                     <Field orientation="horizontal">
-                      <input id={field.name} type="checkbox" checked={!!field.value}
+                      <input id={field.name} type="checkbox" checked={!!field.value} disabled={formDisabled}
                         onChange={(e) => field.onChange(e.target.checked)} />
                       <FieldLabel htmlFor={field.name} className="font-normal">
                         {"随机金额模式（金额由服务端在区间内生成）"}
@@ -116,7 +137,7 @@ export function PaypageMchPage() {
                       <Field data-invalid={fieldState.invalid}>
                         <FieldLabel htmlFor={field.name}>{"最小金额"}{randomEnable && <RequiredMark />}</FieldLabel>
                         <Input id={field.name} inputMode="numeric" value={field.value ?? ""} placeholder={"如 1"}
-                          onChange={(e) => field.onChange(e.target.value)} disabled={!randomEnable}
+                          onChange={(e) => field.onChange(e.target.value)} disabled={!randomEnable || formDisabled}
                           aria-invalid={fieldState.invalid || undefined} />
                         {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
                       </Field>
@@ -129,7 +150,7 @@ export function PaypageMchPage() {
                       <Field data-invalid={fieldState.invalid}>
                         <FieldLabel htmlFor={field.name}>{"最大金额"}{randomEnable && <RequiredMark />}</FieldLabel>
                         <Input id={field.name} inputMode="numeric" value={field.value ?? ""} placeholder={"如 100"}
-                          onChange={(e) => field.onChange(e.target.value)} disabled={!randomEnable}
+                          onChange={(e) => field.onChange(e.target.value)} disabled={!randomEnable || formDisabled}
                           aria-invalid={fieldState.invalid || undefined} />
                         {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
                       </Field>
@@ -142,7 +163,7 @@ export function PaypageMchPage() {
                       <Field data-invalid={fieldState.invalid}>
                         <FieldLabel htmlFor={field.name}>{"建单限流/分钟"}</FieldLabel>
                         <Input id={field.name} inputMode="numeric" value={field.value} placeholder={"如 10，0=不限"}
-                          onChange={(e) => field.onChange(Number(e.target.value) || 0)}
+                          onChange={(e) => field.onChange(Number(e.target.value) || 0)} disabled={formDisabled}
                           aria-invalid={fieldState.invalid || undefined} />
                         {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
                       </Field>
@@ -151,7 +172,9 @@ export function PaypageMchPage() {
                 </div>
                 <FieldDescription className="text-xs">{"同一付款 IP 每分钟对该商户的建单上限，0=不限"}</FieldDescription>
                 <Field orientation="horizontal">
-                  <Button type="submit" disabled={saving || !settings?.enable}>{"保存设置"}</Button>
+                  <Button type="submit" disabled={saving || !settings?.enable || formDisabled}>
+                    {saving ? "保存中…" : "保存设置"}
+                  </Button>
                 </Field>
               </form>
         </div>

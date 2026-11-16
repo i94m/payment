@@ -10,12 +10,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Field, FieldLabel, FieldError, RequiredMark } from "@/components/ui/field"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
-import { dateCell, secondaryCell, truncatedCell } from "@/components/data-list/"
+import { dateCell, secondaryCell, truncatedCell, ListError, PanelError } from "@/components/data-list/"
 import { useReactTable, getCoreRowModel, type ColumnDef } from "@tanstack/react-table"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { numStr } from "@/lib/form-schema"
+import { getErrorMessage } from "@/lib/error"
 import { IconWallet, IconClock, IconSnowflake, IconSend, IconChevronRight } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -34,6 +35,8 @@ const SETTLE_TYPE_LABELS: Record<number, string> = {
 
 export function SettlePage() {
   const [info, setInfo] = React.useState<SettleInfoExtended | null>(null)
+  const [infoLoading, setInfoLoading] = React.useState(true)
+  const [infoError, setInfoError] = React.useState<string | null>(null)
   const [applying, setApplying] = React.useState(false)
 
   // 申请结算表单
@@ -48,23 +51,31 @@ export function SettlePage() {
   const [total, setTotal] = React.useState(0)
   const [page, setPage] = React.useState(1)
   const [loading, setLoading] = React.useState(true)
-  const perPage = 10
+  const [listError, setListError] = React.useState<string | null>(null)
+  const [perPage, setPerPage] = React.useState(10)
   // 申请成功后强制刷新列表（page 已是 1 时 setPage 不会触发 effect）
   const [listTick, setListTick] = React.useState(0)
 
   const loadInfo = React.useCallback(() => {
-    settleApi.info().then((res) => setInfo(res as SettleInfoExtended)).catch(() => toast.error("加载失败"))
+    settleApi.info()
+      .then((res) => {
+        setInfo(res as SettleInfoExtended)
+        setInfoError(null)
+      })
+      .catch((err) => setInfoError(getErrorMessage(err, "结算信息加载失败")))
+      .finally(() => setInfoLoading(false))
   }, [])
 
   React.useEffect(() => { loadInfo() }, [loadInfo])
 
   React.useEffect(() => {
     setLoading(true)
+    setListError(null)
     recordsApi.settlements({ page, per_page: perPage })
       .then((res) => { setData(res.items); setTotal(res.total) })
-      .catch(() => toast.error("加载失败"))
+      .catch((err) => setListError(getErrorMessage(err, "结算记录加载失败")))
       .finally(() => setLoading(false))
-  }, [page, listTick])
+  }, [page, perPage, listTick])
 
   const feePreview = React.useMemo(() => {
     if (!info || !amount.trim()) return null
@@ -77,10 +88,18 @@ export function SettlePage() {
     const feeMax = Number(info.fee_max || 0)
     if (feeMin > 0 && fee < feeMin) fee = feeMin
     if (feeMax > 0 && fee > feeMax) fee = feeMax
-    return { fee: fee.toFixed(2), real: (a - fee).toFixed(2) }
+    // 手续费不低于申请金额时实打金额无意义（后端会拒绝）：前端先给出明确提示
+    if (fee >= a) return { fee: fee.toFixed(2), real: "0.00", invalid: true }
+    return { fee: fee.toFixed(2), real: (a - fee).toFixed(2), invalid: false }
   }, [info, amount])
 
   const apply = applyForm.handleSubmit(async (values) => {
+    // 先按页面展示的可提余额做一次软校验：并发/口径变化仍以后端为准
+    const withdrawable = Number(info?.withdrawable ?? NaN)
+    if (!Number.isNaN(withdrawable) && Number(values.amount) > withdrawable) {
+      applyForm.setError("amount", { message: `申请金额不能超过可提余额 ¥${info?.withdrawable}` })
+      return
+    }
     setApplying(true)
     try {
       await settleApi.apply(values.amount.trim())
@@ -90,7 +109,7 @@ export function SettlePage() {
       setPage(1)
       setListTick((n) => n + 1)
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "结算申请提交失败"))
     } finally {
       setApplying(false)
     }
@@ -126,6 +145,13 @@ export function SettlePage() {
     manualPagination: true,
     pageCount: Math.ceil(total / perPage) || 1,
     state: { pagination: { pageIndex: page - 1, pageSize: perPage } },
+    // 手动分页必须回写 data 的 page/perPage，否则翻页按钮点了不生效
+    onPaginationChange: (updater) => {
+      const prev = { pageIndex: page - 1, pageSize: perPage }
+      const next = typeof updater === "function" ? updater(prev) : updater
+      setPerPage(next.pageSize)
+      setPage(next.pageIndex + 1)
+    },
   })
 
   return (
@@ -162,9 +188,11 @@ export function SettlePage() {
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : infoError ? (
+                <PanelError error={infoError} onRetry={() => { setInfoLoading(true); loadInfo() }} />
+              ) : infoLoading ? (
                 <Skeleton className="h-16 w-full" />
-              )}
+              ) : null}
               {/* 规则信息：对齐网格 */}
               {info && (
                 <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
@@ -220,7 +248,7 @@ export function SettlePage() {
                 <div className="grid gap-1.5">
                   <p className="text-sm">
                     <span className="text-muted-foreground">{"结算方式"}：</span>
-                    <span className="font-medium">{SETTLE_TYPE_LABELS[Number(info?.settle_type ?? 1)] ?? "—"}</span>
+                    <span className="font-medium">{info?.settle_type_name || SETTLE_TYPE_LABELS[Number(info?.settle_type ?? 1)] || "—"}</span>
                   </p>
                   <p className="text-sm break-all">
                     <span className="text-muted-foreground">{"结算账号"}：</span>
@@ -260,13 +288,17 @@ export function SettlePage() {
                   )}
                 />
                 {feePreview && (
-                  <p className="text-xs text-muted-foreground">
-                    {"手续费"}: ¥{feePreview.fee} · {"实打金额"}: <b>¥{feePreview.real}</b>
-                  </p>
+                  feePreview.invalid ? (
+                    <p className="text-xs text-destructive">{"手续费不低于申请金额，请提高申请金额后再提交"}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {"手续费"}: ¥{feePreview.fee} · {"实打金额"}: <b>¥{feePreview.real}</b>
+                    </p>
+                  )
                 )}
-                <Button type="submit" className="w-full" disabled={applying}>
+                <Button type="submit" className="w-full" disabled={applying || !info}>
                   <IconSend className="size-4" />
-                  {"申请结算"}
+                  {applying ? "提交中…" : "申请结算"}
                 </Button>
               </form>
             </CardContent>
@@ -280,8 +312,14 @@ export function SettlePage() {
               <CardTitle className="text-base">{"结算记录"}</CardTitle>
             </CardHeader>
             <CardContent>
-              <DataTable table={table} loading={loading} emptyMessage={"暂无数据"} />
-              <DataTablePagination table={table} />
+              {listError ? (
+                <ListError error={listError} onRetry={() => { setListTick((n) => n + 1) }} />
+              ) : (
+                <>
+                  <DataTable table={table} loading={loading} emptyMessage={"暂无结算记录"} />
+                  <DataTablePagination table={table} total={total} />
+                </>
+              )}
             </CardContent>
           </Card>
         </div>

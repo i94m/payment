@@ -22,6 +22,7 @@ import { FilterCard } from "@/components/filter-card"
 import {
   useDataList,
   ConfirmDialog,
+  ListError,
   actionsColumn,
   secondaryCell,
   dateCell,
@@ -29,6 +30,7 @@ import {
 import type { ActionItem } from "@/components/data-list/"
 import { IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { getErrorMessage } from "@/lib/error"
 
 // 账号表单 schema：编辑时密码留空 = 不修改，仅新增时必填（权限树勾选为非文本字段，不进 schema）
 const accountSchema = (isEdit: boolean) =>
@@ -56,7 +58,9 @@ export function AccountsPage() {
   })
 
   React.useEffect(() => {
-    permissionApi.tree().then(setTree).catch(() => {})
+    permissionApi.tree()
+      .then(setTree)
+      .catch((err) => toast.error(getErrorMessage(err, "权限树加载失败，保存前请刷新重试")))
   }, [])
 
   const filterParams = React.useMemo(() => {
@@ -104,7 +108,7 @@ export function AccountsPage() {
       setPermIds(new Set(detail.permissions || []))
       setDialogOpen(true)
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "加载失败")
+      toast.error(getErrorMessage(err, "加载失败"))
     }
   }
 
@@ -124,7 +128,7 @@ export function AccountsPage() {
       setDialogOpen(false)
       refresh()
     } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
+      toast.error(getErrorMessage(err, "操作失败"))
     } finally {
       setSaving(false)
     }
@@ -132,18 +136,15 @@ export function AccountsPage() {
 
   const submitDelete = async () => {
     if (!deleteId) return
-    try {
-      await permissionApi.deleteAccount(deleteId)
-      setDeleteId(null)
-      refresh()
-      toast.success("删除成功")
-    } catch (err) {
-      toast.error((err as { message?: string })?.message || "操作失败")
-    }
+    // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
+    await permissionApi.deleteAccount(deleteId)
+    setDeleteId(null)
+    refresh()
+    toast.success("删除成功")
   }
 
   const {
-    table, loading, keyword, setKeyword, applyFilters, refresh,
+    table, total, loading, error, keyword, setKeyword, applyFilters, refresh,
   } = useDataList<AdminAccountData>({
     fetchFn: (params) => permissionApi.accounts(params as never),
     filters: filterParams,
@@ -221,7 +222,6 @@ export function AccountsPage() {
       ] as ActionItem<AdminAccountData>[], { width: 160 }),
     ],
     perPage: 20,
-    onError: () => toast.error("操作失败"),
   })
 
   return (
@@ -269,9 +269,13 @@ export function AccountsPage() {
         </FilterCard>
 
         <div className="px-4 lg:px-6">
-          <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
-            <DataTablePagination table={table} />
-          </DataTable>
+          {error ? (
+            <ListError error={error} onRetry={refresh} />
+          ) : (
+            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+              <DataTablePagination table={table} total={total} />
+            </DataTable>
+          )}
         </div>
       </div>
 

@@ -58,7 +58,11 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
         # ---- order ----
         SettingSpec("order_expire_minutes", SettingType.INT, 30, SettingGroup.ORDER, "订单过期时间（分钟）"),
         SettingSpec("query_unpaid_enable", SettingType.BOOL, True, SettingGroup.ORDER, "掉单主动查单开关"),
-        SettingSpec("query_unpaid_window", SettingType.INT, 10, SettingGroup.ORDER, "主动查单窗口（分钟，仅扫近 N 分钟内创建的待支付单）"),
+        SettingSpec("query_unpaid_window", SettingType.INT, 10, SettingGroup.ORDER,
+                    "主动查单窗口（分钟：扫 expire_at 不早于 now-N 的待支付单，订单有效期外再宽限 N 分钟）"),
+        SettingSpec("late_pay_backfill_hours", SettingType.INT, 24, SettingGroup.ORDER,
+                    "过期单回补窗口（小时，0=关闭；过期后该窗口内仍接受已验签的回调/查单入账，"
+                    "窗口外的历史单只能后台手动补单）"),
         SettingSpec("invite_rebate_rate", SettingType.DECIMAL, "0.00", SettingGroup.ORDER,
                     "邀请返现比例（%，按订单到账计算，0=关闭）"),
         SettingSpec("recharge_enable", SettingType.BOOL, True, SettingGroup.ORDER, "商户余额充值开关"),
@@ -121,13 +125,15 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
     ]
 }
 
-# 站点配置页可见 key 白名单：站点名称 + 扣量 + 结算组（自动结算 / D+1 除外）。
+# 站点配置页可见 key 白名单：站点名称 + 订单回补窗口 + 扣量 + 结算组（自动结算 / D+1 除外）。
 # 注册开关、api_pay_enable / landing_enable / api_order_rate_limit 等不在页面上暴露
 # （仍由注册表提供默认值、运行期生效，可直接写库或 PATCH 接口调整），
 # 其余项同理只是不在设置页展示/编辑。
 ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable", "settle_d1_enable"}
+ADMIN_SETTING_ORDER_KEYS: set[str] = {"late_pay_backfill_hours"}
 ADMIN_SETTING_KEYS: set[str] = (
     {"site_name"}
+    | ADMIN_SETTING_ORDER_KEYS
     | {k for k in SETTINGS_REGISTRY if k.startswith("deduct_")}
     | {k for k, spec in SETTINGS_REGISTRY.items() if spec.group is SettingGroup.SETTLE}
 ) - ADMIN_SETTING_HIDDEN_KEYS

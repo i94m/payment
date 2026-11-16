@@ -16,6 +16,7 @@ from app.core.security import MerchantUser
 from app.lib.export import export_csv
 from app.models import Order
 from app.responses import err, paginate, suc
+from app.routers.common.params import parse_int
 from app.services.order import get_order_by_trade_no, order_query_payload
 from app.worker import enqueue
 
@@ -54,7 +55,7 @@ def _build_conditions(auth: MerchantUser, body: dict, for_summary: bool = False)
     if body.get("out_trade_no"):
         conditions.append(Order.out_trade_no == body["out_trade_no"])
     if body.get("status") is not None and body.get("status") != "":
-        status = int(body["status"])
+        status = parse_int(body["status"], "status")
         if status == 1:
             conditions.append(col(Order.status) == 1)
             conditions.append(col(Order.is_deducted) == False)  # noqa: E712
@@ -67,7 +68,7 @@ def _build_conditions(auth: MerchantUser, body: dict, for_summary: bool = False)
     if body.get("type"):
         conditions.append(Order.payment_type_code == body["type"])
     if body.get("agent_id") is not None and body.get("agent_id") != "":
-        conditions.append(Order.agent_id == int(body["agent_id"]))
+        conditions.append(Order.agent_id == parse_int(body["agent_id"], "agent_id"))
     if body.get("subject"):
         conditions.append(col(Order.subject).contains(str(body["subject"])))
     addtime = body.get("addtime") or ""
@@ -125,7 +126,7 @@ async def order_export(session: SessionDep, auth: MerchantUser, body: dict | Non
             ("trade_no", "平台订单号"), ("out_trade_no", "商户订单号"),
             ("type", "支付方式"), ("subject", "商品名称"),
             ("money", "金额"), ("realmoney", "实付金额"), ("merchant_income", "到账金额"),
-            ("status", "状态(0未支付/1已支付/3过期)"),
+            ("status", "状态(0未支付/1已支付/2已退款/3过期)"),
             ("notify_status", "通知状态(-1失败/0成功/1+重试中)"),
             ("agent_id", "代理ID"), ("param", "业务扩展参数"),
             ("created_at", "创建时间"), ("paid_at", "支付时间"),
