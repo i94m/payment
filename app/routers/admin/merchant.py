@@ -25,6 +25,7 @@ from app.core.security import PermissionChecker, hash_password, revoke_all_token
 from app.lib.export import export_csv
 from app.models import Merchant, MerchantRecord, Order, Settlement
 from app.responses import err, paginate, suc
+from app.routers.common.params import parse_int
 from app.services.merchant import generate_merchant_pid
 from app.services.balance import change_merchant_balance, dmoney
 from app.services.settings import get_all_settings
@@ -118,11 +119,8 @@ def _build_query(body: dict):
         query = query.where(Merchant.settle_status == 1)
     elif dstatus == "settle_0":
         query = query.where(Merchant.settle_status == 0)
-    # 高级搜索：超过 N 天无订单的用户
-    try:
-        order_days = int(body.get("order_days") or 0)
-    except (TypeError, ValueError):
-        order_days = 0
+    # 高级搜索：超过 N 天无订单的用户（非法值 400，不再静默回落成 0）
+    order_days = parse_int(body.get("order_days"), "order_days", default=0, minimum=0) or 0
     if order_days > 0:
         cutoff = datetime.now() - timedelta(days=order_days)
         recent_order = select(Order.id).where(
@@ -144,14 +142,10 @@ async def _get_merchant_or_404(session, merchant_id: int) -> Merchant | None:
 async def merchant_list(session: SessionDep, page: int = Query(1, ge=1),
                         per_page: int = Query(20, ge=1, le=100), body: dict | None = None):
     body = dict(body or {})
-    try:
-        page = max(int(body.get("page", page) or page), 1)
-    except (TypeError, ValueError):
-        pass
-    try:
-        per_page = min(max(int(body.get("per_page", per_page) or per_page), 1), 100)
-    except (TypeError, ValueError):
-        pass
+    # DataList 把 page/per_page 放在 body 里，非法值 400（带字段名）而不是静默回落
+    page = parse_int(body.get("page", page), "page", default=page, minimum=1)
+    per_page = parse_int(body.get("per_page", per_page), "per_page",
+                         default=per_page, minimum=1, maximum=100)
 
     query = _build_query(body)
     count_query = select(func.count()).select_from(query.subquery())
