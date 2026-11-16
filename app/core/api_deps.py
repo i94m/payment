@@ -55,10 +55,10 @@ async def get_api_user(request: Request, session: SessionDep,
     merchant = (await session.exec(
         select(Merchant).where(Merchant.pid == pid_int)
     )).first()
-    if not merchant:
-        raise HTTPException(status_code=400, detail={"code": -1, "message": "商户不存在"})
-    if merchant.status != 1:
-        raise HTTPException(status_code=400, detail={"code": -1, "message": "商户已被封禁"})
+    # P1-15：不存在与封禁统一文案，避免用错误信息差异枚举有效 pid
+    if not merchant or merchant.status != 1:
+        raise HTTPException(status_code=400,
+                            detail={"code": -1, "message": "商户不存在或已停用"})
 
     try:
         verify_api_signature(merchant.public_key, params)
