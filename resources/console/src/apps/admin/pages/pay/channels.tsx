@@ -30,9 +30,11 @@ import {
 import type { ActionItem } from "@/components/data-list/"
 import {
   IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconFlask, IconCopy, IconList, IconUpload,
+  IconEye, IconEyeOff,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
+import { useAuthStore } from "@/stores/auth-store"
 import { toIntParam } from "@/lib/form-utils"
 
 // 通道表单值：字段均为字符串（提交前再转数值）；mode/weight/sort 已从表单移除，仅随编辑原值带回
@@ -106,6 +108,17 @@ export function ChannelsPage() {
   const [deleteId, setDeleteId] = React.useState<number | null>(null)
   // 当前插件凭证渲染 schema（随所选插件变化）
   const [currentInputs, setCurrentInputs] = React.useState<PluginInput[]>([])
+
+  // 凭证明文回显：列表/详情默认脱敏（密钥类字段为 ******），只有点「显示凭证」
+  // 才按 reveal=1 重新取一次；后端会再判一次 channel.update，无权限时静默返回
+  // 脱敏值 + config_revealed=false（不是 403），所以前端必须看这个标志而不是假定成功
+  const user = useAuthStore((s) => s.user)
+  const permissions = useAuthStore((s) => s.permissions)
+  const canRevealConfig = !!user?.is_super_admin || permissions.includes("*") || permissions.includes("channel.update")
+  const [configRevealed, setConfigRevealed] = React.useState(false)
+  const [revealing, setRevealing] = React.useState(false)
+  // 脱敏快照：隐藏凭证时用它还原表单，避免明文滞留在输入框里被顺手提交
+  const maskedConfigRef = React.useRef<Record<string, string>>({})
 
   // schema 依赖 editingId/currentInputs，useForm 每次渲染都会读取最新 resolver
   const channelForm = useForm<ChannelFormValues>({
@@ -217,6 +230,8 @@ export function ChannelsPage() {
       const detail = await payApi.channelDetail(id)
       setEditingId(id)
       setCurrentInputs(detail.inputs || [])
+      maskedConfigRef.current = detail.config || {}
+      setConfigRevealed(false)
       channelForm.reset({
         name: detail.name,
         plugin_name: detail.plugin_name,
@@ -246,6 +261,8 @@ export function ChannelsPage() {
       const detail = await payApi.channelDetail(id)
       setEditingId(null)
       setCurrentInputs(detail.inputs || [])
+      maskedConfigRef.current = detail.config || {}
+      setConfigRevealed(false)
       channelForm.reset({
         name: detail.name,
         plugin_name: detail.plugin_name,
@@ -266,6 +283,34 @@ export function ChannelsPage() {
       setDialogOpen(true)
     } catch (err) {
       toast.error(getErrorMessage(err, "加载失败"))
+    }
+  }
+
+  // 显示/隐藏凭证：显示时按 reveal=1 重新取详情，后端按 channel.update 再判一次权限；
+  // 隐藏时直接还原打开弹窗时的脱敏快照（不再发请求）
+  const toggleRevealConfig = async () => {
+    if (!editingId) return
+    if (configRevealed) {
+      channelForm.setValue("config", maskedConfigRef.current, { shouldDirty: false })
+      channelForm.clearErrors("config")
+      setConfigRevealed(false)
+      return
+    }
+    setRevealing(true)
+    try {
+      const detail = await payApi.channelDetail(editingId, { reveal: true })
+      if (!detail.config_revealed) {
+        // 有 channel.view 无 channel.update：不报错，只是不给明文
+        toast.error("无权限查看明文凭证", { description: "需要「支付通道-更新」权限" })
+        return
+      }
+      channelForm.setValue("config", detail.config || {}, { shouldDirty: false })
+      channelForm.clearErrors("config")
+      setConfigRevealed(true)
+    } catch (err) {
+      toast.error(getErrorMessage(err, "凭证读取失败"))
+    } finally {
+      setRevealing(false)
     }
   }
 
@@ -768,7 +813,30 @@ export function ChannelsPage() {
               {/* 插件凭证（按 inputs schema 动态渲染） */}
               {currentInputs.length > 0 && (
                 <div className="col-span-2 space-y-2 rounded-lg border p-3">
-                  <p className="text-sm font-medium">{"通道凭证"}（{selectedPlugin?.showname}）</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">{"通道凭证"}（{selectedPlugin?.showname}）</p>
+                    {editingId && canRevealConfig && (
+                      <Button
+                        type="button" variant="ghost" size="sm"
+                        onClick={toggleRevealConfig} disabled={revealing}
+                      >
+                        {configRevealed
+                          ? <IconEyeOff className="size-4" />
+                          : <IconEye className="size-4" />}
+                        {configRevealed ? "隐藏凭证" : "显示凭证"}
+                      </Button>
+                    )}
+                  </div>
+                  {!configRevealed && (
+                    <p className="text-xs text-muted-foreground">
+                      {"凭证默认脱敏（密钥类显示为 ******），提交时保持 ****** 即不修改库内原值"}
+                    </p>
+                  )}
+                  {configRevealed && (
+                    <p className="text-xs text-amber-600">
+                      {"正在显示明文凭证：注意遮挡屏幕，隐藏后表单回到脱敏值"}
+                    </p>
+                  )}
                   {currentInputs.map((input) => (
                     <Controller
                       key={input.name}
