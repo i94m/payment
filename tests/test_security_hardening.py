@@ -118,6 +118,30 @@ async def test_channel_credentials_masked_by_default(session, client, seeded):
 
 
 @pytest.mark.asyncio
+async def test_channel_reveal_requires_update_permission(session, client, seeded):
+    """权限边界：只有 channel.view 的账号即便带 reveal=1 也拿不到明文。"""
+    headers, _ = await _make_admin(session, "secmaskview", super_admin=False,
+                                   perms=("channel.view",))
+    channel = seeded["channel"]
+
+    r = await client.get(f"/admin-api/pay/channels/{channel.id}",
+                         params={"reveal": 1}, headers=headers)
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["config"]["appkey"] == MASK
+    assert data["config_revealed"] is False
+
+    # 无 channel.update 自然也不能改（掩码回传的写入路径一并挡住）
+    r = await client.put(f"/admin-api/pay/channels/{channel.id}",
+                         json={"name": "x", "plugin_name": "epay",
+                               "payment_type_id": seeded["pay_type"].id,
+                               "status": 1,
+                               "config": {"appkey": MASK}},
+                         headers=headers)
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_channel_update_keeps_masked_secret(session, client, seeded):
     headers, _ = await _make_admin(session, "secmask2")
     channel = seeded["channel"]
