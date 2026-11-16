@@ -196,6 +196,72 @@ async def test_cashier_pay_reuses_stored_pay_info(client, seeded, session):
     assert body["data"]["pay_info"] != marked
 
 
+@pytest.mark.asyncio
+async def test_cashier_pay_refresh_parses_string_values(client, seeded, session):
+    """refresh 走 parse_bool：字符串 "false"/"0" 不再被裸 bool() 判成 true。
+
+    回归：旧代码 `bool(body.get("refresh", False))` 把非空字符串一律当真，
+    收银台传 refresh="false" 时仍会重新拉起上游、新建付款会话。
+    """
+    order = await _pull_via_api(client, "CASH-REFRESH-STR")
+    marked = "https://upstream.example/pay/MARKED-STR"
+    await _set_extra(session, order, {"pay_type": "jump", "pay_info": marked})
+
+    for value in ("false", "0", "no", "off", ""):
+        r = await client.post(
+            "/cashier/pay",
+            json={"trade_no": order.trade_no, "type": "alipay", "refresh": value},
+        )
+        body = r.json()
+        assert body["code"] == 0, body
+        assert body["data"]["pay_info"] == marked, (value, body)
+
+    # "true" 仍强制重新拉起
+    r = await client.post("/cashier/pay",
+                          json={"trade_no": order.trade_no, "type": "alipay", "refresh": "true"})
+    body = r.json()
+    assert body["code"] == 0, body
+    assert body["data"]["pay_info"] != marked
+
+    # 非法值 400 + 字段名
+    r = await client.post("/cashier/pay",
+                          json={"trade_no": order.trade_no, "type": "alipay", "refresh": "maybe"})
+    assert r.status_code == 400, r.text[:200]
+    assert r.json()["code"] == 400
+    assert "refresh" in r.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_admin_merchant_list_bad_params_return_400(client, seeded, session):
+    """商户列表的高级搜索/分页参数统一走 parse_int：非法值 400 + 字段名。
+
+    回归：旧实现裸 int() + try/except 静默回落（order_days→0、page/per_page→默认值），
+    调用方拿不到「哪个参数错了」。
+    """
+    h = await _admin_headers(session)
+
+    for payload, field in (
+        ({"order_days": "abc"}, "order_days"),
+        ({"page": "abc"}, "page"),
+        ({"per_page": "1.5"}, "per_page"),
+    ):
+        r = await client.post("/admin-api/merchant/list", headers=h, json=payload)
+        assert r.status_code == 400, (payload, r.text[:200])
+        assert r.json()["code"] == 400
+        assert field in r.json()["message"], r.json()
+
+    # 合法值（含字符串形式）仍然正常，分页参数按区间收敛
+    r = await client.post("/admin-api/merchant/list", headers=h,
+                          json={"page": "1", "per_page": "10", "order_days": "30"})
+    body = r.json()
+    assert r.status_code == 200 and body["code"] == 0, body
+    assert body["data"]["per_page"] == 10
+
+    r = await client.post("/admin-api/merchant/list", headers=h, json={"per_page": "999"})
+    assert r.status_code == 200
+    assert r.json()["data"]["per_page"] == 100
+
+
 # ------------------------------------------------------------
 # P2-21 CSV 导出状态文案
 # ------------------------------------------------------------
