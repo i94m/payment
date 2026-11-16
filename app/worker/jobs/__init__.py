@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 
 from saq.types import Context
 from saq.job import CronJob
-from sqlalchemy import update
+from sqlalchemy import and_, update
 from sqlmodel import select
 
 from app.core.cache import try_lock
@@ -29,6 +29,12 @@ from app.services.pay_debug import write_pay_debug
 
 # 订单状态
 PENDING, PAID, EXPIRED = 0, 1, 3
+
+# 主动查单去重窗口（秒）：同一订单在该窗口内只投递一次查单任务
+QUERY_DEDUPE_TTL = 120
+# 过期任务分批：每批行数 / 单轮最多批数（避免停机恢复后长事务）
+EXPIRE_BATCH = 1000
+EXPIRE_MAX_BATCHES = 50
 
 
 async def notify_merchant_job(ctx: Context, trade_no: str) -> None:
@@ -71,13 +77,19 @@ async def scan_pending_notify(ctx: Context) -> None:
 async def query_upstream_job(ctx: Context, trade_no: str) -> None:
     """主动查单补单：插件 query → paid 则走幂等记账 → 投递商户通知。"""
     from app.services.channel import get_channel_with_config
-    from app.services.order import ORDER_PENDING, get_order_by_trade_no, process_paid_order
+    from app.services.order import (
+        ORDER_EXPIRED,
+        ORDER_PENDING,
+        get_order_by_trade_no,
+        process_paid_order,
+    )
     from app.services.plugin import PluginRegistry
     from app.services.plugin_interfaces import PaymentContext
 
     async with session_maker() as session:
         order = await get_order_by_trade_no(session, trade_no)
-        if not order or order.status != ORDER_PENDING:
+        # 待支付单补单；已过期单仍允许查一次（P0-4：过期后窗口内查到已付款要走回补）
+        if not order or order.status not in (ORDER_PENDING, ORDER_EXPIRED):
             return
         channel, config = await get_channel_with_config(session, order.channel_id)
         if not channel:
@@ -145,7 +157,17 @@ async def query_upstream_job(ctx: Context, trade_no: str) -> None:
 
 
 async def scan_unpaid_orders(ctx: Context) -> None:
-    """每分钟：近 N 分钟（默认 10）内创建的待支付订单 → enqueue 主动查单（补单）。"""
+    """每分钟：把**仍在有效期内**的待支付订单投递主动查单（补单）。
+
+    口径（P0-4）：按 `expire_at` 扫描，而不是「近 N 分钟创建的」。
+    原口径窗口（10 分钟）短于订单有效期（默认 30 分钟），订单有效期的后半段
+    永远不会被查单 —— 一旦回调丢失，只能等 cron 把它置过期，钱卡死。
+    现在扫描「有效期刚结束、或仍在有效期内」的待支付单（过期后仍保留
+    query_unpaid_window 分钟的宽限，覆盖 cron 置过期前后的窗口）。
+
+    去重（P3-28）：同一订单在 query 去重窗口内只投递一次，避免每分钟对同一批
+    待支付单重复入队；按 expire_at 升序取最近要过期的单（高峰期优先处理最紧急的）。
+    """
     from app.core.cache import get_cache_ctx
     from app.services.settings import get_all_settings, setting_enabled
 
@@ -154,43 +176,83 @@ async def scan_unpaid_orders(ctx: Context) -> None:
         if got is False:
             return
 
-    async with session_maker() as session:
-        settings = await get_all_settings(session)
-        if not setting_enabled(settings.get("query_unpaid_enable", True)):
-            return
-        try:
-            window_minutes = int(settings.get("query_unpaid_window", "10"))
-        except ValueError:
-            window_minutes = 10
+        async with session_maker() as session:
+            settings = await get_all_settings(session)
+            if not setting_enabled(settings.get("query_unpaid_enable", True)):
+                return
+            try:
+                window_minutes = int(settings.get("query_unpaid_window", "10"))
+            except ValueError:
+                window_minutes = 10
+            try:
+                expire_minutes = int(settings.get("order_expire_minutes", "30"))
+            except ValueError:
+                expire_minutes = 30
 
-        since = datetime.now() - timedelta(minutes=window_minutes)
-        rows = (await session.exec(
-            select(Order.trade_no)
-            .where(Order.status == PENDING, Order.created_at >= since, Order.channel_id > 0)
-            .order_by(Order.created_at)
-            .limit(100)
-        )).all()
+            now = datetime.now()
+            grace = timedelta(minutes=max(window_minutes, 0))
+            # expire_at 缺失的历史数据按 created_at + 最长有效期兜底
+            longest = timedelta(minutes=max(expire_minutes, 0) + max(window_minutes, 0))
+            rows = (await session.exec(
+                select(Order.trade_no)
+                .where(Order.status == PENDING, Order.channel_id > 0)
+                .where(
+                    (Order.expire_at >= now - grace)
+                    | and_(Order.expire_at.is_(None), Order.created_at >= now - longest)
+                )
+                .order_by(Order.expire_at)
+                .limit(100)
+            )).all()
 
-    from app.worker import queue
-    for trade_no in rows:
-        await queue.enqueue("query_upstream_job", trade_no=trade_no)
-    if rows:
-        logger.info(f"scan_unpaid_orders: 投递 {len(rows)} 笔主动查单")
+        from app.worker import queue
+        sent = 0
+        for trade_no in rows:
+            # 去重窗口内同一订单只投递一次；Redis 抖动时宁可多投一次（查单本身幂等）
+            try:
+                fresh = await cache.set(f"scan:query:{trade_no}", "1", nx=True,
+                                        ex=QUERY_DEDUPE_TTL)
+            except Exception:
+                fresh = True
+            if not fresh:
+                continue
+            await queue.enqueue("query_upstream_job", trade_no=trade_no)
+            sent += 1
+        if sent:
+            logger.info(f"scan_unpaid_orders: 投递 {sent} 笔主动查单")
 
 
 async def expire_orders_task(ctx: Context) -> None:
-    """每 5 分钟：过期待支付订单分批置 status=3（已过期）。"""
+    """每 5 分钟：过期待支付订单分批置 status=3（已过期）。
+
+    分批（P3-29）：原来一条无 LIMIT 的 UPDATE，停机恢复后可能长时间锁住大批行；
+    改为按 id 分批（每批 EXPIRE_BATCH 条），批内再用 status=PENDING 兜一次状态，
+    防止「select 到 update 之间回调把它置已支付」被误改成过期。
+    """
     now = datetime.now()
+    total = 0
     async with session_maker() as session:
-        result = await session.exec(
-            update(Order)
-            .where(Order.status == PENDING, Order.expire_at.isnot(None), Order.expire_at < now)
-            .values(status=EXPIRED)
-            .execution_options(synchronize_session=False)
-        )
-        await session.commit()
-        if result.rowcount > 0:
-            logger.info(f"expire_orders_task: 过期订单 {result.rowcount} 笔")
+        for _ in range(EXPIRE_MAX_BATCHES):
+            ids = (await session.exec(
+                select(Order.id)
+                .where(Order.status == PENDING,
+                       Order.expire_at.isnot(None),
+                       Order.expire_at < now)
+                .limit(EXPIRE_BATCH)
+            )).all()
+            if not ids:
+                break
+            result = await session.exec(
+                update(Order)
+                .where(Order.id.in_(ids), Order.status == PENDING)
+                .values(status=EXPIRED)
+                .execution_options(synchronize_session=False)
+            )
+            await session.commit()
+            total += result.rowcount or 0
+            if len(ids) < EXPIRE_BATCH:
+                break
+    if total > 0:
+        logger.info(f"expire_orders_task: 过期订单 {total} 笔")
 
 
 # ============================================================
