@@ -50,7 +50,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild size="lg" tooltip={"仪表盘"}>
+            <SidebarMenuButton asChild size="lg" tooltip={"数据统计"}>
               <Link to="/">
                 <img src="/images/logo.svg" alt="" className="size-5!" />
                 <span className="truncate group-data-[collapsible=icon]:hidden">{siteName}</span>
