@@ -208,8 +208,11 @@ class Config(BaseSettings):
             "disk": "local",
             "prefix": "files/",
             "frequency": "daily",
-            "max_file_size": 20 * 1048576,
-            "extensions": [".mp4", ".pdf", ".docx", ".xlsx", ".txt"],
+            "max_file_size": 50 * 1048576,
+            "extensions": [
+                ".mp4", ".pdf", ".docx", ".doc", ".xlsx", ".xls",
+                ".pptx", ".ppt", ".csv", ".txt", ".zip", ".rar",
+            ],
         },
         "avatar": {
             "guest": True,

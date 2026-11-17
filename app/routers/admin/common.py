@@ -2,9 +2,11 @@
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
+from app.core.config import config
 from app.core.deps import CacheDep, SessionDep
 from app.core.limiter import rate_limit
 from app.core.security import AdminUser, PermissionChecker, hash_password, verify_password
+from app.addons.storage import get_storage
 from app.models import Merchant, SystemAdmin
 from app.responses import err, suc
 
@@ -23,6 +25,30 @@ async def get_site_info(session: SessionDep, cache: CacheDep, _rl=rate_limit(tim
     return suc({
         "site_name": str(settings.get("site_name") or "聚合支付"),
         "features": build_public_features(settings),
+    })
+
+
+# ============================================================
+# 存储配置 GET /storage/info（三端前缀均可访问）
+# ============================================================
+
+@public_router.get("/storage/info")
+async def storage_info():
+    """
+    当前存储配置（前端拼文件访问地址用）
+
+    返回 provider 与访问域名：local 时 host 为 STORAGE_LOCAL_HOST（同域相对路径），
+    cos/oss 时 host 为 bucket 的访问域名。前端据此决定 key → URL 的拼装方式，
+    切换 STORAGE_PROVIDER 后无需改前端代码。
+
+    不校验登录：admin / merchant / agent 三个控制台登录后都会调用，而内容仅为
+    「存储驱动 + 文件访问域名」这类公开信息（文件本身即可公开访问）。
+    """
+    disk = config.STORAGE_PROVIDER if config.STORAGE_PROVIDER in ('cos', 'oss') else 'local'
+    info = get_storage(disk).get_config()
+    return suc({
+        "provider": disk,
+        "host": (info.get("host") or "").rstrip("/"),
     })
 
 

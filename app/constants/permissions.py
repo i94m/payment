@@ -7,7 +7,7 @@
 
 PERMISSION_TREE: list[tuple[str, str, list[tuple[str, str]]]] = [
     (
-        "仪表盘", "dashboard", [
+        "数据统计", "dashboard", [
             ("查看", "dashboard.view"),
         ]
     ),
@@ -93,7 +93,7 @@ PERMISSION_TREE: list[tuple[str, str, list[tuple[str, str]]]] = [
 
 # 前端菜单（MENU_TREE）：key 对应权限 key，前端按权限过滤显隐
 MENU_TREE: list[dict] = [
-    {"key": "dashboard.view", "name": "数据看板", "path": "/dashboard", "icon": "icon-dashboard"},
+    {"key": "dashboard.view", "name": "数据统计", "path": "/dashboard", "icon": "icon-dashboard"},
     {"key": "order.view", "name": "订单管理", "path": "/trade/orders", "icon": "icon-list"},
     {"key": "merchant.view", "name": "商户管理", "path": "/merchants", "icon": "icon-user"},
     {"key": "merchant.view", "name": "资金明细", "path": "/records", "icon": "icon-file"},
