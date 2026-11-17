@@ -8,13 +8,13 @@
 # 做的事（可重复执行，幂等）：
 #   1. .env 缺失时从 .env.example 复制并退出，列出必填项（密钥不自动生成，缺配直接报错）
 #   2. PAY_IMAGE 带仓库前缀时 docker compose pull 拉镜像
-#   3. docker compose up -d（app×2 + worker）
-#   4. 等待全部容器 healthy
+#   3. docker compose up -d（app×N + worker，N 取 .env 的 APP_REPLICAS，默认 3）
+#   4. 等待全部容器 healthy（期望容器数按「app 实例数 + worker」计算）
 #   5. 空库自动建表初始化；已有库自动 alembic 增量迁移
 #
 # 可选参数：
 #   --no-pull   跳过 pull（离线/已手动加载镜像时）
-#   --scale N   app 实例数（默认 compose 内置 2，N ≤ 3）
+#   --scale N   app 实例数（覆盖 .env 的 APP_REPLICAS；N ≤ 端口范围大小，默认 3 个端口）
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -98,12 +98,18 @@ log "启动容器（镜像 ${IMAGE}）..."
 dc up "${UP_ARGS[@]}"
 
 # ---- 4. 等全部 healthy ----
-log "等待容器健康检查（最多 90s）..."
+# 期望容器数 = app 实例数 + worker（1 个）：不能写死，--scale 1 时只有 2 个容器，写死会假失败退出
+APPS="${SCALE:-$(env_val APP_REPLICAS)}"   # app 实例数：--scale 优先，其次 .env 的 APP_REPLICAS（与 compose 插值同源）
+case "$APPS" in
+  ''|*[!0-9]*) APPS=3 ;;   # 未配置 / 非数字：回落到 compose 默认值 3
+esac
+EXPECTED=$((APPS + 1))     # 判定用 -ge：worker 被额外扩容时不误报
+log "等待容器健康检查（期望 ${EXPECTED} 个：app×${APPS} + worker×1，最多 90s）..."
 ok=0
 for _ in $(seq 1 45); do
   out=$(dc ps --format '{{.Name}}|{{.Status}}' 2>/dev/null || true)
   if [ -n "$out" ] \
-     && [ "$(printf '%s\n' "$out" | grep -c '|')" -ge 3 ] \
+     && [ "$(printf '%s\n' "$out" | grep -c '|')" -ge "$EXPECTED" ] \
      && ! printf '%s\n' "$out" | grep -Eq 'starting|unhealthy'; then
     ok=1; break
   fi
