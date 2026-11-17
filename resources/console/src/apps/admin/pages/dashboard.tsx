@@ -435,7 +435,7 @@ export function DashboardPage() {
                 <CardTitle>{"交易统计"}</CardTitle>
                 <CardDescription>{"近期成功率与已支付笔数实时汇总"}</CardDescription>
               </CardHeader>
-              <CardContent className="flex flex-col gap-4 pt-1">
+              <CardContent className="flex flex-col gap-4">
                 <div className="@container/stats">
                   <div className="grid grid-cols-1 gap-3 @lg/stats:grid-cols-2">
                     <div className="rounded-lg border bg-muted/30 p-3">
@@ -496,51 +496,69 @@ export function DashboardPage() {
                   </Button>
                 </CardAction>
               </CardHeader>
-              <CardContent className="flex flex-col pt-1 @container/route">
+              <CardContent className="px-0 pt-0">
                 {loading ? (
-                  <div className="flex flex-col gap-2 py-1">
-                    {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+                  <div className="flex flex-col gap-2 px-4 py-1">
+                    {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
                   </div>
-                ) : (config?.pay_types ?? []).map((pt) => {
-                  const form = routeForms[pt.id] ?? EMPTY_ROUTE
-                  const channels = (config?.channels ?? []).filter((c) => c.payment_type_id === pt.id)
-                  const setForm = (patch: Partial<RouteForm>) =>
-                    setRouteForms((s) => ({ ...s, [pt.id]: { ...form, ...patch } }))
-                  return (
-                    <div key={pt.id}
-                      className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1.5 border-b py-2 last:border-b-0 @sm/route:grid-cols-[5rem_1fr_auto]">
-                      <span className="flex min-w-20 items-center gap-1.5 truncate text-sm font-medium @sm/route:w-20 @sm/route:min-w-0"
-                        title={pt.name}>
-                        <PayIcon code={pt.code} icon={pt.icon} />
-                        {pt.name}
-                      </span>
-                      {/* Radix Select 不支持空字符串 value，用 "off" 哨兵值代表「不启用」 */}
-                      <Select
-                        value={form.channel ? String(form.channel) : "off"}
-                        onValueChange={(v) => setForm({ channel: v === "off" ? 0 : Number(v) })}
-                      >
-                        <SelectTrigger size="sm" className="w-full min-w-0">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="off">{"不启用"}</SelectItem>
-                          {channels.map((c) => (
-                            <SelectItem key={c.id} value={String(c.id)}>{c.name} (ID:{c.id})</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="col-span-2 flex items-center gap-1 @sm/route:col-span-1">
-                        <Input className="h-8 w-full min-w-0 flex-1 @sm/route:w-20 @sm/route:flex-none" placeholder={"最小"} inputMode="decimal" value={form.min}
-                          disabled={form.channel === 0}
-                          onChange={(e) => setForm({ min: e.target.value })} />
-                        <span className="text-muted-foreground shrink-0">-</span>
-                        <Input className="h-8 w-full min-w-0 flex-1 @sm/route:w-20 @sm/route:flex-none" placeholder={"最大"} inputMode="decimal" value={form.max}
-                          disabled={form.channel === 0}
-                          onChange={(e) => setForm({ max: e.target.value })} />
-                      </div>
-                    </div>
-                  )
-                })}
+                ) : (
+                  <Table className="text-xs">
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="h-8 pl-4 text-xs font-medium">{"支付方式"}</TableHead>
+                        <TableHead className="h-8 text-xs font-medium">{"通道"}</TableHead>
+                        <TableHead className="h-8 pr-4 text-xs font-medium">{"金额区间（元）"}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(config?.pay_types ?? []).map((pt) => {
+                        const form = routeForms[pt.id] ?? EMPTY_ROUTE
+                        const channels = (config?.channels ?? []).filter((c) => c.payment_type_id === pt.id)
+                        const setForm = (patch: Partial<RouteForm>) =>
+                          setRouteForms((s) => ({ ...s, [pt.id]: { ...form, ...patch } }))
+                        const off = form.channel === 0
+                        return (
+                          <TableRow key={pt.id} className="hover:bg-transparent">
+                            <TableCell className="whitespace-nowrap py-1.5 pl-4 pr-2">
+                              <span className="flex items-center gap-1.5" title={pt.name}>
+                                <PayIcon code={pt.code} icon={pt.icon} />
+                                <span className="text-sm font-medium">{pt.name}</span>
+                              </span>
+                            </TableCell>
+                            <TableCell className="py-1.5 pr-2">
+                              {/* Radix Select 不支持空字符串 value，用 "off" 哨兵值代表「不启用」 */}
+                              <Select
+                                value={form.channel ? String(form.channel) : "off"}
+                                onValueChange={(v) => setForm({ channel: v === "off" ? 0 : Number(v) })}
+                              >
+                                <SelectTrigger size="sm" className="h-8 w-full min-w-0 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="off">{"不启用"}</SelectItem>
+                                  {channels.map((c) => (
+                                    <SelectItem key={c.id} value={String(c.id)}>{c.name} (ID:{c.id})</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell className="py-1.5 pr-4">
+                              <div className="flex items-center gap-1">
+                                <Input className="h-8 w-full min-w-0 px-1.5 text-xs tabular-nums" placeholder={"最小"} inputMode="decimal"
+                                  value={form.min} disabled={off} aria-label={`${pt.name} 最小金额`}
+                                  onChange={(e) => setForm({ min: e.target.value })} />
+                                <span className="text-muted-foreground shrink-0">-</span>
+                                <Input className="h-8 w-full min-w-0 px-1.5 text-xs tabular-nums" placeholder={"最大"} inputMode="decimal"
+                                  value={form.max} disabled={off} aria-label={`${pt.name} 最大金额`}
+                                  onChange={(e) => setForm({ max: e.target.value })} />
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
 
@@ -554,45 +572,71 @@ export function DashboardPage() {
                   )}
                 </CardAction>
               </CardHeader>
-              <CardContent className="flex flex-col gap-2 pt-1">
+              <CardContent className="px-0 pt-0">
                 {loading ? (
-                  <>
-                    <Skeleton className="h-8 w-full" />
-                    <Skeleton className="h-8 w-full" />
-                  </>
+                  <div className="flex flex-col gap-2 px-4 py-1">
+                    <Skeleton className="h-9 w-full" />
+                    <Skeleton className="h-9 w-full" />
+                  </div>
                 ) : (
-                  <>
-                    {/* Radix Select 不支持空字符串 value，用 "off" 哨兵值代表「关闭」，回调时映射回 "" */}
-                    <Select
-                      value={rlChannel || "off"}
-                      onValueChange={(v) => onRatelimitChannelChange(v === "off" ? "" : v)}
-                    >
-                      <SelectTrigger size="sm" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="off">{"关闭（解除全部限速）"}</SelectItem>
-                        {(config?.channels ?? []).map((c) => (
-                          <SelectItem key={c.id} value={String(c.id)}>{c.name} (ID:{c.id})</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <div className="flex items-center gap-2">
-                      {/* 选「关闭」时无目标通道，次/分钟无意义，禁用（保存仍可用：一键解除全部限速） */}
-                      <Input className="h-8 min-w-0 flex-1" placeholder={"次/分钟"} disabled={!rlChannel}
-                        value={rlValue} onChange={(e) => setRlValue(e.target.value)} />
-                      <Button size="sm" className="h-8 shrink-0" disabled={rlSaving} onClick={saveRatelimit}>
-                        {rlSaving ? <Spinner className="size-3.5" /> : "保存"}
-                      </Button>
-                    </div>
-                  </>
+                  <Table className="text-xs">
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="h-8 w-16 pl-4 text-xs font-medium">{"项目"}</TableHead>
+                        <TableHead className="h-8 pr-4 text-xs font-medium">{"设置"}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell className="py-1.5 pl-4 pr-2 text-muted-foreground">{"通道"}</TableCell>
+                        <TableCell className="py-1.5 pr-4">
+                          {/* Radix Select 不支持空字符串 value，用 "off" 哨兵值代表「关闭」，回调时映射回 "" */}
+                          <Select
+                            value={rlChannel || "off"}
+                            onValueChange={(v) => onRatelimitChannelChange(v === "off" ? "" : v)}
+                          >
+                            <SelectTrigger size="sm" className="h-8 w-full min-w-0 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="off">{"关闭（解除全部限速）"}</SelectItem>
+                              {(config?.channels ?? []).map((c) => (
+                                <SelectItem key={c.id} value={String(c.id)}>{c.name} (ID:{c.id})</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                      </TableRow>
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell className="py-1.5 pl-4 pr-2 text-muted-foreground">{"限速"}</TableCell>
+                        <TableCell className="py-1.5 pr-4">
+                          <div className="flex items-center gap-1.5">
+                            {/* 选「关闭」时无目标通道，次/分钟无意义，禁用（保存仍可用：一键解除全部限速） */}
+                            <Input className="h-8 w-full min-w-0 px-1.5 text-xs tabular-nums" placeholder={"次/分钟"} disabled={!rlChannel}
+                              aria-label={"每分钟拉单次数"}
+                              value={rlValue} onChange={(e) => setRlValue(e.target.value)} />
+                            <Button size="sm" className="h-8 shrink-0" disabled={rlSaving} onClick={saveRatelimit}>
+                              {rlSaving ? <Spinner className="size-3.5" /> : "保存"}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {rlStats?.show === 1 ? (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell className="py-1.5 pl-4 pr-2 text-muted-foreground">{"统计"}</TableCell>
+                          <TableCell className="py-1.5 pr-4 text-xs text-muted-foreground">
+                            {`总单 ${rlStats.allnum ?? 0} · 成功 ${rlStats.success ?? 0} · 成功率 ${rlStats.rate ?? 0}%`}
+                          </TableCell>
+                        </TableRow>
+                      ) : rlChannel ? (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell className="py-1.5 pl-4 pr-2 text-muted-foreground">{"统计"}</TableCell>
+                          <TableCell className="py-1.5 pr-4"><Skeleton className="h-3.5 w-44" /></TableCell>
+                        </TableRow>
+                      ) : null}
+                    </TableBody>
+                  </Table>
                 )}
-                {rlStats?.show === 1 && (
-                  <p className="text-muted-foreground text-xs">
-                    {`总单 ${rlStats.allnum ?? 0} · 成功 ${rlStats.success ?? 0} · 成功率 ${rlStats.rate ?? 0}%`}
-                  </p>
-                )}
-                {!loading && rlChannel && !rlStats && <Skeleton className="h-3.5 w-44" />}
               </CardContent>
             </Card>
           </div>
