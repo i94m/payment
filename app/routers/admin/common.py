@@ -1,10 +1,10 @@
 """admin 公共接口：用户信息 / 菜单 / 系统信息 / 改密。"""
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from app.core.deps import CacheDep, SessionDep
 from app.core.limiter import rate_limit
-from app.core.security import AdminUser, hash_password, verify_password
+from app.core.security import AdminUser, PermissionChecker, hash_password, verify_password
 from app.models import Merchant, SystemAdmin
 from app.responses import err, suc
 
@@ -47,8 +47,12 @@ async def get_menu_list(auth: AdminUser, session: SessionDep):
     return suc(filtered)
 
 
-@router.get("/systemInfo")
-async def get_system_info(auth: AdminUser, session: SessionDep):
+@router.get("/systemInfo", dependencies=[Depends(PermissionChecker("system.admin"))])
+async def get_system_info(session: SessionDep):
+    """系统信息（版本 + 商户/管理员数量）。
+
+    仅超管/持 system.admin 的管理员可用：商户/管理员规模属平台运营数据（B04）。
+    """
     from sqlmodel import func, select
     merchant_count = (await session.exec(select(func.count()).select_from(Merchant))).one()
     admin_count = (await session.exec(select(func.count()).select_from(SystemAdmin))).one()

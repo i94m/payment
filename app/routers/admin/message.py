@@ -1,16 +1,22 @@
-"""后台通知中心：列表 / 未读数 / 已读（已读为全局语义，任一管理员操作即生效）。"""
+"""后台通知中心：列表 / 未读数 / 已读（已读为全局语义，任一管理员操作即生效）。
+
+通知内容来自运维告警（队列/通知耗尽等）与平台消息，属内部运营信息，
+全部端点统一要求 system.admin（B04：不再「登录即可读」）。
+"""
 from datetime import datetime
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlmodel import col, func, select
 
 from app.core.deps import SessionDep
-from app.core.security import AdminUser
+from app.core.security import PermissionChecker
 from app.models import AdminMessage
 from app.responses import err, paginate, suc
 
 router = APIRouter()
+
+_require_admin_perm = [Depends(PermissionChecker("system.admin"))]
 
 
 def _dump(m: AdminMessage) -> dict:
@@ -24,8 +30,8 @@ def _dump(m: AdminMessage) -> dict:
     }
 
 
-@router.get("/list")
-async def message_list(session: SessionDep, auth: AdminUser,
+@router.get("/list", dependencies=_require_admin_perm)
+async def message_list(session: SessionDep,
                        page: int = Query(1, ge=1), per_page: int = Query(20, ge=1, le=100),
                        unread: int = 0):
     query = select(AdminMessage).order_by(col(AdminMessage.id).desc())
@@ -38,8 +44,8 @@ async def message_list(session: SessionDep, auth: AdminUser,
                         has_more_pages=page * per_page < total, has_pages=total > per_page))
 
 
-@router.get("/unread-count")
-async def unread_count(session: SessionDep, auth: AdminUser):
+@router.get("/unread-count", dependencies=_require_admin_perm)
+async def unread_count(session: SessionDep):
     cnt = (await session.exec(
         select(func.count()).select_from(AdminMessage).where(
             col(AdminMessage.read_at).is_(None),
@@ -52,8 +58,8 @@ class ReadRequest(BaseModel):
     id: int = 0  # 0=全部已读
 
 
-@router.post("/read")
-async def mark_read(body: ReadRequest, session: SessionDep, auth: AdminUser):
+@router.post("/read", dependencies=_require_admin_perm)
+async def mark_read(body: ReadRequest, session: SessionDep):
     now = datetime.now()
     if body.id > 0:
         msg = await session.get(AdminMessage, body.id)
