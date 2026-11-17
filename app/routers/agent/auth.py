@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlmodel import col, select
 
 from app.core.deps import CacheDep, SessionDep
-from app.core.security import AgentUser, issue_token, revoke_token, verify_password
+from app.core.security import AgentUser, issue_token, revoke_token, single_session_default, verify_password
 from app.lib.linktoken import paypage_url
 from app.models import Agent, Merchant
 from app.responses import err, suc
@@ -31,17 +31,24 @@ class SsoLoginRequest(BaseModel):
     token: str
 
 
-async def _issue_login(session, request: Request, agent: Agent, name: str = ""):
+async def _issue_login(session, cache, request: Request, agent: Agent, name: str = "",
+                       single_session: bool | None = None):
     """签发 agent JWT 并顺带更新最后登录时间（失败不阻断）。"""
     ip = request.client.host if request.client else None
+    # 默认跟随 .env 的 LOGIN_MULTI_SESSION（默认单端）；SSO 代登录显式传 False
+    if single_session is None:
+        single_session = single_session_default()
     jwt_token = await issue_token(
         guard="agent",
         user_id=agent.id,
         session=session,
         ip=ip,
         user_agent=request.headers.get("user-agent", ""),
-        single_session=False,  # 代理多端并存（对齐老系统 30 天 cookie 语义）
+        single_session=single_session,
         name=name or None,
+        # 必须传 cache：撤销时才会把旧 jti 写进 Redis 黑名单，
+        # 否则只是删了 DB 跟踪行，旧 token 在校验侧依然有效（直到自然过期）
+        cache=cache,
     )
     try:
         agent.last_login_at = datetime.now()
@@ -69,7 +76,7 @@ async def login(body: LoginRequest, request: Request, session: SessionDep, cache
     if not agent or not verify_password(body.password, agent.password):
         return err(-1, "代理不存在或密码错误")
 
-    token = await _issue_login(session, request, agent)
+    token = await _issue_login(session, cache, request, agent)
     return suc({
         "token_type": token.token_type,
         "access_token": token.access_token,
@@ -101,7 +108,9 @@ async def sso_login(body: SsoLoginRequest, request: Request, session: SessionDep
         return err(-1, "代理已被禁用，请联系商户")
 
     # SSO 是商户代登录，不撤销代理已有会话
-    jwt_token = await _issue_login(session, request, agent, name="sso")
+    jwt_token = await _issue_login(
+        session, cache, request, agent, name="sso", single_session=False
+    )
     return suc({
         "token_type": jwt_token.token_type,
         "access_token": jwt_token.access_token,

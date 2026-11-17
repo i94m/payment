@@ -13,6 +13,7 @@ from app.core.security import (
     issue_token,
     revoke_token,
     revoke_user_token_by_id,
+    single_session_default,
     verify_password,
 )
 from app.models import SystemAdmin, SystemAdminLogin
@@ -49,7 +50,8 @@ async def login(body: LoginRequest, request: Request, session: SessionDep, cache
         session=session,
         ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent", ""),
-        single_session=True,
+        # 单端/多端由 .env 的 LOGIN_MULTI_SESSION 决定（默认单端：新登录踢掉旧会话）
+        single_session=single_session_default(),
         cache=cache,
     )
     ip = request.client.host if request.client else None

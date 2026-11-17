@@ -97,6 +97,16 @@ def decode_token(token: str) -> dict | None:
         return None
 
 
+def single_session_default() -> bool:
+    """新签发 token 时是否按「单端登录」处理（撤销同账号其它会话）。
+
+    由 .env 的 LOGIN_MULTI_SESSION 控制：false（默认）= 单端，新登录踢掉旧会话；
+    true = 多端并存。SSO 代登录等场景不受此配置影响，仍显式传 single_session=False，
+    避免管理员/商户代登录把对方正在用的会话撤掉。
+    """
+    return not config.LOGIN_MULTI_SESSION
+
+
 # ============================================================
 # Token 签发 / 撤销（DB 跟踪 + Redis 黑名单）
 # ============================================================

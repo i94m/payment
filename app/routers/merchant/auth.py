@@ -15,6 +15,7 @@ from app.core.security import (
     revoke_all_tokens,
     revoke_token,
     revoke_user_token_by_id,
+    single_session_default,
     verify_password,
 )
 from app.models import Merchant, MerchantLoginLog
@@ -67,9 +68,12 @@ async def _issue_login(
     merchant: Merchant,
     request: Request,
     name: str = "",
-    single_session: bool = True,
+    single_session: bool | None = None,
 ):
     ip = request.client.host if request.client else None
+    # 默认跟随 .env 的 LOGIN_MULTI_SESSION；SSO 代登录显式传 False（不撤销商户已有会话）
+    if single_session is None:
+        single_session = single_session_default()
     jwt_token = await issue_token(
         guard="merchant",
         user_id=merchant.id,

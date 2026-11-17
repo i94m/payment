@@ -28,6 +28,10 @@ class Config(BaseSettings):
     # 60 minutes * 24 hours * 8 days = 8 days
     # API端Token有效期[分钟]
     API_ACCESS_TOKEN_TTL: int = 11520
+    # 登录是否允许「多端并存」（同一账号可同时在多个浏览器/设备登录）。
+    # false（默认）= 单端登录：新登录会撤销该账号已有的其它会话（旧 token 进
+    # Redis 黑名单 7 天，旧端下一次请求 401 被踢回登录页）；true = 多端同时在线。
+    LOGIN_MULTI_SESSION: bool = False
     # 收银台不透明链接有效期[分钟]（0=不限制；链接含签发时间戳，逐次校验）
     CASHIER_LINK_TTL_MINUTES: int = 1440
     # local 启用万能验证码 0000（仅供本地开发/测试）；缺省必须 fail-secure 落到 prod，
