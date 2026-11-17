@@ -8,7 +8,7 @@
 访问日志/分享里就是长期可用的付款入口。默认 24 小时（收银台只服务即时支付），
 `CASHIER_LINK_TTL_MINUTES` 可在 .env 调整。
 
-收款页 /p/{code}：随机 10 字符短码 + pay_tokens 表映射（见
+收款页 /p/{code}：随机 10 字符小写短码 + pay_tokens 表映射（见
 services/paytoken.py），链接形态见 paypage_url。
 """
 import base64

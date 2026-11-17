@@ -48,7 +48,7 @@ async def test_pay_code_short_and_stable(session, seeded):
     """收款页短码：10 字符随机外观、不含 pid、同商户稳定复用、代理独立成码。"""
     m = seeded["merchant"]
     code = await paytoken.get_or_create(session, m.id)
-    assert re.fullmatch(r"[A-Za-z0-9]{10}", code)
+    assert re.fullmatch(r"[0-9a-z]{10}", code)
     assert str(m.pid) not in code
     # 同 (merchant, agent) 幂等：不换码
     assert await paytoken.get_or_create(session, m.id) == code
@@ -61,6 +61,36 @@ async def test_pay_code_short_and_stable(session, seeded):
     assert await paytoken.resolve(session, "") is None
     assert await paytoken.resolve(session, "no-such-code") is None
     assert await paytoken.resolve(session, "x" * 40) is None
+
+
+@pytest.mark.asyncio
+async def test_pay_code_lowercase_and_case_insensitive(session, seeded):
+    """短码只生成小写 base36；解析对大小写不敏感（不依赖库排序规则）。"""
+    m = seeded["merchant"]
+    codes = [await paytoken.get_or_create(session, m.id, aid) for aid in range(100, 120)]
+    assert len(set(codes)) == len(codes)
+    assert all(re.fullmatch(r"[0-9a-z]{10}", c) for c in codes)
+
+    code = codes[0]
+    # 用户手打/链接被转大写也能打开
+    assert (await paytoken.resolve(session, code.upper())).token == code
+    # 混合大小写输入同理
+    mixed = "".join(ch.upper() if i % 2 else ch for i, ch in enumerate(code))
+    assert (await paytoken.resolve(session, mixed)).token == code
+
+
+@pytest.mark.asyncio
+async def test_legacy_mixed_case_code_still_resolves(session, seeded):
+    """历史 base62 混合大小写短码：旧链接不因改字母表而失效。"""
+    from app.models import PayToken
+
+    m = seeded["merchant"]
+    session.add(PayToken(token="AbCdEf1234", merchant_id=m.id, agent_id=0))
+    await session.commit()
+
+    assert (await paytoken.resolve(session, "AbCdEf1234")).token == "AbCdEf1234"
+    # 小写输入仍能命中旧码（SQLite 为大小写敏感比较，靠 resolve 的兜底查询）
+    assert (await paytoken.resolve(session, "abcdef1234")).token == "AbCdEf1234"
 
 
 @pytest.mark.asyncio
@@ -202,5 +232,5 @@ async def test_merchant_paypage_settings_link(client, seeded, session):
     resp = await client.get("/merchant-api/paypage/settings",
                             headers={"Authorization": f"Bearer {token.access_token}"})
     link = resp.json()["data"]["link"]
-    assert re.fullmatch(r"/p/[A-Za-z0-9]{10}", link), link
+    assert re.fullmatch(r"/p/[0-9a-z]{10}", link), link
     assert "1001" not in link

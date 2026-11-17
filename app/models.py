@@ -561,7 +561,7 @@ class Agent(SQLModel, table=True):
 class PayToken(SQLModel, table=True):
     """收款页短码：/p/{token} → (merchant_id, agent_id)。
 
-    替代 Fernet 长令牌（100 字符 → 10 字符随机 base62）；短码不携带任何
+    替代 Fernet 长令牌（100 字符 → 10 字符随机 base36 小写短码）；短码不携带任何
     业务号，唯一索引反查。惰性创建：商户/代理面板首次取链接时落库，
     终身复用；重置链接 = 换码（改 token 列即可，旧链立即失效）。
     agent_id=0 表示商户自身收款页，>0 为下级代理专属链接。
