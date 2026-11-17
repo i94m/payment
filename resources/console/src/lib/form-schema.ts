@@ -13,6 +13,8 @@ export function numStr(
   label: string,
   opts: { min?: number; max?: number; integer?: boolean; optional?: boolean } = {},
 ) {
+  // 未挂载/未初始化的字段 RHF 会给出 undefined：默认值先归一成 ""，
+  // 否则 zod 会抛 "expected string, received undefined"，丢掉下面的中文提示。
   return z.string().superRefine((v, ctx) => {
     const s = (v ?? "").trim()
     if (!s) {
@@ -35,5 +37,5 @@ export function numStr(
     if (opts.max !== undefined && n > opts.max) {
       ctx.addIssue(`${label}不能大于 ${opts.max}`)
     }
-  })
+  }).default("")
 }

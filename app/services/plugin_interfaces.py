@@ -20,9 +20,13 @@ class PluginMeta:
     types: list[str]             # 支持的 payment_type.code，如 ["alipay","wxpay"]
     inputs: list[dict] = field(default_factory=list)
     version: str = ""            # 插件版本（新插件一律 "1.0.0"，admin 列表展示/核对用）
-    # inputs 元素示例：
+    # inputs 元素示例（type 支持 input / textarea / select）：
     # {"name": "appurl", "title": "接口地址", "type": "input",
     #  "placeholder": "https://xxx/", "required": True}
+    # {"name": "appsecret", "title": "商户私钥", "type": "textarea",
+    #  "placeholder": "粘贴 PEM 私钥（可多行）", "required": True}
+    # {"name": "paymode", "title": "支付模式", "type": "select",
+    #  "options": {"1": "跳转", "2": "扫码"}}
 
 
 @dataclass

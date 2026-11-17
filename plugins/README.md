@@ -103,15 +103,19 @@ plugins/
 
 ## 7. meta 元信息与凭证表单
 
-- `meta = PluginMeta(...)`：`name` 与目录名一致；`types` 只能取系统支付方式 code（如 `alipay / wxpay / qqpay / bank`），对应 `ctx.order["payment_type_code"]`
+- `meta = PluginMeta(...)`：`name` 与目录名一致；`types` 只能取系统支付方式 code（目前内置 `alipay / wxpay`），对应 `ctx.order["payment_type_code"]`
 - **`version` 必填，新插件一律 `1.0.0`**；此后协议/签名行为变更递增主版本（2.0.0），新增功能或凭证字段递增次版本（1.1.0），纯修复递增修订号（1.0.1）
-- `inputs` 是 admin 渠道表单 schema（运维在后台配置支付账号/密钥等凭证时按它渲染），必须是 **list[dict]**，字段：`{"name", "title", "type"(input/select), "placeholder", "required", "options"(select 用 dict)}`
+- `inputs` 是 admin 渠道表单 schema（运维在后台配置支付账号/密钥等凭证时按它渲染），必须是 **list[dict]**，字段：`{"name", "title", "type"(input/textarea/select), "placeholder", "required", "options"(select 用 dict)}`
+  - `input`：单行短凭证（网关地址、商户号、MD5 密钥）
+  - `textarea`：需要整段粘贴的长凭证（平台公钥、商户私钥等 PEM/base64 密钥）——多行 PEM 可含 `BEGIN/END` 头尾，签名前由 `app/lib/sign.py` 的 `normalize_key()` 统一清洗空白/换行
+  - `select`：枚举值，用 `options` 提供候选项
 - **placeholder 是硬性要求**：
-  - 每个支付账号/密钥类字段（商户号、AppID、密钥、网关地址、编码/编号等一切 `type: "input"` 的字段）**必须带 `placeholder`**，缺一个都算不合规
+  - 每个支付账号/密钥类字段（商户号、AppID、密钥、网关地址、编码/编号等一切 `type: "input"` 或 `"textarea"` 的字段）**必须带 `placeholder`**，缺一个都算不合规
   - placeholder 要写成**可直接照抄的真实格式示例**，说明取值来源与格式约束，而不是"请输入xxx"这类空话：
     - 网关地址 → 完整默认地址，如 `http://137.220.128.173/gateway/pay/api`
     - 商户号/AppID → 上游账号的样例形态，如 `1127`、`2021001234567890`
     - 密钥 → 形态说明，如 `商户后台分配的32位密钥，用于MD5签名`
+    - 公钥/私钥（textarea）→ `粘贴 PEM 公钥（多行可含 BEGIN/END 头尾）`
     - 特殊编码（如支付方式编号）→ 格式 + 含义，如 `数字编码如 123，不同支付方式不同，需向平台确认`
   - `type: "select"` 用 `options` 提供候选项，不需要 placeholder
 - 凭证读取统一走 `self.channel`（已解密 dict），空值兜底用 `str(self.channel.get("k", "") or "").strip()`，且**必须与 inputs 里的 `name` 逐一对应**
@@ -126,7 +130,7 @@ cd <仓库根目录>
 2. **注册成功**：`PluginRegistry.reload()` 后 `get_payment_class("<name>")` 非 None（写临时脚本或用 `python -c` 验证）
 3. **签名有文档向量的必须离线比对**，用 `python -c` 算一遍
 4. **meta 表单字段与实际读取的 channel 键一一对应**（input name ↔ `self.channel.get(...)`）
-5. **每个 `type: "input"` 的 inputs 字段都有 placeholder**，且是可照抄的真实格式示例（见 §7）
+5. **每个 `type: "input"` / `"textarea"` 的 inputs 字段都有 placeholder**，且是可照抄的真实格式示例（见 §7）
 6. **`meta.version` 必填**：新插件一律 `1.0.0`，迭代按语义化递增（见 §7）
 7. **notify 分支齐全**：无 sign / 验签失败 / 非成功状态 / 成功 / 金额解析失败，五条路径都有明确返回
 8. 不确定上游查单响应结构时，`query` 按防御式解析（`code`/`data` 判空），失败一律 `unknown`

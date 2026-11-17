@@ -56,16 +56,14 @@ class EpayPayment(BasePayment):
     meta = PluginMeta(
         name="epay",
         showname="易支付",
-        types=["alipay", "wxpay", "qqpay", "bank"],
+        types=["alipay", "wxpay"],
         inputs=[
             {"name": "appurl", "title": "接口地址", "type": "input",
-             "placeholder": "https://pay.example.com/（上游站点根地址，以 / 结尾）", "required": True},
-            {"name": "appid", "title": "商户ID（pid）", "type": "input",
-             "placeholder": "如 1001（上游商户后台的 pid，纯数字）", "required": True},
+             "placeholder": "https://pay.example.com/", "required": True},
+            {"name": "appid", "title": "商户ID", "type": "input",
+             "placeholder": "商户 PID，如 1001", "required": True},
             {"name": "appkey", "title": "商户密钥", "type": "input",
-             "placeholder": "上游商户后台分配的密钥，用于 MD5 签名", "required": True},
-            {"name": "appswitch", "title": "是否使用mapi接口", "type": "select",
-             "options": {"0": "否", "1": "是"}},
+             "placeholder": "商户后台密钥", "required": True},
         ],
         version="1.0.0",
     )
@@ -101,6 +99,8 @@ class EpayPayment(BasePayment):
     # ------------------------------------------------------------
 
     async def submit(self, ctx: PaymentContext) -> PaymentResult:
+        # appswitch 已从配置表单移除；历史通道库里仍可能有该值，继续兼容读取
+        # （1=mapi 接口下单，其它=submit.php 跳转）
         appswitch = str(self.channel.get("appswitch", "0") or "0")
         if appswitch == "1":
             return await self._submit_mapi(ctx)

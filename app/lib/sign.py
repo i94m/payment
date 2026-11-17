@@ -35,6 +35,19 @@ def base64_to_pem(data: str, key_type: str = "PUBLIC KEY") -> str:
     return f"-----BEGIN {key_type}-----\n" + "\n".join(lines) + f"\n-----END {key_type}-----"
 
 
+def normalize_key(raw: str) -> str:
+    """清洗后台粘贴的密钥（textarea 直接贴多行 PEM / 带换行的 base64）。
+
+    - 统一换行符、去掉首尾空白：粘贴时最常见的 \r\n 与尾随空行
+    - 带 PEM 头尾的保持多行原样（load_pem_* 能解析）
+    - 无头尾的压成单行 base64，避免换行被当成 base64 字符导致解析失败
+    """
+    text = (raw or "").strip().replace("\r\n", "\n").replace("\r", "\n")
+    if "-----BEGIN" in text:
+        return text
+    return "".join(text.split())
+
+
 def pem_to_flat(data: str) -> str:
     """将 PEM 密钥转为无头尾的单行 base64（对齐 PHP pemToBase64 的老系统观感）。
 
@@ -74,6 +87,7 @@ _public_key_cache: dict[str, object] = {}
 
 
 def _load_private_key(raw: str):
+    raw = normalize_key(raw)
     cached = _private_key_cache.get(raw)
     if cached is not None:
         return cached
@@ -84,6 +98,7 @@ def _load_private_key(raw: str):
 
 
 def _load_public_key(raw: str):
+    raw = normalize_key(raw)
     cached = _public_key_cache.get(raw)
     if cached is not None:
         return cached

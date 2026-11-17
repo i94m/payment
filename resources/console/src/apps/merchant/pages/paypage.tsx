@@ -45,7 +45,7 @@ export function PaypageMchPage() {
   const [loadTick, setLoadTick] = React.useState(0)
   const [saving, setSaving] = React.useState(false)
 
-  const form = useForm<z.infer<typeof paypageSchema>>({
+  const form = useForm<z.input<typeof paypageSchema>, unknown, z.output<typeof paypageSchema>>({
     resolver: zodResolver(paypageSchema),
     defaultValues: { randomEnable: false, randomInteger: false, randomMin: "0", randomMax: "0", ratelimit: 0 },
   })

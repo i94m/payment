@@ -7,7 +7,7 @@ import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from app.lib.sign import derive_public_key, make_rsa_sign, pem_to_flat, verify_rsa_sign
+from app.lib.sign import derive_public_key, make_rsa_sign, normalize_key, pem_to_flat, verify_rsa_sign
 from app.services.plugin import PluginRegistry
 from app.services.plugin_interfaces import PaymentContext
 from plugins.epayv2.plugin import EpayV2Payment
@@ -60,6 +60,23 @@ def _notify_params(platform_priv: str, **over) -> dict:
     return params
 
 
+def test_normalize_key_accepts_multiline_textarea_paste():
+    """后台 textarea 粘贴：多行 PEM / CRLF / 带空白的单行 base64 都能签名验签。"""
+    priv, pub = _keypair()
+    multi_pem = "-----BEGIN PRIVATE KEY-----\r\n" + "\n".join(
+        priv[i:i + 64] for i in range(0, len(priv), 64)
+    ) + "\r\n-----END PRIVATE KEY-----\r\n\r\n"
+    assert normalize_key(multi_pem).startswith("-----BEGIN PRIVATE KEY-----\n")
+    assert "\r" not in normalize_key(multi_pem)
+
+    data = {"pid": "1001", "money": "9.90"}
+    sign = make_rsa_sign(data, multi_pem)          # 多行 PEM 私钥签名
+    assert verify_rsa_sign(data, " " + pub + "\n", sign)  # 单行公钥带空白验签
+
+    spaced = "\n".join(pub[i:i + 64] for i in range(0, len(pub), 64))
+    assert normalize_key(spaced) == pub            # 无头尾的换行 base64 压成单行
+
+
 def test_meta_name_matches_dir():
     PluginRegistry.reload()
     meta = PluginRegistry.plugin_meta("epayv2")
@@ -68,10 +85,14 @@ def test_meta_name_matches_dir():
     assert meta.showname == "易支付V2"
     assert meta.version == "1.0.0"
     names = [i["name"] for i in meta.inputs]
-    assert names == ["appurl", "appid", "appkey", "appsecret", "appswitch"]
+    assert names == ["appurl", "appid", "appkey", "appsecret"]
+    # 公钥/私钥需要整段粘贴 → textarea；其余仍为单行 input
+    kinds = {i["name"]: i["type"] for i in meta.inputs}
+    assert kinds["appkey"] == "textarea"
+    assert kinds["appsecret"] == "textarea"
     # 凭证字段必须带可直接照抄的 placeholder
     for item in meta.inputs:
-        if item["type"] == "input":
+        if item["type"] in ("input", "textarea"):
             assert item.get("placeholder")
 
 

@@ -34,6 +34,22 @@ router = APIRouter()
 # 插件
 # ============================================================
 
+def _normalize_inputs(inputs: list[dict] | None) -> list[dict]:
+    """插件 inputs → 前端渲染口径（统一用 label 作展示名）。
+
+    插件元信息里字段展示名历史上叫 `title`（与老系统 PHP 插件一致），
+    前端读的是 `label`；不归一化会回退成英文 key（appurl/appid…）。
+    """
+    out: list[dict] = []
+    for raw in inputs or []:
+        item = dict(raw)
+        if not item.get("label") and item.get("title"):
+            item["label"] = item["title"]
+        item.pop("title", None)
+        out.append(item)
+    return out
+
+
 @router.get("/plugins", dependencies=[Depends(PermissionChecker("channel.view"))])
 async def plugin_list(session: SessionDep):
     # 页面刷新即以盘上为准：强制比对一次指纹（忽略业务侧的节流窗口），
@@ -41,16 +57,22 @@ async def plugin_list(session: SessionDep):
     PluginRegistry.discover(force=True)
     # Plugin 主键为 name（无自增 id），按名称排序
     rows = (await session.exec(select(Plugin).order_by(col(Plugin.name)))).all()
-    data = [{
-        "name": p.name,
-        "showname": p.showname,
-        "supported_types": (p.supported_types or "").split(",") if p.supported_types else [],
-        "inputs": p.inputs_schema or [],
-        "is_enabled": bool(p.is_enabled),
-        "version": p.version or "",
-        # 插件来源：builtin=镜像内置，third=三方（storage/plugins）；行已失效时兜底 unknown
-        "source": PluginRegistry.plugin_source(p.name) or "unknown",
-    } for p in rows]
+    data = []
+    for p in rows:
+        # inputs / supported_types 优先用进程内 meta（随代码即时生效），
+        # 库内快照只作兜底：改插件表单字段后无需先点「刷新插件」才能看到。
+        meta = PluginRegistry.plugin_meta(p.name)
+        data.append({
+            "name": p.name,
+            "showname": meta.showname if meta else p.showname,
+            "supported_types": list(meta.types) if meta else
+                ((p.supported_types or "").split(",") if p.supported_types else []),
+            "inputs": _normalize_inputs(meta.inputs if meta else p.inputs_schema),
+            "is_enabled": bool(p.is_enabled),
+            "version": (str(meta.version) if meta and meta.version else p.version) or "",
+            # 插件来源：builtin=镜像内置，third=三方（storage/plugins）；行已失效时兜底 unknown
+            "source": PluginRegistry.plugin_source(p.name) or "unknown",
+        })
 
     # 盘上已装好、库里还没有的插件（手工拷目录后没点同步，或别的副本刚上传）
     # 也一并返回：后台「刷新插件」点一次即可看到并落库，无需重启
@@ -62,7 +84,7 @@ async def plugin_list(session: SessionDep):
             "name": item["name"],
             "showname": item["showname"],
             "supported_types": item["types"],
-            "inputs": item["inputs"],
+            "inputs": _normalize_inputs(item["inputs"]),
             "is_enabled": True,
             "version": item["version"] or "",
             "source": item["source"] or "third",
@@ -405,11 +427,14 @@ def _dump_channel(c: Channel, reveal: bool = False) -> dict:
 
 
 async def _get_plugin_inputs(session, plugin_name: str) -> list[dict]:
+    # 进程内 meta 优先（改插件表单字段后立即生效）；库内快照兜底
+    meta = PluginRegistry.plugin_meta(plugin_name)
+    if meta is not None:
+        return _normalize_inputs(meta.inputs)
     row = await session.get(Plugin, plugin_name)
     if row and row.inputs_schema:
-        return row.inputs_schema
-    meta = PluginRegistry.plugin_meta(plugin_name)
-    return meta.inputs if meta else []
+        return _normalize_inputs(row.inputs_schema)
+    return []
 
 
 @router.get("/channels", dependencies=[Depends(PermissionChecker("channel.view"))])
@@ -565,6 +590,27 @@ async def channel_update(channel_id: int, body: ChannelRequest, session: Session
     return suc(_dump_channel(c))
 
 
+class DebugLogRequest(BaseModel):
+    enabled: bool
+
+
+@router.put("/channels/{channel_id}/debug-log",
+            dependencies=[Depends(PermissionChecker("channel.update"))])
+async def channel_toggle_debug_log(channel_id: int, body: DebugLogRequest, session: SessionDep):
+    """通道列表「调试日志」开关：只改该字段。
+
+    不能复用 PUT /channels/{id}：那个接口要求全量字段，从列表透传会把
+    费率/限额等未在列表展示的配置一起重写（默认值覆盖真实值）。
+    """
+    c = await session.get(Channel, channel_id)
+    if not c:
+        return err(404, "通道不存在")
+    c.debug_log = 1 if body.enabled else 0
+    session.add(c)
+    await session.commit()
+    return suc({"id": c.id, "debug_log": c.debug_log})
+
+
 @router.delete("/channels/{channel_id}", dependencies=[Depends(PermissionChecker("channel.delete"))])
 async def channel_delete(channel_id: int, session: SessionDep, request: Request,
                          auth: AdminUser):
@@ -641,12 +687,17 @@ async def channel_testpay(channel_id: int, body: ChannelTestPayRequest, request:
         return err(-1, "测试支付未开启，请先在站点配置中开启")
     test_pid = await get_int_setting(session, "test_pay_merchant_pid")
     if test_pid <= 0:
-        return err(-1, "请先在站点配置中配置测试商户PID")
+        # 新手最容易把「商户自身的 PID」当成测试商户 PID：这里直接把可选 PID 列出来
+        pids = (await session.exec(
+            select(Merchant.pid).where(Merchant.status == 1).order_by(col(Merchant.id)).limit(3)
+        )).all()
+        hint = f"当前可用商户 PID：{', '.join(str(p) for p in pids)}" if pids else "当前没有已启用商户"
+        return err(-1, f"站点配置未填写「测试支付商户 PID」：请到 站点配置 → 订单 填写（{hint}）")
     test_merchant = (await session.exec(
         select(Merchant).where(Merchant.pid == test_pid, Merchant.status == 1)
     )).first()
     if not test_merchant:
-        return err(-1, "测试商户不可用，请检查测试商户PID配置")
+        return err(-1, f"测试商户不可用：PID {test_pid} 不存在或已停用，请检查站点配置")
 
     try:
         amount = dmoney(body.amount)

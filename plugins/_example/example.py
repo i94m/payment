@@ -79,6 +79,9 @@ class ExamplePayment(BasePayment):
              "placeholder": "如 10001（上游商户后台的数字ID）", "required": True},
             {"name": "appkey", "title": "商户密钥", "type": "input",
              "placeholder": "上游商户后台分配的32位密钥，用于MD5签名", "required": True},
+            # textarea 型用于公钥/私钥这类需要整段粘贴的长凭证（多行 PEM 也能直接贴）
+            {"name": "appsecret", "title": "平台公钥", "type": "textarea",
+             "placeholder": "粘贴平台公钥 PEM（多行可含 BEGIN/END 头尾）"},
             # select 型用 options，不需要 placeholder
             {"name": "paymode", "title": "支付模式", "type": "select",
              "options": {"1": "跳转", "2": "扫码"}},

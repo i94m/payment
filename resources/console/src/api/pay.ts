@@ -5,10 +5,14 @@ import type { PaginatedResponse } from "./index"
 
 export interface PluginInput {
   name: string
-  label: string
+  /** 展示名（后端把插件的 title 归一化为 label；缺省时退回 name） */
+  label?: string
+  /** 控件类型：input（默认）/ textarea（长凭证，如公钥私钥）/ select（配 options） */
   type?: string
   required?: boolean
   placeholder?: string
+  /** select 型的选项：{value: label} 或字符串数组 */
+  options?: Record<string, unknown> | string[]
   [key: string]: unknown
 }
 
@@ -178,6 +182,10 @@ export const payApi = {
     apiClient.put(`/pay/channels/${id}`, data) as Promise<ChannelData>,
 
   deleteChannel: (id: number) => apiClient.delete(`/pay/channels/${id}`),
+
+  /** 通道列表「调试日志」开关：只改 debug_log，不触碰费率/限额等字段 */
+  setChannelDebugLog: (id: number, enabled: boolean) =>
+    apiClient.put(`/pay/channels/${id}/debug-log`, { enabled }),
 
   // 全部通道今日/昨日收款统计（键为通道 id 字符串）
   channelStats: () => apiClient.get("/pay/channels/stats") as Promise<Record<string, ChannelStats>>,

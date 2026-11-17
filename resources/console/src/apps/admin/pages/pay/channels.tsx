@@ -16,6 +16,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Field, FieldLabel, FieldError, RequiredMark } from "@/components/ui/field"
+import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { numStr } from "@/lib/form-schema"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
@@ -31,7 +32,6 @@ import {
 import type { ActionItem } from "@/components/data-list/"
 import {
   IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconFlask, IconCopy, IconList,
-  IconEye, IconEyeOff,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
@@ -57,24 +57,26 @@ interface ChannelFormValues {
   config: Record<string, string>
 }
 
-// 凭证校验依赖所选插件的 inputs schema（动态）：必填凭证新增/编辑均须填写
+// 凭证校验依赖所选插件的 inputs schema（动态）：必填凭证新增/编辑均须填写。
+// 所有字段都带 default("")/default({})：字段未挂载（如已从表单移除的费率/限额）
+// 时 RHF 可能给出 undefined，没有默认值会抛 zod 的英文基础错误。
 const channelSchema = (inputs: PluginInput[]) =>
   z.object({
-    name: z.string().trim().min(1, "通道名称不能为空"),
-    plugin_name: z.string().min(1, "支付插件不能为空"),
-    payment_type_id: z.string().min(1, "支付方式不能为空"),
+    name: z.string().trim().min(1, "通道名称不能为空").default(""),
+    plugin_name: z.string().min(1, "支付插件不能为空").default(""),
+    payment_type_id: z.string().min(1, "支付方式不能为空").default(""),
     merchant_rate: numStr("商户费率", { min: 0, max: 100 }),
     cost_rate: numStr("成本费率", { min: 0, max: 100 }),
     min_amount: numStr("单笔最小金额", { min: 0 }),
     max_amount: numStr("单笔最大金额", { min: 0, optional: true }),
     day_limit: numStr("日限额", { min: 0, optional: true }),
     day_limit_count: numStr("单日限笔", { min: 0, integer: true, optional: true }),
-    status: z.string(),
-    mode: z.string(),
-    weight: z.string(),
-    sort: z.string(),
-    debug_log: z.string(),
-    config: z.record(z.string(), z.string()).superRefine((cfg, ctx) => {
+    status: z.string().default("0"),
+    mode: z.string().default("0"),
+    weight: z.string().default("1"),
+    sort: z.string().default("0"),
+    debug_log: z.string().default("0"),
+    config: z.record(z.string(), z.string().default("")).default({}).superRefine((cfg, ctx) => {
       for (const input of inputs) {
         if (input.required && !(cfg[input.name] ?? "").trim()) {
           ctx.addIssue({ code: "custom", path: [input.name], message: `${input.label || input.name}不能为空` })
@@ -91,6 +93,15 @@ const testPaySchema = z.object({
 
 // 插件展示名：内置与三方一视同仁，不额外标注来源
 const pluginLabel = (p: PluginData) => p.showname
+
+/** 插件 inputs 的 options 兼容对象（{value: label}）与数组两种写法 */
+function inputOptions(input: PluginInput): { value: string; label: string }[] {
+  const raw = input.options
+  if (!raw) return []
+  if (Array.isArray(raw)) return raw.map((v) => ({ value: String(v), label: String(v) }))
+  return Object.entries(raw as Record<string, unknown>)
+    .map(([value, label]) => ({ value, label: String(label) }))
+}
 
 export function ChannelsPage() {
 
@@ -109,19 +120,15 @@ export function ChannelsPage() {
   // 当前插件凭证渲染 schema（随所选插件变化）
   const [currentInputs, setCurrentInputs] = React.useState<PluginInput[]>([])
 
-  // 凭证明文回显：列表/详情默认脱敏（密钥类字段为 ******），只有点「显示凭证」
-  // 才按 reveal=1 重新取一次；后端会再判一次 channel.update，无权限时静默返回
-  // 脱敏值 + config_revealed=false（不是 403），所以前端必须看这个标志而不是假定成功
+  // 通道凭证：编辑/复制时直接取明文（后端要求 channel.update，无权限时回落脱敏），
+  // 不再提供「显示/隐藏」按钮 —— 打开弹窗即看到全部凭证。
   const user = useAuthStore((s) => s.user)
   const permissions = useAuthStore((s) => s.permissions)
   const canRevealConfig = !!user?.is_super_admin || permissions.includes("*") || permissions.includes("channel.update")
-  const [configRevealed, setConfigRevealed] = React.useState(false)
-  const [revealing, setRevealing] = React.useState(false)
-  // 脱敏快照：隐藏凭证时用它还原表单，避免明文滞留在输入框里被顺手提交
-  const maskedConfigRef = React.useRef<Record<string, string>>({})
 
-  // schema 依赖 editingId/currentInputs，useForm 每次渲染都会读取最新 resolver
-  const channelForm = useForm<ChannelFormValues>({
+  // schema 依赖 editingId/currentInputs，useForm 每次渲染都会读取最新 resolver。
+  // 表单输入用 z.input（允许字段缺省，schema 里有 default），提交拿到 z.output（全是字符串）
+  const channelForm = useForm<z.input<ReturnType<typeof channelSchema>>, unknown, ChannelFormValues>({
     resolver: zodResolver(channelSchema(currentInputs)),
     defaultValues: {
       name: "", plugin_name: "", payment_type_id: "",
@@ -135,7 +142,7 @@ export function ChannelsPage() {
   // 测试支付弹窗
   const [testChannel, setTestChannel] = React.useState<ChannelData | null>(null)
   const [testing, setTesting] = React.useState(false)
-  const testForm = useForm<z.infer<typeof testPaySchema>>({
+  const testForm = useForm<z.input<typeof testPaySchema>, unknown, z.output<typeof testPaySchema>>({
     resolver: zodResolver(testPaySchema),
     defaultValues: { name: "支付测试", amount: "1.00" },
   })
@@ -229,11 +236,12 @@ export function ChannelsPage() {
 
   const openEdit = async (id: number) => {
     try {
-      const detail = await payApi.channelDetail(id)
+      const detail = await payApi.channelDetail(id, { reveal: true })
       setEditingId(id)
       setCurrentInputs(detail.inputs || [])
-      maskedConfigRef.current = detail.config || {}
-      setConfigRevealed(false)
+      if (!detail.config_revealed) {
+        toast.error("无权限查看明文凭证", { description: "需要「支付通道-更新」权限，当前显示为脱敏值" })
+      }
       channelForm.reset({
         name: detail.name,
         plugin_name: detail.plugin_name,
@@ -260,11 +268,12 @@ export function ChannelsPage() {
   // 复制通道：以所选通道内容预填新增弹窗
   const openCopy = async (id: number) => {
     try {
-      const detail = await payApi.channelDetail(id)
+      const detail = await payApi.channelDetail(id, { reveal: true })
       setEditingId(null)
       setCurrentInputs(detail.inputs || [])
-      maskedConfigRef.current = detail.config || {}
-      setConfigRevealed(false)
+      if (!detail.config_revealed) {
+        toast.error("无权限查看明文凭证", { description: "需要「支付通道-更新」权限，当前显示为脱敏值" })
+      }
       channelForm.reset({
         name: detail.name,
         plugin_name: detail.plugin_name,
@@ -285,34 +294,6 @@ export function ChannelsPage() {
       setDialogOpen(true)
     } catch (err) {
       toast.error(getErrorMessage(err, "加载失败"))
-    }
-  }
-
-  // 显示/隐藏凭证：显示时按 reveal=1 重新取详情，后端按 channel.update 再判一次权限；
-  // 隐藏时直接还原打开弹窗时的脱敏快照（不再发请求）
-  const toggleRevealConfig = async () => {
-    if (!editingId) return
-    if (configRevealed) {
-      channelForm.setValue("config", maskedConfigRef.current, { shouldDirty: false })
-      channelForm.clearErrors("config")
-      setConfigRevealed(false)
-      return
-    }
-    setRevealing(true)
-    try {
-      const detail = await payApi.channelDetail(editingId, { reveal: true })
-      if (!detail.config_revealed) {
-        // 有 channel.view 无 channel.update：不报错，只是不给明文
-        toast.error("无权限查看明文凭证", { description: "需要「支付通道-更新」权限" })
-        return
-      }
-      channelForm.setValue("config", detail.config || {}, { shouldDirty: false })
-      channelForm.clearErrors("config")
-      setConfigRevealed(true)
-    } catch (err) {
-      toast.error(getErrorMessage(err, "凭证读取失败"))
-    } finally {
-      setRevealing(false)
     }
   }
 
@@ -339,7 +320,6 @@ export function ChannelsPage() {
 
   const formPluginName = channelForm.watch("plugin_name")
   const formTypeId = channelForm.watch("payment_type_id")
-  const selectedPlugin = plugins.find((p) => p.name === formPluginName)
 
   // 插件下拉按所选支付方式动态过滤：仅展示 supported_types 覆盖该支付方式调用值的插件。
   // 编辑时当前插件始终保留（历史数据可能未标注该支付方式）。
@@ -443,6 +423,18 @@ export function ChannelsPage() {
     }
   }
 
+  // 调试日志开关（列表内切换）：走专用接口，只改 debug_log，不重写费率/限额等其他字段
+  const toggleDebugLog = async (item: ChannelData) => {
+    const next = item.debug_log === 1 ? 0 : 1
+    try {
+      await payApi.setChannelDebugLog(item.id, next === 1)
+      updateRow(item.id, { debug_log: next })
+      toast.success(next === 1 ? "调试日志已开启" : "调试日志已关闭")
+    } catch (err) {
+      toast.error(getErrorMessage(err, "操作失败"))
+    }
+  }
+
   const submitDelete = async () => {
     if (!deleteId) return
     // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
@@ -535,6 +527,13 @@ export function ChannelsPage() {
         header: () => "状态",
         cell: ({ row }) => switchCell(row.original.status === 1, () => toggleStatus(row.original)),
         meta: { headClassName: "w-[70px]" },
+      },
+      {
+        accessorKey: "debug_log",
+        enableSorting: false,
+        header: () => "调试日志",
+        cell: ({ row }) => switchCell(row.original.debug_log === 1, () => toggleDebugLog(row.original)),
+        meta: { headClassName: "w-[90px] text-center", cellClassName: "text-center" },
       },
       actionsColumn([
         { label: "测试", icon: <IconFlask className="size-4" />, onClick: (item) => { testForm.reset({ name: "支付测试", amount: "1.00" }); setTestChannel(item) } },
@@ -634,7 +633,7 @@ export function ChannelsPage() {
 
       {/* 新建/编辑通道 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{editingId ? "编辑通道" : "新增通道"}</DialogTitle>
           </DialogHeader>
@@ -696,178 +695,73 @@ export function ChannelsPage() {
                   </Field>
                 )}
               />
-              <Controller
-                name="merchant_rate"
-                control={channelForm.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor={field.name}>{"商户费率(%)"}<RequiredMark /></FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.value ?? ""}
-                      onChange={(e) => field.onChange(e.target.value)}
-                      placeholder={"如 1.5 表示 1.5%"}
-                      aria-invalid={fieldState.invalid || undefined}
-                    />
-                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                  </Field>
-                )}
-              />
-              <Controller
-                name="cost_rate"
-                control={channelForm.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor={field.name}>{"成本费率(%)"}<RequiredMark /></FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.value ?? ""}
-                      onChange={(e) => field.onChange(e.target.value)}
-                      placeholder={"如 1.5 表示 1.5%"}
-                      aria-invalid={fieldState.invalid || undefined}
-                    />
-                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                  </Field>
-                )}
-              />
-              <Controller
-                name="min_amount"
-                control={channelForm.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor={field.name}>{"单笔最小"}<RequiredMark /></FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.value ?? ""}
-                      onChange={(e) => field.onChange(e.target.value)}
-                      placeholder={"如 1"}
-                      aria-invalid={fieldState.invalid || undefined}
-                    />
-                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                  </Field>
-                )}
-              />
-              <Controller
-                name="max_amount"
-                control={channelForm.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor={field.name}>{"单笔最大"}</FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.value ?? ""}
-                      onChange={(e) => field.onChange(e.target.value)}
-                      placeholder={"如 5000，0 或留空不限"}
-                      aria-invalid={fieldState.invalid || undefined}
-                    />
-                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                  </Field>
-                )}
-              />
-              <Controller
-                name="day_limit"
-                control={channelForm.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor={field.name}>{"日限额"}</FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.value ?? ""}
-                      onChange={(e) => field.onChange(e.target.value)}
-                      placeholder={"如 10000，0 或留空不限"}
-                      aria-invalid={fieldState.invalid || undefined}
-                    />
-                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                  </Field>
-                )}
-              />
-              <Controller
-                name="day_limit_count"
-                control={channelForm.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
-                    <FieldLabel htmlFor={field.name}>{"单日限笔"}</FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.value ?? ""}
-                      onChange={(e) => field.onChange(e.target.value)}
-                      placeholder={"如 1000，0 或留空不限"}
-                      aria-invalid={fieldState.invalid || undefined}
-                    />
-                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                  </Field>
-                )}
-              />
-              <Controller
-                name="debug_log"
-                control={channelForm.control}
-                render={({ field }) => (
-                  <Field className="col-span-2">
-                    <FieldLabel htmlFor={field.name}>{"调试日志"}</FieldLabel>
-                    <Select value={field.value || "0"} onValueChange={field.onChange}>
-                      <SelectTrigger id={field.name} className="w-full"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="0">{"关闭"}</SelectItem>
-                        <SelectItem value="1">{"开启"}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      {"开启后下单/回调/查单交互写入 /tmp/pay_日期_插件.log（当天排障用，重启丢失）"}
-                    </p>
-                  </Field>
-                )}
-              />
+              {/* 费率 / 限额 / 调试日志不再在表单里编辑：值随详情带回原样提交，
+                  调试日志在列表里用开关切换；新增时用后端默认值。 */}
 
-              {/* 插件凭证（按 inputs schema 动态渲染） */}
+
+              {/* 插件凭证（按 inputs schema 动态渲染）：编辑即明文，不再提供显示/隐藏按钮。
+                  标题放在边框模块之上，模块内只放说明与字段。 */}
               {currentInputs.length > 0 && (
-                <div className="col-span-2 space-y-2 rounded-lg border p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium">{"通道凭证"}（{selectedPlugin?.showname}）</p>
-                    {editingId && canRevealConfig && (
-                      <Button
-                        type="button" variant="ghost" size="sm"
-                        onClick={toggleRevealConfig} disabled={revealing}
-                      >
-                        {configRevealed
-                          ? <IconEyeOff className="size-4" />
-                          : <IconEye className="size-4" />}
-                        {configRevealed ? "隐藏凭证" : "显示凭证"}
-                      </Button>
+                <div className="col-span-2 space-y-2">
+                  <p className="text-sm font-medium">{"通道凭证"}</p>
+                  <div className="space-y-2 rounded-lg border p-3">
+                    {!canRevealConfig && (
+                      <p className="text-xs text-amber-600">
+                        {"当前账号无「支付通道-更新」权限，凭证以 ****** 脱敏显示"}
+                      </p>
                     )}
+                    {currentInputs.map((input) => (
+                      <Controller
+                        key={input.name}
+                        name={`config.${input.name}`}
+                        control={channelForm.control}
+                        render={({ field, fieldState }) => (
+                          <Field data-invalid={fieldState.invalid}>
+                            <FieldLabel htmlFor={field.name} className="text-xs">
+                              {input.label || input.name}{input.required && <RequiredMark />}
+                            </FieldLabel>
+                            {input.type === "textarea" ? (
+                              // 公钥/私钥等长凭证：整段粘贴，保留换行便于肉眼核对
+                              <Textarea
+                                id={field.name}
+                                rows={4}
+                                className="font-mono text-xs break-all"
+                                value={field.value ?? ""}
+                                onChange={(e) => field.onChange(e.target.value)}
+                                aria-invalid={fieldState.invalid || undefined}
+                                placeholder={input.placeholder}
+                              />
+                            ) : input.type === "select" ? (
+                              <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                                <SelectTrigger
+                                  id={field.name}
+                                  className="w-full"
+                                  aria-invalid={fieldState.invalid || undefined}
+                                >
+                                  <SelectValue placeholder={input.placeholder || "请选择"} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {inputOptions(input).map((o) => (
+                                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                id={field.name}
+                                className="h-8 font-mono text-xs"
+                                value={field.value ?? ""}
+                                onChange={(e) => field.onChange(e.target.value)}
+                                aria-invalid={fieldState.invalid || undefined}
+                                placeholder={input.placeholder}
+                              />
+                            )}
+                            {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
+                          </Field>
+                        )}
+                      />
+                    ))}
                   </div>
-                  {!configRevealed && (
-                    <p className="text-xs text-muted-foreground">
-                      {"凭证默认脱敏（密钥类显示为 ******），提交时保持 ****** 即不修改库内原值"}
-                    </p>
-                  )}
-                  {configRevealed && (
-                    <p className="text-xs text-amber-600">
-                      {"正在显示明文凭证：注意遮挡屏幕，隐藏后表单回到脱敏值"}
-                    </p>
-                  )}
-                  {currentInputs.map((input) => (
-                    <Controller
-                      key={input.name}
-                      name={`config.${input.name}`}
-                      control={channelForm.control}
-                      render={({ field, fieldState }) => (
-                        <Field data-invalid={fieldState.invalid}>
-                          <FieldLabel htmlFor={field.name} className="text-xs">
-                            {input.label || input.name}{input.required && <RequiredMark />}
-                          </FieldLabel>
-                          <Input
-                            id={field.name}
-                            className="h-8 font-mono text-xs"
-                            value={field.value ?? ""}
-                            onChange={(e) => field.onChange(e.target.value)}
-                            aria-invalid={fieldState.invalid || undefined}
-                            placeholder={input.placeholder}
-                          />
-                          {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                        </Field>
-                      )}
-                    />
-                  ))}
                 </div>
               )}
             </div>
@@ -881,7 +775,7 @@ export function ChannelsPage() {
 
       {/* 测试支付：建测试单打开收银台走完整流程 */}
       <Dialog open={!!testChannel} onOpenChange={(open) => { if (!open) setTestChannel(null) }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"测试支付"}{testChannel ? ` - ${testChannel.name}` : ""}</DialogTitle>
           </DialogHeader>

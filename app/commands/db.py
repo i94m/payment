@@ -18,12 +18,10 @@ from app.models import PaymentType, Setting, SystemAdmin
 
 app = typer.Typer(help="数据库初始化命令")
 
-# 内置支付方式种子
+# 内置支付方式种子（目前只对接支付宝与微信支付；新增枚举请同步前端图标/配色）
 PAY_TYPE_SEEDS = [
     {"code": "alipay", "name": "支付宝", "sort": 1, "device": 0},
     {"code": "wxpay", "name": "微信支付", "sort": 2, "device": 0},
-    {"code": "qqpay", "name": "QQ钱包", "sort": 3, "device": 0},
-    {"code": "bank", "name": "云闪付", "sort": 4, "device": 0},
 ]
 
 

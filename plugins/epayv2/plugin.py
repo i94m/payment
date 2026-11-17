@@ -14,6 +14,7 @@
 - 退款：POST {appurl}api/pay/refund（trade_no + money + out_refund_no）
 
 凭证：appid=商户ID(pid)、appkey=平台公钥（验签）、appsecret=商户私钥（签名）。
+公钥/私钥在后台用 textarea 粘贴：多行 PEM 或单行 base64 均可，签名前统一清洗空白/换行。
 金额校验不在此处做（services/order.process_paid_order 统一比对 realmoney）。
 """
 import logging
@@ -44,18 +45,16 @@ class EpayV2Payment(BasePayment):
     meta = PluginMeta(
         name="epayv2",
         showname="易支付V2",
-        types=["alipay", "wxpay", "qqpay", "bank"],
+        types=["alipay", "wxpay"],
         inputs=[
             {"name": "appurl", "title": "接口地址", "type": "input",
-             "placeholder": "https://pay.example.com/（上游站点根地址，以 / 结尾）", "required": True},
-            {"name": "appid", "title": "商户ID（pid）", "type": "input",
-             "placeholder": "如 1001（上游商户后台的 pid，纯数字）", "required": True},
-            {"name": "appkey", "title": "平台公钥", "type": "input",
-             "placeholder": "上游商户后台提供的平台公钥（单行 base64，可含 -----BEGIN PUBLIC KEY----- 头尾）", "required": True},
-            {"name": "appsecret", "title": "商户私钥", "type": "input",
-             "placeholder": "上游商户后台生成的商户私钥（单行 base64，可含 -----BEGIN PRIVATE KEY----- 头尾），用于 RSA2 签名", "required": True},
-            {"name": "appswitch", "title": "是否使用mapi接口", "type": "select",
-             "options": {"0": "否", "1": "是"}},
+             "placeholder": "https://pay.example.com/", "required": True},
+            {"name": "appid", "title": "商户ID", "type": "input",
+             "placeholder": "商户 PID，如 1001", "required": True},
+            {"name": "appkey", "title": "平台公钥", "type": "textarea",
+             "placeholder": "粘贴平台公钥 PEM（多行可含 BEGIN/END 头尾，自动去换行）", "required": True},
+            {"name": "appsecret", "title": "商户私钥", "type": "textarea",
+             "placeholder": "粘贴商户私钥 PEM（多行可含 BEGIN/END 头尾，自动去换行）", "required": True},
         ],
         version="1.0.0",
     )
@@ -122,6 +121,8 @@ class EpayV2Payment(BasePayment):
     # ------------------------------------------------------------
 
     async def submit(self, ctx: PaymentContext) -> PaymentResult:
+        # appswitch 已从配置表单移除；历史通道库里仍可能有该值，继续兼容读取
+        # （1=api/pay/create 下单，其它=api/pay/submit 跳转）
         appswitch = str(self.channel.get("appswitch", "0") or "0")
         if appswitch == "1":
             return await self._submit_api(ctx)

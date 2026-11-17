@@ -259,7 +259,7 @@ class MerchantRecord(SQLModel, table=True):
 # ============================================================
 
 class PaymentType(SQLModel, table=True):
-    """对外支付方式（开放 API type 参数：alipay/wxpay/qqpay/bank...）。"""
+    """对外支付方式（开放 API type 参数：内置 alipay/wxpay，可按插件扩展）。"""
     __tablename__ = "payment_types"
     __table_args__ = _MYSQL_ARGS
 

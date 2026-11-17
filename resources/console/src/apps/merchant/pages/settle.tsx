@@ -40,7 +40,7 @@ export function SettlePage() {
   const [applying, setApplying] = React.useState(false)
 
   // 申请结算表单
-  const applyForm = useForm<z.infer<typeof applySchema>>({
+  const applyForm = useForm<z.input<typeof applySchema>, unknown, z.output<typeof applySchema>>({
     resolver: zodResolver(applySchema),
     defaultValues: { amount: "" },
   })
@@ -78,7 +78,7 @@ export function SettlePage() {
   }, [page, perPage, listTick])
 
   const feePreview = React.useMemo(() => {
-    if (!info || !amount.trim()) return null
+    if (!info || !(amount ?? "").trim()) return null
     const a = Number(amount)
     if (isNaN(a) || a <= 0) return null
     const rate = Number(info.fee_rate || 0)

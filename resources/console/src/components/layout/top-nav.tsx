@@ -82,7 +82,11 @@ export function TopNav() {
               const groupActive = section.items.some((item) => isActive(item.url))
               return (
                 <NavigationMenuItem key={section.label}>
+                  {/* 顶部菜单改为「点击展开」：Radix 默认在 pointermove 时展开子菜单，
+                      这里 preventDefault 掉内建的 hover 展开（composeEventHandlers 会跳过），
+                      点击（onItemSelect）与键盘 Enter/Space 仍然按开关处理。 */}
                   <NavigationMenuTrigger
+                    onPointerMove={(e) => e.preventDefault()}
                     className={cn("h-9 px-3", groupActive && "bg-muted/60 text-primary")}
                   >
                     {section.label}
