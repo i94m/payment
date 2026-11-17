@@ -1,7 +1,8 @@
 """B04 / B05 / B11 回归：权限缺口、插件表初始化同步、403 语义统一。
 
-- B04：存储/上传/系统信息/通知中心/广播认证等接口不再「登录即可」，
-  统一要求 system.admin（无权限 → HTTP 403）
+- B04：存储/上传/系统信息/广播认证不再「登录即可」，统一要求 system.admin；
+  通知中心（message/list|unread-count|read）改用既有的 message.view，
+  子管理员持该权限即可读自己的信箱（铃铛不再静默 0）。无权限一律 HTTP 403
 - B05：插件表不再是空表 —— db init / migrate 和后台按钮走同一个同步函数，
   全新库同步后「已安装插件」与新增通道下拉立刻可用，且清理失效插件行
 - B11：/admin-api/permission/*、/admin-api/queue/stats 无权限返回 HTTP 403
@@ -11,7 +12,7 @@ import pytest
 from sqlmodel import select
 
 from app.core.security import hash_password, issue_token
-from app.models import Plugin, SystemAdmin
+from app.models import Plugin, SystemAdmin, SystemAdminPermission, SystemPermission
 
 # (method, path) —— 只读子管理员（无任何权限）应当全部 403
 GUARDED_ENDPOINTS = [
@@ -27,7 +28,8 @@ GUARDED_ENDPOINTS = [
 ]
 
 
-async def _admin_headers(session, username: str, is_super_admin: bool) -> dict:
+async def _admin_headers(session, username: str, is_super_admin: bool,
+                        permission_keys: list[str] | None = None) -> dict:
     session.add(SystemAdmin(
         name=username, username=username,
         password=hash_password("admin123"), is_super_admin=is_super_admin,
@@ -36,6 +38,16 @@ async def _admin_headers(session, username: str, is_super_admin: bool) -> dict:
     admin = (await session.exec(
         select(SystemAdmin).where(SystemAdmin.username == username)
     )).first()
+    for key in permission_keys or []:
+        perm = (await session.exec(
+            select(SystemPermission).where(SystemPermission.key == key)
+        )).first()
+        if not perm:
+            perm = SystemPermission(name=key, key=key)
+            session.add(perm)
+            await session.commit()
+        session.add(SystemAdminPermission(admin_id=admin.id, permission_id=perm.id))
+    await session.commit()
     token = await issue_token(guard="admin", user_id=admin.id, session=session)
     return {"Authorization": f"Bearer {token.access_token}"}
 
@@ -76,6 +88,32 @@ async def test_b04_super_admin_still_passes(client, session):
 
     resp = await client.get("/admin-api/permission/accounts", headers=headers)
     assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_b04_message_view_reads_message_center(client, session):
+    """B04 口径：通知中心走 message.view，只读子管理员不再「铃铛静默 0」。
+
+    反向确认：拿到 message.view 也进不去存储/系统信息/广播认证（仍 system.admin）。
+    """
+    headers = await _admin_headers(session, "msgonly", is_super_admin=False,
+                                   permission_keys=["message.view"])
+
+    resp = await client.get("/admin-api/message/list", headers=headers)
+    assert resp.status_code == 200, resp.text
+    resp = await client.get("/admin-api/message/unread-count", headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["count"] == 0
+    resp = await client.post("/admin-api/message/read", json={"id": 0}, headers=headers)
+    assert resp.status_code == 200, resp.text
+
+    for method, path in [
+        ("get", "/admin-api/storage/files"),
+        ("get", "/admin-api/common/systemInfo"),
+        ("post", "/admin-api/broadcasting/auth"),
+    ]:
+        resp = await getattr(client, method)(path, headers=headers)
+        assert resp.status_code == 403, (path, resp.status_code, resp.text)
 
 
 @pytest.mark.asyncio

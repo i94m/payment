@@ -5,13 +5,13 @@ HTTP 400 + body code 403，前端 403 分支与监控统计都会漏掉。
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import delete as sa_delete
 from sqlmodel import col, func, select
 
 from app.core.deps import SessionDep
-from app.core.security import AdminUser, hash_password
+from app.core.security import AdminUser, hash_password, require_super_admin
 from app.models import (
     SystemAdmin,
     SystemAdminPermission,
@@ -22,12 +22,8 @@ from app.responses import err, paginate, suc
 router = APIRouter()
 
 
-async def require_super_admin(auth: AdminUser) -> None:
-    """仅超管可用的依赖（403 真实状态码，不能落成 400）。"""
-    if not auth.is_super_admin:
-        raise HTTPException(status_code=403, detail={"code": 403, "message": "forbidden"})
-
-
+# 复用 app/core/security.py 的超管依赖（与 channel.py 的插件安装同一口径）；
+# 早前 `return err(403, ...)` 落成 HTTP 400 + body code 403（B11）。
 _require_super = [Depends(require_super_admin)]
 
 
