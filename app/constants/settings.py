@@ -105,7 +105,7 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
         # ---- site ----
         SettingSpec("paypage_enable", SettingType.BOOL, True, SettingGroup.SITE, "聚合收款页开关"),
         SettingSpec("landing_enable", SettingType.BOOL, True, SettingGroup.SITE, "宣传首页开关",
-                    description="关闭后站点根路径 / 直接 307 跳转商户登录页 /merchant"),
+                    description="关闭后站点根路径 / 不跳转，改为返回极简占位页：居中显示站点名称 + 「商户登录」链接（指向 /merchant/）"),
         SettingSpec("api_pay_enable", SettingType.BOOL, True, SettingGroup.SITE,
                     "下游API支付接口开关（关闭后开放API拒绝下单/查单，商户端隐藏「API信息」菜单）"),
         SettingSpec("api_refund_enable", SettingType.BOOL, True, SettingGroup.SITE,
