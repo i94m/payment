@@ -41,7 +41,7 @@ export function DashboardPage() {
     { key: "todayMoney", label: "今日金额", icon: IconCoin, value: fmtMoney(overview?.today.money ?? 0), note: "今日收款总金额" },
     {
       key: "successRate", label: "近7日成功率", icon: IconTarget,
-      value: `${overview?.success_rate ?? "—"}%`,
+      value: overview?.success_rate == null ? "—" : `${overview.success_rate}%`,
       note: overview?.rate ? `${"我的费率"} ${overview.rate}%` : "近7日支付成功率",
     },
   ]

@@ -6,6 +6,7 @@ export interface MessageData {
   title: string
   content: string
   biz_type: string
+  biz_type_name?: string
   is_read: boolean
   created_at: string
 }

@@ -4,6 +4,7 @@ import type { PaginatedResponse } from "./index"
 export interface MerchantRecordData {
   id: number
   biz_type: string
+  biz_type_name?: string
   amount: string
   balance_before: string
   balance_after: string

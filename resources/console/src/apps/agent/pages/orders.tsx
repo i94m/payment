@@ -23,6 +23,7 @@ import { IconSearch, IconRefresh } from "@tabler/icons-react"
 const orderStatusOptions: StatusBadgeOption[] = [
   { label: "待支付", value: 0, variant: "secondary" },
   { label: "已支付", value: 1, variant: "default" },
+  { label: "已退款", value: 2, variant: "destructive" },
   { label: "已过期", value: 3, variant: "outline" },
 ]
 

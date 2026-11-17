@@ -66,7 +66,9 @@ export function MessagesPage() {
                 <div className="flex items-center gap-2">
                   {!m.is_read && <span className="size-2 rounded-full bg-primary" />}
                   <span className="text-sm font-medium">{m.title}</span>
-                  <Badge variant="outline" className={bizCls[m.biz_type] ?? ""}>{m.biz_type}</Badge>
+                  <Badge variant="outline" className={bizCls[m.biz_type] ?? ""}>
+                    {m.biz_type_name || m.biz_type}
+                  </Badge>
                 </div>
                 <span className="text-xs text-muted-foreground whitespace-nowrap">{m.created_at}</span>
               </div>

@@ -38,7 +38,12 @@ function RecordsTable() {
 
   const columns = React.useMemo<ColumnDef<MerchantRecordData>[]>(() => [
     { accessorKey: "created_at", enableSorting: false, header: () => "创建时间", cell: ({ row }) => dateCell(row.original.created_at), meta: { headClassName: "min-w-[150px]" } },
-    { accessorKey: "biz_type", enableSorting: false, header: () => "业务类型", cell: ({ getValue }) => secondaryCell(String(getValue())) },
+    {
+      accessorKey: "biz_type",
+      enableSorting: false,
+      header: () => "业务类型",
+      cell: ({ row }) => secondaryCell(row.original.biz_type_name || row.original.biz_type),
+    },
     {
       accessorKey: "amount",
       enableSorting: false,
