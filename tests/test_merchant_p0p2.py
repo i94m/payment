@@ -1,7 +1,7 @@
 """商户后台 P0-P2 端到端测试：
 
 - 安全：找回密码（邮件未配置路径）、登录日志、会话管理
-- 订单：notify_status 列、筛选统计汇总、CSV 导出
+- 订单：notify_status 列、筛选统计汇总、Excel 导出
 - 结算：费率/预留余额预览、可提口径拦截、自动结算开关
 - 代理：CRUD + 业绩统计 + paypage 链接归属
 - 聚合收款：info / 建单（普通 + 随机金额）
@@ -24,7 +24,7 @@ from app.models import (
 )
 from app.services.balance import dmoney
 from app.services import paytoken
-from tests.conftest import UPSTREAM_KEY, pay_code, signed_params, upstream_state
+from tests.conftest import UPSTREAM_KEY, pay_code, signed_params, upstream_state, xlsx_text
 from tests.test_pay_flow import _notify_params, _sign_epay  # noqa: F401
 
 
@@ -127,12 +127,15 @@ async def test_order_list_summary_and_notify_status(client, seeded, session):
 
 
 @pytest.mark.asyncio
-async def test_order_export_csv(client, seeded, session):
+async def test_order_export_xlsx(client, seeded, session):
     headers = await _mch_headers(session)
     await _pay_order(client, session, "EXP1")
     r = await client.post("/merchant-api/order/export", json={}, headers=headers)
     assert r.status_code == 200
-    text = r.content.decode("utf-8-sig")
+    assert r.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    text = xlsx_text(r.content)
     assert "EXP1" in text
 
 

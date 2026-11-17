@@ -36,6 +36,8 @@ import {
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
+import { downloadBlob } from "@/lib/export"
+import { FEATURE_ADMIN_EXPORT_EXCEL } from "@/lib/features"
 import { toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { CopyButton } from "@/components/ui/copy-button"
@@ -444,13 +446,7 @@ export function MerchantsPage() {
       const res = await apiClient.get("/merchant/export", {
         params: filterParams, responseType: "blob",
       })
-      const blob = new Blob([res as unknown as BlobPart], { type: "text/csv;charset=utf-8" })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `merchants_${Date.now()}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadBlob(res as unknown as Blob, `merchants_${Date.now()}.xlsx`)
     } catch (err) {
       toast.error(getErrorMessage(err, "导出失败"))
     }
@@ -631,10 +627,12 @@ export function MerchantsPage() {
                 <IconAdjustments className="size-4" />
                 {"高级搜索"}
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExport}>
-                <IconDownload className="size-4" />
-                {"导出 CSV"}
-              </Button>
+              {FEATURE_ADMIN_EXPORT_EXCEL && (
+                <Button variant="outline" size="sm" onClick={handleExport}>
+                  <IconDownload className="size-4" />
+                  {"导出 Excel"}
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={() => { setBatchRandomEnable("1"); setBatchRandomMin(""); setBatchRandomMax(""); setBatchRandomOpen(true) }}>
                 <IconDice className="size-4" />
                 {"批量随机金额"}

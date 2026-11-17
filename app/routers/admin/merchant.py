@@ -4,7 +4,7 @@
 - 支付/结算独立开关（pay: 0=关 1=开 2=待审核；settle: 0/1）
 - 随机金额（单个/批量，min==max 固定金额）与限制拉单（同 IP 每分钟建单上限）
 - 固定保护（fixed）：免受批量随机金额影响
-- 精细搜索（按字段）+ 状态筛选 + 排序 + 高级搜索（N 天无订单）+ CSV 导出
+- 精细搜索（按字段）+ 状态筛选 + 排序 + 高级搜索（N 天无订单）+ Excel 导出
 - SSO 一键登录商户后台（一次性 token，60 秒有效）
 """
 import secrets
@@ -22,7 +22,7 @@ from sqlmodel import col, func, select
 
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import AdminUser, PermissionChecker, hash_password, revoke_all_tokens
-from app.lib.export import export_csv
+from app.lib.export import export_xlsx
 from app.models import Merchant, MerchantRecord, Order, Settlement
 from app.responses import err, paginate, suc
 from app.routers.common.params import parse_int
@@ -162,7 +162,7 @@ async def merchant_list(session: SessionDep, page: int = Query(1, ge=1),
 
 @router.get("/export", dependencies=[Depends(PermissionChecker("merchant.export"))])
 async def merchant_export(session: SessionDep, request: Request):
-    """导出商户 CSV（最多 10000 行）。过滤条件与列表一致（query 参数）。"""
+    """导出商户 Excel(xlsx，最多 10000 行）。过滤条件与列表一致（query 参数）。"""
     body = {k: v for k, v in request.query_params.items() if v not in ("", None)}
     query = _build_query(body).limit(10000)
     rows_raw = (await session.exec(query)).all()
@@ -188,8 +188,8 @@ async def merchant_export(session: SessionDep, request: Request):
             "created_at": m.created_at.strftime("%Y-%m-%d %H:%M:%S") if m.created_at else "",
             "last_login_at": m.last_login_at.strftime("%Y-%m-%d %H:%M:%S") if m.last_login_at else "",
         })
-    return export_csv(
-        rows, f"merchants_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv",
+    return export_xlsx(
+        rows, f"merchants_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx",
         columns=["pid", "username", "balance", "frozen_balance", "rate",
                  "email", "phone", "qq", "url", "settle_account", "settle_name",
                  "status", "pay_status", "settle_status",

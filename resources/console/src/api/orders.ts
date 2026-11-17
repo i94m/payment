@@ -68,6 +68,6 @@ export const ordersApi = {
       ? apiClient.post(`/order/${tradeNo}/notify`)
       : apiClient.post("/order/notify", { trade_no: tradeNo }),
 
-  /** 导出 CSV（blob，由调用方触发下载；仅 admin） */
+  /** 导出 Excel（blob，由调用方触发下载；仅 admin） */
   exportUrl: "/order/export",
 }

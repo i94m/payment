@@ -5,6 +5,7 @@ import pytest
 
 from app.core.security import hash_password
 from app.models import Merchant, MerchantRecord, SystemAdmin
+from tests.conftest import xlsx_text
 
 
 @pytest.mark.asyncio
@@ -88,8 +89,10 @@ async def test_admin_records_list_summary_export(session, client, seeded):
     resp = await client.get("/admin-api/record/export", headers=headers,
                             params={"merchant_id": m1.id})
     assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("text/csv")
-    body = resp.text
+    assert resp.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    body = xlsx_text(resp.content)
     assert "商户号" in body and "操作类型" in body
     assert "100.00" in body and "-30.00" in body
     assert "50.00" not in body  # m2 的流水不应出现在导出里

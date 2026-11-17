@@ -114,6 +114,22 @@ def signed_params(params: dict, private_key: str | None = None,
     return p
 
 
+def xlsx_text(content: bytes) -> str:
+    """把 xlsx 导出内容摊平成文本（所有工作表单元格），便于断言。"""
+    import io
+
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(content))
+    return "\n".join(
+        str(cell.value)
+        for ws in wb.worksheets
+        for row in ws.iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
+
+
 async def pay_code(session, pid: int = 1001, agent_id: int = 0) -> str:
     """收款页短码（/p/{code}）：按 pid/agent_id 取码，测试辅助。"""
     from sqlmodel import select

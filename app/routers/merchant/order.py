@@ -1,4 +1,4 @@
-"""商户端订单查询（merchant_id 数据隔离）+ 统计汇总 + CSV 导出 + 手动重发通知。
+"""商户端订单查询（merchant_id 数据隔离）+ 统计汇总 + Excel 导出 + 手动重发通知。
 
 列表默认仅展示收款单（order_type=0），余额充值单在资金流水/充值入口体现。
 扣量单（is_deducted）对商户侧一律显示为未支付：状态遮蔽、无完成时间、不计入统计
@@ -13,7 +13,7 @@ from sqlmodel import col, func, select
 
 from app.core.deps import SessionDep
 from app.core.security import MerchantUser
-from app.lib.export import export_csv
+from app.lib.export import export_xlsx
 from app.models import Order
 from app.responses import err, paginate, suc
 from app.routers.common.params import parse_int
@@ -129,7 +129,7 @@ async def order_list(session: SessionDep, auth: MerchantUser,
 
 @router.post("/export")
 async def order_export(session: SessionDep, auth: MerchantUser, body: dict | None = None):
-    """CSV 导出当前筛选结果（上限 1 万行）。"""
+    """Excel(xlsx) 导出当前筛选结果（上限 1 万行）。"""
     body = body or {}
     query = _build_query(auth, body).limit(10000)
     items = (await session.exec(query)).all()
@@ -138,13 +138,13 @@ async def order_export(session: SessionDep, auth: MerchantUser, body: dict | Non
     rows = []
     for o in items:
         row = _dump_order(o, type_names)
-        # CSV 里支付方式/状态给人类可读文案，避免导出 alipay / 2 这类裸 code
+        # 导出文件里支付方式/状态给人类可读文案，避免导出 alipay / 2 这类裸 code
         row["type"] = row["type_name"]
         row["status"] = status_text.get(row["status"], str(row["status"]))
         rows.append(row)
-    return export_csv(
+    return export_xlsx(
         items=rows,
-        filename=f"orders-{auth.user.pid}.csv",
+        filename=f"orders-{auth.user.pid}.xlsx",
         columns=[
             ("trade_no", "平台订单号"), ("out_trade_no", "商户订单号"),
             ("type", "支付方式"), ("subject", "商品名称"),

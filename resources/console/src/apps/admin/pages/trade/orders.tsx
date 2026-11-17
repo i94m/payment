@@ -32,6 +32,8 @@ import {
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
+import { downloadBlob } from "@/lib/export"
+import { FEATURE_ADMIN_EXPORT_EXCEL } from "@/lib/features"
 import { digitsOnly, toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { usePermission } from "@/hooks/use-permission"
@@ -247,13 +249,7 @@ export function OrdersPage() {
         params.addtime = `${format(startDate, "yyyy-MM-dd")},${format(endDate, "yyyy-MM-dd")}`
       }
       const res = await apiClient.get("/order/export", { params, responseType: "blob" })
-      const blob = res as unknown as Blob
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `orders_${Date.now()}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadBlob(res as unknown as Blob, `orders_${Date.now()}.xlsx`)
     } catch (err) {
       toast.error(getErrorMessage(err, "导出失败"))
     }
@@ -347,10 +343,10 @@ export function OrdersPage() {
                 <IconRefresh className="size-4" />
                 {"重置"}
               </Button>
-              {canExport && (
+              {FEATURE_ADMIN_EXPORT_EXCEL && canExport && (
                 <Button variant="outline" size="sm" onClick={handleExport}>
                   <IconDownload className="size-4" />
-                  {"导出 CSV"}
+                  {"导出 Excel"}
                 </Button>
               )}
             </div>

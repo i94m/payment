@@ -29,6 +29,7 @@ import type { ActionItem, StatusBadgeOption } from "@/components/data-list/"
 import { IconSearch, IconRefresh, IconBell, IconEye, IconDownload, IconLoader2 } from "@tabler/icons-react"
 import apiClient from "@/lib/api-client"
 import { getErrorMessage } from "@/lib/error"
+import { downloadBlob } from "@/lib/export"
 import { toIntParam } from "@/lib/form-utils"
 import { toast } from "sonner"
 
@@ -157,17 +158,12 @@ export function OrdersPage() {
     }
   }
 
-  const exportCsv = async () => {
+  const exportExcel = async () => {
     setExporting(true)
     try {
-      // 导出走 CSV 接口（POST，带当前筛选；需 Authorization 头，故用 axios blob 下载）
+      // 导出走 Excel 接口（POST，带当前筛选；需 Authorization 头，故用 axios blob 下载）
       const blob = await apiClient.post("/order/export", filterParams, { responseType: "blob" })
-      const url = URL.createObjectURL(blob as unknown as Blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `orders-${Date.now()}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadBlob(blob as unknown as Blob, `orders-${Date.now()}.xlsx`)
     } catch (err) {
       toast.error(getErrorMessage(err, "导出失败，请稍后重试"))
     } finally {
@@ -344,10 +340,10 @@ export function OrdersPage() {
               size="sm"
               className="ml-auto"
               disabled={exporting}
-              onClick={exportCsv}
+              onClick={exportExcel}
             >
               {exporting ? <IconLoader2 className="size-4 animate-spin" /> : <IconDownload className="size-4" />}
-              {"导出CSV"}
+              {"导出Excel"}
             </Button>
           </div>
 

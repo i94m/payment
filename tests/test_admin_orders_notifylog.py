@@ -1,7 +1,7 @@
 """管理端回归：订单「已退款」状态 / 支付方式中文名 / 回调日志时间与 403 语义（B02/B08/B10/B11/B14）。
 
 对应缺陷：
-- B02 订单状态 2 在列表、筛选、CSV 导出中映射为「已退款」
+- B02 订单状态 2 在列表、筛选、Excel 导出中映射为「已退款」
 - B08 支付方式列表返回 icon 字段（空则前端不渲染，杜绝 4 个 404）
 - B10 回调日志 created_at 统一 YYYY-MM-DD HH:MM:SS
 - B11 回调日志无权限返回 HTTP 403（而非 400 + body code 403）
@@ -15,6 +15,7 @@ from sqlmodel import select
 
 from app.core.security import hash_password, issue_token
 from app.models import Merchant, NotifyLog, Order, SystemAdmin
+from tests.conftest import xlsx_text
 
 
 async def _admin_headers(session, *, super_admin: bool = True, username: str = "admin"):
@@ -68,10 +69,10 @@ async def test_admin_order_refund_status_and_pay_type_name(session, client, seed
     detail = resp.json()["data"]
     assert detail["status"] == 2 and detail["type_name"] == "支付宝"
 
-    # CSV 导出：状态列输出中文「已退款」
+    # Excel 导出：状态列输出中文「已退款」
     resp = await client.get("/admin-api/order/export?status=2", headers=headers)
     assert resp.status_code == 200
-    body = resp.content.decode("utf-8-sig")
+    body = xlsx_text(resp.content)
     assert "已退款" in body and ",2," not in body
 
 

@@ -4,7 +4,7 @@
 - 列表筛选参数非法值 → 400（不再是 500）
 - 公开收款页 / 开放 API 的 NaN/Infinity 金额 → 业务错误（不再是 500）
 - 收银台重复拉起复用已落库支付信息（切换方式/refresh 才重新拉起）
-- 订单 CSV 导出补齐「已退款」状态文案
+- 订单 Excel 导出补齐「已退款」状态文案
 - admin 首页:查询条数收敛 + /index 兼容别名不重复挂载
 - admin 路由 fail-closed：匿名 401；通知中心新增 message.view 权限键
 """
@@ -17,7 +17,7 @@ from sqlmodel import select
 
 from app.core.security import hash_password, issue_token
 from app.models import AdminMessage, Order, SystemAdmin
-from tests.conftest import pay_code, signed_params
+from tests.conftest import pay_code, signed_params, xlsx_text
 
 
 async def _admin_headers(session, username: str = "admin", super_admin: bool = True) -> dict:
@@ -263,7 +263,7 @@ async def test_admin_merchant_list_bad_params_return_400(client, seeded, session
 
 
 # ------------------------------------------------------------
-# P2-21 CSV 导出状态文案
+# P2-21 Excel 导出状态文案
 # ------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -273,7 +273,7 @@ async def test_order_export_status_text_includes_refunded(client, seeded, sessio
     h = await _admin_headers(session)
     r = await client.get("/admin-api/order/export", headers=h)
     assert r.status_code == 200
-    text = r.content.decode("utf-8-sig")
+    text = xlsx_text(r.content)
     assert "已退款" in text
     assert "已过期" in text
 

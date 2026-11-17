@@ -15,6 +15,7 @@ from sqlmodel import select
 
 from app.models import Merchant, MerchantRecord, Order
 from app.services.message import send_merchant_message
+from tests.conftest import xlsx_text
 from tests.test_agent_panel import _mk_agent, _mk_order
 from tests.test_refund import _pay_order, _refund
 
@@ -110,11 +111,11 @@ async def test_merchant_refunded_order_filterable(client, seeded, session):
 
 @pytest.mark.asyncio
 async def test_merchant_export_uses_chinese_text(client, seeded, session):
-    """CSV 导出：状态/支付方式给中文，不再输出裸 code。"""
+    """Excel 导出：状态/支付方式给中文，不再输出裸 code。"""
     headers = await _mch_headers(session)
     await _pay_order(client, session, "EXP2")
-    text = (await client.post("/merchant-api/order/export", json={},
-                              headers=headers)).content.decode("utf-8-sig")
+    text = xlsx_text((await client.post("/merchant-api/order/export", json={},
+                                        headers=headers)).content)
     assert "支付宝" in text
     assert "已支付" in text
 

@@ -9,7 +9,7 @@ from sqlmodel import col, func, select
 
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import AdminUser, PermissionChecker
-from app.lib.export import export_csv
+from app.lib.export import export_xlsx
 from app.models import Merchant, Order
 from app.responses import err, paginated_query_async, suc
 from app.routers.common.params import parse_int
@@ -123,7 +123,7 @@ async def order_list(session: SessionDep, page: int = Query(1, ge=1),
 
 @router.get("/export", dependencies=[Depends(PermissionChecker("order.export"))])
 async def order_export(session: SessionDep, request: Request):
-    """导出 CSV（最多 10000 行）。过滤条件来自 query 参数。"""
+    """导出 Excel(xlsx，最多 10000 行）。过滤条件来自 query 参数。"""
     body = {k: v for k, v in request.query_params.items() if v not in ("", None)}
     query = _build_query(body).limit(10000)
     orders = (await session.exec(query)).all()
@@ -152,7 +152,7 @@ async def order_export(session: SessionDep, request: Request):
             "created_at": o.created_at.strftime("%Y-%m-%d %H:%M:%S") if o.created_at else "",
             "paid_at": o.paid_at.strftime("%Y-%m-%d %H:%M:%S") if o.paid_at else "",
         })
-    return export_csv(rows, f"orders_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv",
+    return export_xlsx(rows, f"orders_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx",
                       columns=["trade_no", "out_trade_no", "merchant", "type", "subject",
                                "money", "realmoney", "merchant_income", "profit",
                                "status", "created_at", "paid_at"])

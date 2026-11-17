@@ -1,28 +1,26 @@
-"""CSV 导出工具"""
-import csv
+"""Excel(xlsx) 导出工具"""
 import io
 from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+
+# xlsx 的 MIME 类型（前端据此直接下载）
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-def export_csv(items: list[dict], filename: str, columns: list[tuple[str, str]] | None = None) -> StreamingResponse:
+def export_xlsx(
+    items: list[dict],
+    filename: str,
+    columns: list[tuple[str, str]] | None = None,
+) -> StreamingResponse:
     """
-    导出 CSV 文件
+    导出 Excel(.xlsx) 文件
 
     Args:
         items: 数据列表 (list of dict)
-        filename: 下载文件名
-        columns: 列定义 [(key, header_name), ...], None 则用 dict keys
+        filename: 下载文件名（应带 .xlsx 后缀）
+        columns: 列定义 [(key, header_name), ...]，None 则用 dict keys
     """
-    output = io.StringIO()
-    if not items:
-        output.write("")
-        output.seek(0)
-        return StreamingResponse(
-            output,
-            media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
-        )
-
     if columns:
         # 兼容两种形态：list[tuple[key, header]] 或 list[str]（key 即表头）
         if isinstance(columns[0], str):
@@ -30,24 +28,41 @@ def export_csv(items: list[dict], filename: str, columns: list[tuple[str, str]] 
         else:
             headers = [c[1] for c in columns]
             keys = [c[0] for c in columns]
-    else:
+    elif items:
         headers = list(items[0].keys())
         keys = headers
+    else:
+        headers = keys = []
 
-    writer = csv.DictWriter(output, fieldnames=keys)
-    # write BOM for Excel compatibility
-    output.write('\ufeff')
-    writer.writerow(dict(zip(keys, headers)))
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    ws.append(headers)
+
+    widths = [len(str(h)) for h in headers]
     for item in items:
-        row = {}
-        for k in keys:
+        line = []
+        for idx, k in enumerate(keys):
             v = item.get(k, "")
-            row[k] = str(v) if v is not None else ""
-        writer.writerow(row)
+            text = "" if v is None else str(v)
+            # 超长文本（备注/参数等）按 Excel 单元格上限截断
+            if len(text) > 32767:
+                text = text[:32767]
+            line.append(text)
+            if idx < len(widths):
+                widths[idx] = max(widths[idx], len(text))
+        ws.append(line)
 
+    for idx, width in enumerate(widths, start=1):
+        # 中文字符按 2 个宽度估算，最宽 60
+        ws.column_dimensions[get_column_letter(idx)].width = min(width + 2, 60)
+    ws.freeze_panes = "A2"
+
+    output = io.BytesIO()
+    wb.save(output)
     output.seek(0)
     return StreamingResponse(
         output,
-        media_type="text/csv; charset=utf-8",
+        media_type=XLSX_MEDIA_TYPE,
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

@@ -4,3 +4,6 @@
 
 /** 后台通知中心（admin_messages）：侧边栏入口、顶栏铃铛、页面直链统一受此开关控制 */
 export const FEATURE_NOTIFICATION_CENTER = false
+
+/** 后台列表「导出 Excel」按钮：关闭时仅隐藏按钮，导出接口 / 处理函数代码全部保留 */
+export const FEATURE_ADMIN_EXPORT_EXCEL = false

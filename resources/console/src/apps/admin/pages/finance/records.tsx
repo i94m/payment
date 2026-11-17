@@ -23,6 +23,8 @@ import {
 import { IconSearch, IconRefresh, IconDownload } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
+import { downloadBlob } from "@/lib/export"
+import { FEATURE_ADMIN_EXPORT_EXCEL } from "@/lib/features"
 import { digitsOnly, toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 
@@ -201,13 +203,7 @@ export function AdminRecordsPage() {
         params.addtime = `${format(startDate, "yyyy-MM-dd")},${format(endDate, "yyyy-MM-dd")}`
       }
       const res = await apiClient.get(adminRecordsApi.exportUrl, { params, responseType: "blob" })
-      const blob = new Blob([res as unknown as BlobPart], { type: "text/csv;charset=utf-8" })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `records_${Date.now()}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
+      downloadBlob(res as unknown as Blob, `records_${Date.now()}.xlsx`)
     } catch (err) {
       toast.error(getErrorMessage(err, "导出失败"))
     }
@@ -275,10 +271,12 @@ export function AdminRecordsPage() {
                 <IconRefresh className="size-4" />
                 {"重置"}
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExport}>
-                <IconDownload className="size-4" />
-                {"导出 CSV"}
-              </Button>
+              {FEATURE_ADMIN_EXPORT_EXCEL && (
+                <Button variant="outline" size="sm" onClick={handleExport}>
+                  <IconDownload className="size-4" />
+                  {"导出 Excel"}
+                </Button>
+              )}
             </div>
             {summary && (
               <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">

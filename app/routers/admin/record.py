@@ -1,4 +1,4 @@
-"""admin 资金明细：全商户流水多条件查询 + 汇总（增加/减少/总计）+ CSV 导出。
+"""admin 资金明细：全商户流水多条件查询 + 汇总（增加/减少/总计）+ Excel 导出。
 
 对齐旧版 admin/record.php：搜索（操作类型/变更金额/关联订单号）+ 商户号 + 时间范围，
 列表带 变更前/变更后 余额，汇总替代旧版弹窗统计。
@@ -12,7 +12,7 @@ from sqlmodel import col, func, select
 
 from app.core.deps import SessionDep
 from app.core.security import PermissionChecker
-from app.lib.export import export_csv
+from app.lib.export import export_xlsx
 from app.models import Merchant, MerchantRecord
 from app.responses import paginated_query_async, suc
 from app.routers.common.params import parse_int
@@ -108,7 +108,7 @@ async def record_list(session: SessionDep, page: int = Query(1, ge=1),
 
 @router.get("/export", dependencies=[Depends(PermissionChecker("merchant.export"))])
 async def record_export(session: SessionDep, request: Request):
-    """导出 CSV（最多 10000 行）。过滤条件来自 query 参数，与列表一致。"""
+    """导出 Excel(xlsx，最多 10000 行）。过滤条件来自 query 参数，与列表一致。"""
     body = {k: v for k, v in request.query_params.items() if v not in ("", None)}
     query = _build_query(body).limit(10000)
     records = (await session.exec(query)).all()
@@ -128,7 +128,7 @@ async def record_export(session: SessionDep, request: Request):
             "remark": r.remark or "",
             "created_at": r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else "",
         })
-    return export_csv(rows, f"records_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv",
+    return export_xlsx(rows, f"records_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx",
                       columns=[
                           ("merchant_pid", "商户号"), ("merchant_username", "用户名"),
                           ("biz_type", "操作类型"), ("amount", "变更金额"),
