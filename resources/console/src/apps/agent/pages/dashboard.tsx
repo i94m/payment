@@ -67,7 +67,8 @@ export function DashboardPage() {
         </div>
 
         {/* 专属收款链接 + 信息（老系统 index.php 代理链接卡 + link.php 信息表合并） */}
-        <div className="grid gap-4 px-4 lg:px-6 lg:grid-cols-2">
+        {/* 宽度收窄：链接卡略宽、信息卡更窄，整体限制在 5xl 以内，避免宽屏下被拉伸 */}
+        <div className="grid gap-4 px-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:px-6 xl:max-w-5xl">
           <Card className="shadow-sm">
             <CardHeader>
               <CardDescription className="flex items-center gap-1.5">
