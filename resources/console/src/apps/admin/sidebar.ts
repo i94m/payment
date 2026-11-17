@@ -12,7 +12,7 @@ export function getAdminMenu(): MenuSection[] {
   return [
     {
       items: [
-        { title: "仪表盘", url: "/", icon: IconGauge },
+        { title: "数据统计", url: "/", icon: IconGauge },
         // 通知中心入口由 FEATURE_NOTIFICATION_CENTER 控制：关闭时仅隐藏入口，
         // 页面 / 路由 / 接口代码保留（hidden 不影响 page-meta 推导页面标题）
         {
