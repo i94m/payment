@@ -2,11 +2,10 @@
 
 import * as React from "react"
 import { useLocation, Link } from "react-router-dom"
-import { NavUser } from "./nav-user"
+import { Brand } from "./brand"
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -15,38 +14,12 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { useAuthStore } from "@/stores/auth-store"
-import { useSiteStore } from "@/stores/site-store"
-import { SidebarContext } from "@/App"
-import { APP_MODULE } from "@/lib/config"
-import type { MenuSection } from "@/apps/merchant/sidebar"
+import { useMenuSections } from "@/hooks/use-menu-sections"
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const location = useLocation()
-  const currentPath = location.pathname
-  const user = useAuthStore((s) => s.user)
-  const permissions = useAuthStore((s) => s.permissions)
-  const siteName = useSiteStore((s) => s.siteName)
-  const version = useSiteStore((s) => s.version)
-  const revision = useSiteStore((s) => s.revision)
-  // 订阅 features 引用：商户端菜单按开关过滤（main.tsx 的 getMenu 内读取），
-  // fetchSite 每次落新对象，开关变更后此处触发重渲染取到新菜单
-  useSiteStore((s) => s.features)
-  const { getMenu } = React.useContext(SidebarContext)
-
-  const hasPermission = (key?: string) => {
-    if (!key) return true
-    if (user?.is_super_admin) return true
-    // "*" = 全量放行（商户端单一角色由后端下发 permissions=["*"]）
-    if (permissions.includes("*")) return true
-    return permissions.includes(key)
-  }
-
-  const sections = getMenu().map((section) => ({
-    ...section,
-    // hidden 为静态隐藏（功能开关关闭），权限过滤之外再剔除一次
-    items: section.items.filter((item) => !item.hidden && hasPermission(item.permission)),
-  }))
+  const currentPath = useLocation().pathname
+  // 权限 / 静态 hidden / 功能开关统一的菜单过滤，顶栏模式共用同一份结果
+  const sections = useMenuSections()
 
   return (
     <Sidebar collapsible="icon" variant="inset" {...props}>
@@ -54,28 +27,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild size="lg" tooltip={"数据统计"}>
-              <Link to="/">
-                <img src="/images/logo.svg" alt="" className="size-5!" />
-                <span className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
-                  <span className="truncate">{siteName}</span>
-                  {/* 版本号仅管理后台展示（商户/代理端不暴露平台版本）：
-                      取自镜像构建期，源码运行为 dev，hover 可看构建提交号 */}
-                  {APP_MODULE === "admin" && version && (
-                    <span
-                      className="truncate text-[11px] leading-tight text-sidebar-foreground/50"
-                      title={revision ? `构建提交 ${revision}` : undefined}
-                    >
-                      {/^\d/.test(version) ? `v${version}` : version}
-                    </span>
-                  )}
-                </span>
-              </Link>
+              <Brand inSidebar />
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {sections.map((section: MenuSection) => {
+        {sections.map((section) => {
           if (!section.items.length) return null
           return (
             <SidebarGroup key={section.label ?? section.items[0].title} className="py-1 px-2">
@@ -121,9 +79,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           )
         })}
       </SidebarContent>
-      <SidebarFooter>
-        <NavUser />
-      </SidebarFooter>
     </Sidebar>
   )
 }

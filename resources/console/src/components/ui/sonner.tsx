@@ -12,11 +12,12 @@ import { useThemeStore } from "@/stores/theme-store"
 const iconCls = "size-5 [shape-rendering:geometricPrecision]"
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const colorMode = useThemeStore((s) => s.colorMode)
+  // sonner 只认 light|dark，auto 模式取解析后的实际生效模式
+  const resolvedMode = useThemeStore((s) => s.resolvedMode)
 
   return (
     <Sonner
-      theme={colorMode as ToasterProps["theme"]}
+      theme={resolvedMode}
       className="toaster group"
       icons={{
         success: (
