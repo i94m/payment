@@ -63,13 +63,7 @@ async def upload_sts(
 
     policy_config = upload_policies[policy]
 
-    disk = policy_config.get('disk', 'local')
-
-    # 缓存避免频繁生成
-    cache_key = f"upload.sts.{disk}.{policy}.{request.client.host}"
-    cached = await cache.get(cache_key)
-    if cached:
-        return suc(json.loads(cached) if isinstance(cached, str) else cached)
+    disk = config.STORAGE_PROVIDER if config.STORAGE_PROVIDER in ('cos', 'oss') else policy_config.get('disk', 'local')
 
     # 子目录
     frequency = policy_config.get('frequency', '')
@@ -83,6 +77,14 @@ async def upload_sts(
         sub_dir = f"{now.strftime('%Y%m%d')}/"
 
     prefix = policy_config.get('prefix', '') + sub_dir
+
+    # 缓存避免频繁生成。key 里带上策略前缀：同一 Redis 可能被多套系统共用，
+    # 仅用 disk + policy 会命中别的系统写入的 STS（前缀/存储密钥都不同，直传验签必然失败）。
+    cache_key = f"upload.sts.{disk}.{policy}.{prefix}.{request.client.host}"
+    cached = await cache.get(cache_key)
+    if cached:
+        return suc(json.loads(cached) if isinstance(cached, str) else cached)
+
     # STS 有效期
     sts_expires = config.STORAGE_STS_EXPIRE_MINUTES * 60
     expire_seconds = min(sts_expires, policy_config.get('expire_seconds', sts_expires))

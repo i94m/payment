@@ -8,9 +8,9 @@ import { Uploader } from "@/components/ui/uploader"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field, FieldLabel, FieldError, RequiredMark } from "@/components/ui/field"
 
-// RichEditor(ckeditor5) 体积大，lazy 加载：仅当表单真正用到 editor 字段时才拉取
+// RichEditor(tiptap + prosemirror) 体积大，lazy 加载：仅当表单真正用到 editor 字段时才拉取
 const RichEditor = React.lazy(() =>
-  import("@/components/ui/rich-editor").then((m) => ({ default: m.RichEditor })),
+  import("@/components/editor/rich-editor").then((m) => ({ default: m.RichEditor })),
 )
 import {
   Select,

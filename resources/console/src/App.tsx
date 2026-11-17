@@ -13,6 +13,7 @@ import { RegisterPage } from "@/pages/register"
 import { Error404 } from "@/pages/errors/404"
 import { ImagePreviewPortal } from "@/components/ui/image-viewer"
 import { ErrorBoundary } from "@/components/error-boundary"
+import { loadStorageConfig } from "@/lib/storage"
 import type { MenuSection } from "@/apps/merchant/sidebar"
 import type { PermissionRouteObject } from "@/apps/admin/routes"
 import NProgress from "nprogress"
@@ -95,6 +96,13 @@ export default function App({ routes, getMenu }: AppProps) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 存储配置跟随后端 STORAGE_PROVIDER：云存储时把文件访问域名切到 bucket 域名。
+  // 依赖 user 而非 token：避免用「已过期但尚未校验」的 token 去打接口触发 401 登出。
+  useEffect(() => {
+    if (!user) return
+    void loadStorageConfig()
+  }, [user])
 
   // 站点名称（后台可改）：拉取一次并同步浏览器标签页标题
   useEffect(() => {
