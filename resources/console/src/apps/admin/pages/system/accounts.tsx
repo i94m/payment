@@ -281,7 +281,7 @@ export function AccountsPage() {
 
       {/* 新建/编辑账号 */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{editingId ? "编辑账号" : "新增账号"}</DialogTitle>
           </DialogHeader>

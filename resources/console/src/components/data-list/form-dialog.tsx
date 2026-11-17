@@ -96,7 +96,10 @@ export function FormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={width ?? "sm:max-w-3xl max-h-[90vh] overflow-y-auto"}>
+      <DialogContent
+        className={width ?? "sm:max-w-3xl max-h-[90vh] overflow-y-auto"}
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>

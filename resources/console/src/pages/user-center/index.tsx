@@ -244,7 +244,7 @@ function AdminAccountCard() {
 
       {/* Change Password Modal */}
       <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"修改密码"}</DialogTitle>
           </DialogHeader>

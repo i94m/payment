@@ -769,7 +769,7 @@ export function MerchantsPage() {
 
       {/* 调整余额 */}
       <Dialog open={!!balanceTarget} onOpenChange={(open) => !open && setBalanceTarget(null)}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"调整余额"}</DialogTitle>
             <DialogDescription>
@@ -835,7 +835,7 @@ export function MerchantsPage() {
 
       {/* 重置登录密码（管理员直接输入新密码） */}
       <Dialog open={!!pwdTarget} onOpenChange={(open) => { if (!open) setPwdTarget(null) }}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"重置密码"} - {pwdTarget?.username}</DialogTitle>
             <DialogDescription>{"输入新密码后立即生效，该商户现有登录会话将全部失效"}</DialogDescription>
@@ -873,7 +873,7 @@ export function MerchantsPage() {
 
       {/* 随机金额（单个） */}
       <Dialog open={!!randomTarget} onOpenChange={(open) => !open && setRandomTarget(null)}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"随机金额"} - {randomTarget?.username}</DialogTitle>
             <DialogDescription>{"在区间内随机生成买家实付金额；关闭「整数」时支持两位小数"}</DialogDescription>
@@ -922,7 +922,7 @@ export function MerchantsPage() {
 
       {/* 限流（单个） */}
       <Dialog open={!!ratelimitTarget} onOpenChange={(open) => !open && setRatelimitTarget(null)}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"限流"} - {ratelimitTarget?.username}</DialogTitle>
             <DialogDescription>{"同一付款人 IP 1 分钟内最多为该商户创建的订单数，填 0 或留空表示不限制。用于防止收款链接被爬虫/脚本刷单"}</DialogDescription>
@@ -940,7 +940,7 @@ export function MerchantsPage() {
 
       {/* 修改结算账号 */}
       <Dialog open={!!settleTarget} onOpenChange={(open) => !open && setSettleTarget(null)}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"修改结算账号"} - {settleTarget?.username}</DialogTitle>
           </DialogHeader>
@@ -974,7 +974,7 @@ export function MerchantsPage() {
 
       {/* 高级搜索 */}
       <Dialog open={advanceOpen} onOpenChange={setAdvanceOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"高级搜索"}</DialogTitle>
           </DialogHeader>
@@ -1002,7 +1002,7 @@ export function MerchantsPage() {
 
       {/* 批量随机金额 */}
       <Dialog open={batchRandomOpen} onOpenChange={setBatchRandomOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"批量随机金额"}</DialogTitle>
             <DialogDescription>{"在区间内随机生成付款金额；开启「整数」时为整数"}</DialogDescription>

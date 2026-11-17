@@ -242,7 +242,7 @@ export function AgentsPage() {
 
       {/* 新增/编辑代理弹窗（对齐老系统：编辑时密码留空则不修改） */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) setDialogOpen(false) }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{editing ? "编辑代理" : "新增代理"}</DialogTitle>
             {editing && (
