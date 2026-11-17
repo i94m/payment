@@ -499,7 +499,7 @@ export function DashboardPage() {
                 </CardAction>
               </CardHeader>
               <CardContent className="px-2 pt-0 sm:px-4">
-                <ChartContainer config={trendChartConfig} className="min-h-[160px] w-full">
+                <ChartContainer config={trendChartConfig} className="aspect-auto h-[200px] w-full">
                   <AreaChart data={trend}>
                     <defs>
                       <linearGradient id="fillMoney" x1="0" y1="0" x2="0" y2="1">
