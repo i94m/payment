@@ -13,6 +13,7 @@ from app.core.security import PermissionChecker, get_current_admin
 from . import (
     auth, common, order, merchant, channel, settle,
     settings, dashboard, notifylog, permission, announce, record, queue, message,
+    upgrade,
 )
 
 router = APIRouter()
@@ -35,6 +36,7 @@ protected.include_router(notifylog.router, prefix="/notifylog", tags=["admin-not
 protected.include_router(permission.router, prefix="/permission", tags=["admin-permission"])
 protected.include_router(queue.router, prefix="/queue", tags=["admin-queue"])
 protected.include_router(message.router, prefix="/message", tags=["admin-message"])
+protected.include_router(upgrade.router, prefix="/upgrade", tags=["admin-upgrade"])
 
 # 老后台首页入口 /admin-api/index 兼容别名：只保留「首页总览」一个端点，
 # 不再把整个 dashboard 路由组重复挂一份（原来 /index/payroute、/index/config
