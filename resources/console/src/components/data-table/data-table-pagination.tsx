@@ -1,3 +1,4 @@
+import * as React from "react"
 import { type Table } from "@tanstack/react-table"
 import {
   ChevronLeftIcon,
@@ -41,13 +42,21 @@ function getPageNumbers(current: number, total: number, delta = 2): (number | ".
   return range
 }
 
+const DEFAULT_PAGE_SIZE_OPTIONS = [10, 15, 20, 30, 50, 100]
+
 export function DataTablePagination<TData>({
   table,
   total,
-  pageSizeOptions = [10, 20, 30, 50, 100],
+  pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
 }: DataTablePaginationProps<TData>) {
   const selectedCount = table.getFilteredSelectedRowModel().rows.length
   const pageSize = table.getState().pagination.pageSize
+  // 当前每页行数可能来自页面的 perPage（如 15），未必在选项里；
+  // 不并进去 Select 就没有匹配项，下拉框会呈现为「未选中」
+  const sizeOptions = React.useMemo(
+    () => Array.from(new Set([...pageSizeOptions, pageSize])).sort((a, b) => a - b),
+    [pageSizeOptions, pageSize]
+  )
   // 服务端分页时 data 只有当前页，行数不能当总数用
   const totalRows = total ?? table.getFilteredRowModel().rows.length
   const current = table.getState().pagination.pageIndex + 1
@@ -82,18 +91,20 @@ export function DataTablePagination<TData>({
         <div className="flex items-center space-x-2">
           <p className="text-sm font-medium">{"每页行数"}</p>
           <Select
-            value={`${table.getState().pagination.pageSize}`}
+            value={`${pageSize}`}
             onValueChange={(value) => {
-              table.setPageSize(Number(value))
+              // 一次性改每页行数并回到第一页：分两次 set 会因受控 state 未及时更新而互相覆盖，
+              // 且留在越界页码上会向后端请求空页
+              table.setPagination({ pageIndex: 0, pageSize: Number(value) })
             }}
           >
             <SelectTrigger className="h-8 w-[70px]">
-              <SelectValue placeholder={table.getState().pagination.pageSize} />
+              <SelectValue placeholder={`${pageSize}`} />
             </SelectTrigger>
             <SelectContent side="top">
-              {pageSizeOptions.map((pageSize) => (
-                <SelectItem key={pageSize} value={`${pageSize}`}>
-                  {pageSize}
+              {sizeOptions.map((size) => (
+                <SelectItem key={size} value={`${size}`}>
+                  {size}
                 </SelectItem>
               ))}
             </SelectContent>
