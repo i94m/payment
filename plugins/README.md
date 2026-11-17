@@ -144,7 +144,9 @@ cd <仓库根目录>
 ## 10. 参考实现
 
 - `plugins/_example/` — **伪代码骨架模板，新插件的起点**；`_` 前缀目录不会被注册、不在后台展示，复制使用时去掉前缀并把 `example.py` 重命名为 `plugin.py`
-- `plugins/epay/plugin.py` — 唯一内置上游插件（epay 协议），MD5 签名 + 回调 + 查单 + 退款全量参考
+- `plugins/epay/plugin.py` — **易支付 V1**（MD5 签名 + `submit.php`/`mapi.php`/`api.php` + 回调 + 查单 + 退款全量参考）
+- `plugins/epayv2/plugin.py` — **易支付 V2**（RSA2 签名 + `api/pay/submit|create|query|refund` + 回调验签，含
+  `timestamp` 300s 窗口与 `pay_type/pay_info` 应答映射；两版协议不同，不要互相套用）
 
 短信/邮件适配器已迁至 `app/addons/{sms,mail}/`（复用 storage addon 的组织方式），由 `PluginRegistry` 按包名扫描，不适用本指南的插件验收流程。
 

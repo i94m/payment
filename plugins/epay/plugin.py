@@ -1,4 +1,6 @@
-"""通用上游通道（epay 协议）插件。
+"""易支付（彩虹易支付 V1，epay 协议 + MD5 签名）插件。
+
+同类但协议不同：plugins/epayv2（易支付V2，RSA2 签名 + api/pay/* 接口）。
 
 对接上游网关接口：
 - appswitch=1：POST {appurl}mapi.php 下单，拿 payurl/qrcode/urlscheme
@@ -49,11 +51,11 @@ def _verify_sign(data: dict, appkey: str, sign: str) -> bool:
 
 
 class EpayPayment(BasePayment):
-    """通用上游通道（epay 协议）。"""
+    """易支付（彩虹易支付 V1，MD5 签名）。"""
 
     meta = PluginMeta(
         name="epay",
-        showname="通用上游通道",
+        showname="易支付",
         types=["alipay", "wxpay", "qqpay", "bank"],
         inputs=[
             {"name": "appurl", "title": "接口地址", "type": "input",

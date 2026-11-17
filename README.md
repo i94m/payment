@@ -21,7 +21,8 @@
 - **上游回调网关**：`/callbacks/{plugin}/{trade_no}`（异步通知）与 `.../return`（同步回跳），
   URL 携带插件名并做一致性校验
 - **上游插件框架**：异步 `BasePayment`（submit/query/notify_handler）+ 目录自动发现（元信息在插件类 `meta`）；
-  内置 **通用上游通道插件**（`plugins/epay/`，对接 epay 协议的上游网关）
+  内置 **易支付插件**（`plugins/epay/`，易支付 V1 / MD5 签名）与 **易支付V2插件**
+  （`plugins/epayv2/`，易支付V2 / RSA2 签名 + `api/pay/*` 接口）
 - **通道管理**：凭证 Fernet 加密（密钥派生自 APP_KEY）、商户费率/成本费率、
   随机/顺序/权重三种路由、金额区间与当日限额（Redis 计数）
 - **商户端**：登录（验证码）+ 管理员 SSO + 自助注册（开关/审核/邀请码绑定/
@@ -41,7 +42,7 @@
 （归属/业绩/商户侧管理已实现）、风控/黑名单体系。
 
 > 对外接口全部为全新设计；`.php` 风格路径仅存在于 `plugins/epay/` 内部
-> ——那是该插件作为客户端去调用**上游**网关的接口，与自身开放 API 无关。
+> ——那是该插件作为客户端去调用**上游**网关（易支付 V1）的接口，与自身开放 API 无关。
 
 ## 快速开始
 
@@ -68,7 +69,7 @@ Docker 全链路：`docker compose -f docker-compose.production.yml up -d`（镜
 
 初始化后：admin 登录 `/admin-api/auth/login`（admin / 123456，首次后改密）。
 配置流程：插件管理→同步插件 → 支付方式（内置 alipay/wxpay/qqpay/bank）→
-创建通道（选 epay 插件，填上游 appurl/appid/appkey，凭证自动加密）→ 创建商户拿到 pid，
+创建通道（选「易支付」插件填 appurl/appid/appkey；V2 上游选「易支付V2」再填平台公钥/商户私钥，凭证自动加密）→ 创建商户拿到 pid，
 商户面板「安全设置」一键生成 RSA 密钥对后即可调用开放 API。
 
 ## 开放 API 要点
@@ -104,7 +105,8 @@ app/
     callbacks.py            # /callbacks/{plugin}/{trade_no} 上游回调网关
     admin/ merchant/        # 管理后台 / 商户端 REST API（v1 子集）
   worker/jobs/              # notify_merchant / query_upstream / 三个扫描 cron
-plugins/epay/               # 通用上游通道插件
+plugins/epay/               # 易支付插件（V1，MD5 签名）
+plugins/epayv2/             # 易支付V2插件（RSA2 签名，api/pay/*）
 alembic/versions/0001_*.py  # 初始迁移
 tests/                      # 签名 / 下单 / 回调幂等 / 阶梯重试 / 补单 / 收银台
 ```
@@ -167,7 +169,8 @@ docs/
 
 ## 已知边界（后续迭代）
 
-- 内置上游插件仅 `epay`（协议适配）；官方直连类插件（微信 V3/支付宝等）已移除，
+- 内置上游插件为易支付两版：`epay`（V1，MD5）与 `epayv2`（V2，RSA2，`api/pay/*` 接口）；
+  官方直连类插件（微信 V3/支付宝等）已移除，
   需要时按 `plugins/README.md` 的流程重新接入
 - 商户找回密码依赖邮件通道：支付设置 `mail_channel`/`mail_config` 未配置时不可自助重置
   （管理员端有「重置登录密码」兜底）；订阅邮件同理
