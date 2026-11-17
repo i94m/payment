@@ -16,8 +16,14 @@ interface QRCodeProps {
   fgColor?: string
   includeMargin?: boolean
   className?: string
+  /** 二维码白底容器的额外样式（默认内边距 p-3，可传 p-1 / p-2 收紧） */
+  frameClassName?: string
   downloadable?: boolean
   copyable?: boolean
+  /** 下载文件名，默认 qrcode.png */
+  fileName?: string
+  /** 传入后下载按钮改为带文字的普通按钮（否则为图标按钮） */
+  downloadLabel?: string
 }
 
 function QRCode({
@@ -28,8 +34,11 @@ function QRCode({
   fgColor = "currentColor",
   includeMargin = false,
   className,
+  frameClassName,
   downloadable = false,
   copyable = false,
+  fileName = "qrcode.png",
+  downloadLabel,
 }: QRCodeProps) {
   const svgRef = React.useRef<SVGSVGElement>(null)
   const { copyToClipboard } = useCopyToClipboard()
@@ -53,7 +62,7 @@ function QRCode({
       ctx.fillRect(0, 0, exportSize, exportSize)
       ctx.drawImage(img, 0, 0, exportSize, exportSize)
       const a = document.createElement("a")
-      a.download = "qrcode.png"
+      a.download = fileName
       a.href = canvas.toDataURL("image/png")
       a.click()
     }
@@ -68,7 +77,7 @@ function QRCode({
 
   return (
     <div className={cn("inline-flex flex-col items-center gap-2", className)}>
-      <div className="rounded-md border bg-white p-3 text-foreground">
+      <div className={cn("rounded-md border bg-white text-foreground", frameClassName ?? "p-3")}>
         <QRCodeSVG
           ref={svgRef}
           value={value}
@@ -80,12 +89,18 @@ function QRCode({
         />
       </div>
       {(downloadable || copyable) && (
-        <div className="flex items-center gap-1">
-          {downloadable && (
-            <Button variant="ghost" size="icon" className="size-7" onClick={handleDownload}>
-              <IconDownload className="size-3.5" />
-            </Button>
-          )}
+        <div className="flex w-full items-center justify-center gap-1">
+          {downloadable &&
+            (downloadLabel ? (
+              <Button variant="secondary" size="sm" className="w-full gap-1.5" onClick={handleDownload}>
+                <IconDownload className="size-3.5" />
+                {downloadLabel}
+              </Button>
+            ) : (
+              <Button variant="ghost" size="icon" className="size-7" onClick={handleDownload}>
+                <IconDownload className="size-3.5" />
+              </Button>
+            ))}
           {copyable && (
             <Button variant="ghost" size="icon" className="size-7" onClick={handleCopy}>
               <IconCopy className="size-3.5" />

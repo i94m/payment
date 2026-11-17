@@ -5,11 +5,12 @@ import { agentPanelApi } from "@/api"
 import type { AgentOverview, AgentProfile } from "@/api"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { CopyableInput } from "@/components/ui/copy-button"
+import { QRCode } from "@/components/ui/qrcode"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PanelError } from "@/components/data-list"
 import { useRequest } from "@/apps/shared/use-request"
-import { IconCoin, IconChartBar, IconReceipt, IconWallet, IconLink } from "@tabler/icons-react"
+import { IconCoin, IconChartBar, IconReceipt, IconWallet, IconLink, IconQrcode } from "@tabler/icons-react"
 
 function fmtMoney(v: number | string): string {
   return Number(v ?? 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -66,48 +67,75 @@ export function DashboardPage() {
           ))}
         </div>
 
-        {/* 专属收款链接 + 信息（老系统 index.php 代理链接卡 + link.php 信息表合并） */}
-        {/* 宽度收窄：链接卡略宽、信息卡更窄，整体限制在 5xl 以内，避免宽屏下被拉伸 */}
-        <div className="grid gap-4 px-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:px-6 xl:max-w-5xl">
-          <Card className="shadow-sm">
+        {/* 代理信息（专属收款链接 + 资料，老系统 index.php 链接卡 + link.php 信息表合并）
+            卡片内左侧资料/链接，右侧收款二维码（可下载）；宽屏下卡片占内容区 1/2 */}
+        <div className="px-4 lg:px-6">
+          <Card className="w-full @container/card shadow-sm lg:w-1/2">
             <CardHeader>
-              <CardDescription className="flex items-center gap-1.5">
-                <IconLink className="size-4" />
-                {"你的专属收款链接"}
-              </CardDescription>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <IconLink className="size-4 text-muted-foreground" />
+                {"代理信息"}
+              </CardTitle>
+              <CardDescription>{"专属收款链接与账户资料"}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                {"将此链接发给付款方，对方点击后输入金额即可付款。通过此链接支付的订单将自动计入你的业绩。"}
-              </p>
-              {profile.error ? (
-                overview.error ? (
-                  <p className="text-xs text-muted-foreground">{"暂时无法获取专属链接，请稍后重试"}</p>
-                ) : (
-                  <PanelError error={profile.error} onRetry={profile.reload} />
-                )
-              ) : profile.loading ? (
-                <Skeleton className="h-9 w-full" />
-              ) : fullLink ? (
-                <CopyableInput value={fullLink} className="w-full font-mono text-xs" />
-              ) : (
-                <p className="text-xs text-muted-foreground">{"暂未分配专属收款链接，请联系所属商户。"}</p>
-              )}
-            </CardContent>
-          </Card>
+            <CardContent>
+              <div className="grid gap-4 @[26rem]/card:grid-cols-[minmax(0,1fr)_10rem] @[26rem]/card:gap-6">
+                <div className="min-w-0 space-y-4">
+                  <div className="grid grid-cols-1 gap-x-8 gap-y-4 @[20rem]/card:grid-cols-2">
+                    <InfoRow label={"代理名称"} value={profile.data?.name} loading={profile.loading} />
+                    <InfoRow label={"所属商户"} value={profile.data?.merchant_name} loading={profile.loading} />
+                    <InfoRow label={"创建时间"} value={profile.data?.created_at} loading={profile.loading} />
+                    <InfoRow label={"最后登录"} value={profile.data?.last_login_at} loading={profile.loading} />
+                  </div>
 
-          <Card className="shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-base">{"信息"}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm">
-              <InfoRow label={"代理名称"} value={profile.data?.name} loading={profile.loading} />
-              <Separator />
-              <InfoRow label={"所属商户"} value={profile.data?.merchant_name} loading={profile.loading} />
-              <Separator />
-              <InfoRow label={"创建时间"} value={profile.data?.created_at} loading={profile.loading} />
-              <Separator />
-              <InfoRow label={"最后登录"} value={profile.data?.last_login_at} loading={profile.loading} />
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium">{"你的专属收款链接"}</div>
+                    <p className="text-xs text-muted-foreground">
+                      {"将此链接发给付款方，对方点击后输入金额即可付款。通过此链接支付的订单将自动计入你的业绩。"}
+                    </p>
+                    {profile.error ? (
+                      overview.error ? (
+                        <p className="text-xs text-muted-foreground">{"暂时无法获取专属链接，请稍后重试"}</p>
+                      ) : (
+                        <PanelError error={profile.error} onRetry={profile.reload} />
+                      )
+                    ) : profile.loading ? (
+                      <Skeleton className="h-9 w-full" />
+                    ) : fullLink ? (
+                      <CopyableInput value={fullLink} className="w-full font-mono text-xs" />
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{"暂未分配专属收款链接，请联系所属商户。"}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* 收款二维码：与专属链接同源，扫码输入金额即可付款，支持下载 */}
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <IconQrcode className="size-3.5" />
+                    {"收款二维码"}
+                  </div>
+                  {profile.loading ? (
+                    <Skeleton className="size-[150px] rounded-md" />
+                  ) : fullLink ? (
+                    <QRCode
+                      value={fullLink}
+                      size={144}
+                      includeMargin
+                      frameClassName="p-0.5"
+                      downloadable
+                      fileName={`${profile.data?.name || "代理"}收款二维码.png`}
+                      downloadLabel={"下载收款码"}
+                    />
+                  ) : (
+                    <p className="max-w-[10rem] text-center text-xs text-muted-foreground">
+                      {profile.error ? "暂时无法获取二维码，请稍后重试" : "暂未分配专属收款链接"}
+                    </p>
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -118,9 +146,9 @@ export function DashboardPage() {
 
 function InfoRow({ label, value, loading }: { label: string; value?: string; loading?: boolean }) {
   return (
-    <div className="flex items-center justify-between py-2.5">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium">{loading ? "—" : value || "—"}</span>
+    <div className="space-y-1">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="truncate text-sm font-medium">{loading ? "—" : value || "—"}</div>
     </div>
   )
 }
