@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, Request, UploadFile, File, Form, Query
 from app.core.limiter import rate_limit
 from fastapi.responses import JSONResponse
 
-from app.core.deps import SessionDep, CacheDep
-from app.core.security import AdminUser
+from app.core.deps import CacheDep
+from app.core.security import PermissionChecker
 from app.core.config import config
 from app.addons.storage import get_storage
 from app.responses import suc, err
@@ -41,9 +41,8 @@ async def captcha(cache: CacheDep, _rl=rate_limit(times=20)):
 # 获取上传 STS GET /admin-api/upload/sts
 # ============================================================
 
-@router.get("/upload/sts")
+@router.get("/upload/sts", dependencies=[Depends(PermissionChecker("system.admin"))])
 async def upload_sts(
-    auth: AdminUser,
     request: Request,
     policy: str = Query(..., description="上传策略名"),
     cache: CacheDep = ...,
@@ -53,6 +52,9 @@ async def upload_sts(
 
     对齐 Laravel StorageController::sts()
     Body: policy=xxx
+
+    仅超管/持 system.admin 的管理员可用：STS 是写入存储的凭据，
+    登录即可获取等于人人可往存储盘写文件（B04）。
     """
     upload_policies = config.UPLOAD_POLICIES
 
@@ -362,9 +364,8 @@ def _verify_policy(policy_b64: str, signature: str) -> dict | None:
 # 文件列表 GET /admin-api/storage/files
 # ============================================================
 
-@router.get("/storage/files")
+@router.get("/storage/files", dependencies=[Depends(PermissionChecker("system.admin"))])
 async def storage_files(
-    auth: AdminUser,
     request: Request,
     disk: str = Query(default="local"),
     dir: str = Query(default=""),
@@ -376,6 +377,9 @@ async def storage_files(
     获取文件列表
 
     对齐 Laravel StorageController::files()
+
+    仅超管/持 system.admin 的管理员可用：存储盘里含日志与上传件，
+    登录即可枚举属于越权读取（B04）。
     """
     # 路径遍历防护
     if dir and ".." in dir:
@@ -393,8 +397,8 @@ async def storage_files(
 # 广播认证 POST /admin-api/broadcasting/auth
 # ============================================================
 
-@router.post("/broadcasting/auth")
-async def broadcasting_auth(auth: AdminUser):
+@router.post("/broadcasting/auth", dependencies=[Depends(PermissionChecker("system.admin"))])
+async def broadcasting_auth():
     """
     广播认证
 

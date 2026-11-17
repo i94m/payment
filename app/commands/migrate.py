@@ -234,6 +234,7 @@ def upgrade(revision: str = typer.Argument("head", help="目标版本（默认�
     alembic_cfg = _get_alembic_config()
     alembic_upgrade(alembic_cfg, revision)
     typer.echo(f"✅ 数据库已升级到 {revision}")
+    _sync_plugins()
 
 
 @app.command("stamp")
@@ -311,3 +312,26 @@ def create_tables():
     typer.echo(f"数据库: {engine.url}")
     asyncio.run(_create_all())
     typer.echo("✅ 所有表已创建")
+    _sync_plugins()
+
+
+def _sync_plugins():
+    """建表/迁移后补齐 plugins 表（B05：否则全新安装「已安装插件」为空）。
+
+    幂等；失败只告警不中断迁移（表结构已就位，插件可稍后在后台点「同步插件」补）。
+    """
+    import asyncio
+
+    async def _run():
+        from app.core.database import session_maker
+        from app.services.plugin_sync import sync_plugins
+
+        async with session_maker() as session:
+            return await sync_plugins(session)
+
+    try:
+        result = asyncio.run(_run())
+    except Exception as exc:  # noqa: BLE001 — 迁移不因插件同步失败而回滚
+        typer.echo(f"⚠️  插件表同步失败（可稍后在后台「同步插件」或重跑 db init）：{exc}")
+        return
+    typer.echo(f"✅ {result['message']}")
