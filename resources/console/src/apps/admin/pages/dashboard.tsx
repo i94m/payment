@@ -429,7 +429,7 @@ export function DashboardPage() {
           </div>
 
           {/* 交易统计 / 金额路由 / 通道限速 */}
-          <div className="grid grid-cols-1 items-start gap-4 px-4 lg:px-6 xl:grid-cols-[2fr_1fr_1fr]">
+          <div className="grid grid-cols-1 items-start gap-4 px-4 lg:px-6 xl:grid-cols-[1.5fr_1.25fr_1fr]">
             <Card>
               <CardHeader>
                 <CardTitle>{"交易统计"}</CardTitle>
@@ -582,7 +582,7 @@ export function DashboardPage() {
                   <Table className="text-xs">
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
-                        <TableHead className="h-8 w-16 pl-4 text-xs font-medium">{"项目"}</TableHead>
+                        <TableHead className="h-8 w-14 pl-4 text-xs font-medium">{"项目"}</TableHead>
                         <TableHead className="h-8 pr-4 text-xs font-medium">{"设置"}</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -631,7 +631,7 @@ export function DashboardPage() {
                       ) : rlChannel ? (
                         <TableRow className="hover:bg-transparent">
                           <TableCell className="py-1.5 pl-4 pr-2 text-muted-foreground">{"统计"}</TableCell>
-                          <TableCell className="py-1.5 pr-4"><Skeleton className="h-3.5 w-44" /></TableCell>
+                          <TableCell className="py-1.5 pr-4"><Skeleton className="h-3.5 w-32" /></TableCell>
                         </TableRow>
                       ) : null}
                     </TableBody>
