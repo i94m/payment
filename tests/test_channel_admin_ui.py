@@ -7,10 +7,10 @@
   不再暴露 appswitch 字段
 """
 import pytest
-from sqlmodel import select
+from sqlmodel import func, select
 
 from app.core.security import hash_password, issue_token
-from app.models import Channel, SystemAdmin
+from app.models import Channel, Order, SystemAdmin
 
 MASK = "******"
 
@@ -26,22 +26,41 @@ async def _admin_headers(session, username: str = "chanadmin"):
 
 
 @pytest.mark.asyncio
-async def test_test_pay_pid_is_editable_in_site_settings(session, client, seeded):
-    """测试商户 PID 必须在站点配置白名单内：能出现在列表项、且 PATCH 不被拒。"""
+async def test_no_test_pay_settings_exposed(session, client, seeded):
+    """通道测试不再有任何站点配置项：不建订单、不涉及商户，也就没有开关/PID 要配。"""
     headers = await _admin_headers(session)
 
     r = await client.get("/admin-api/setting", headers=headers)
     assert r.status_code == 200
     keys = {item["key"] for item in r.json()["data"]["items"]}
-    assert {"test_pay_enable", "test_pay_merchant_pid"} <= keys
+    assert "test_pay_enable" not in keys
+    assert "test_pay_merchant_pid" not in keys
 
+    # 注册表已删除该键：即使是旧客户端提交也会被白名单/注册表拒绝
     r = await client.patch("/admin-api/setting",
-                           json={"test_pay_merchant_pid": 1001}, headers=headers)
+                           json={"test_pay_enable": False}, headers=headers)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_channel_testpay_does_not_touch_orders_or_merchants(session, client, seeded):
+    """通道测试只验证凭证+插件协议：不建订单、不涉及商户。"""
+    headers = await _admin_headers(session)
+    channel = seeded["channel"]
+
+    before = (await session.exec(select(func.count()).select_from(Order))).one()
+
+    r = await client.post(f"/admin-api/pay/channels/{channel.id}/testpay",
+                          json={"name": "支付测试", "amount": "1.00"}, headers=headers)
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["code"] == 0, body
-    saved = {i["key"]: i["value"] for i in body["data"]["items"]}
-    assert saved["test_pay_merchant_pid"] == 1001
+    assert body["data"]["pay_type"] == "jump"
+    assert body["data"]["pay_info"].startswith("https://")
+    # 不再返回收银台地址，也不会落订单
+    assert "cashier_url" not in body["data"]
+    after = (await session.exec(select(func.count()).select_from(Order))).one()
+    assert after == before
 
 
 @pytest.mark.asyncio

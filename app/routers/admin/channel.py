@@ -18,8 +18,7 @@ from sqlmodel import col, func, select
 
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import AdminUser, PermissionChecker, check_permission, require_super_admin
-from app.lib.linktoken import cashier_url as build_cashier_url
-from app.models import Channel, Merchant, Order, PaymentType, Plugin
+from app.models import Channel, Order, PaymentType, Plugin
 from app.responses import err, paginate, suc
 from app.services.balance import dmoney
 from app.services.crypto import decrypt_config, encrypt_config
@@ -630,15 +629,15 @@ TEST_PAY_MIN = "0.01"
 TEST_PAY_MAX = "1000.00"
 
 
-async def _test_debug_payload(c: Channel, order, flow, client_ip: str) -> dict:
-    """通道测试的调试信息：通道/订单/上游请求响应快照，失败排障用。
+def _test_debug_payload(c: Channel, ctx, plugin=None, client_ip: str = "",
+                        error: str | None = None) -> dict:
+    """通道测试的调试信息：通道/测试请求/上游请求响应快照，失败排障用。
 
-    凭证类字段一律脱敏 —— 调试弹窗不需要、也不应携带上游 appkey。
+    - 凭证类字段一律脱敏：调试弹窗不需要、也不应携带上游 appkey
+    - 测试不落订单、不涉及商户，这里只是插件 submit 用的模拟请求参数
     """
-    from app.services.crypto import decrypt_config
-
     cfg = decrypt_config(c.config)
-    plugin_debug = getattr(flow.plugin, "last_debug", None) if flow.plugin else None
+    plugin_debug = getattr(plugin, "last_debug", None) if plugin else None
     return {
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "client_ip": client_ip,
@@ -651,13 +650,13 @@ async def _test_debug_payload(c: Channel, order, flow, client_ip: str) -> dict:
             "appkey": CONFIG_MASK if cfg.get("appkey") else "",
             "productid": cfg.get("productid", ""),
         },
-        "order": {
-            "trade_no": order.trade_no,
-            "amount": str(order.money),
-            "realmoney": str(order.realmoney or ""),
+        "request": {
+            "trade_no": ctx.order.get("trade_no", ""),
+            "amount": ctx.order.get("money", ""),
+            "payment_type": ctx.order.get("payment_type_code", ""),
         },
         "upstream_request": plugin_debug,
-        "error": flow.error,
+        "error": error,
     }
 
 
@@ -670,34 +669,21 @@ class ChannelTestPayRequest(BaseModel):
              dependencies=[Depends(PermissionChecker("channel.update"))])
 async def channel_testpay(channel_id: int, body: ChannelTestPayRequest, request: Request,
                           session: SessionDep, cache: CacheDep, admin: AdminUser):
-    """通道测试：在测试商户名下建一笔指定通道的订单，返回收银台地址。
+    """通道测试：用该通道自己的凭证直接向上游发起一笔下单，返回支付信息。
 
-    未开启的通道也允许测试（先测通再启用）；金额放宽到 0.01~1000 元。
+    只验证「凭证 + 插件协议」是否可用：
+    - 不建订单、不涉及商户、不动余额/费率/统计
+    - 未开启的通道也允许测试（先测通再启用）；金额放宽到 0.01~1000 元
     """
-    from app.services.order import create_order, process_payment
-    from app.services.settings import get_all_settings, get_int_setting, get_setting
+    from app.services.plugin import maybe_await
+    from app.services.plugin_interfaces import PaymentContext
+    from app.services.settings import get_all_settings
 
     c = await session.get(Channel, channel_id)
     if not c:
         return err(404, "通道不存在")
     if not c.config or decrypt_config(c.config) == {}:
         return err(-1, "请先配置好通道凭证")
-
-    if not bool(await get_setting(session, "test_pay_enable", True)):
-        return err(-1, "测试支付未开启，请先在站点配置中开启")
-    test_pid = await get_int_setting(session, "test_pay_merchant_pid")
-    if test_pid <= 0:
-        # 新手最容易把「商户自身的 PID」当成测试商户 PID：这里直接把可选 PID 列出来
-        pids = (await session.exec(
-            select(Merchant.pid).where(Merchant.status == 1).order_by(col(Merchant.id)).limit(3)
-        )).all()
-        hint = f"当前可用商户 PID：{', '.join(str(p) for p in pids)}" if pids else "当前没有已启用商户"
-        return err(-1, f"站点配置未填写「测试支付商户 PID」：请到 站点配置 → 订单 填写（{hint}）")
-    test_merchant = (await session.exec(
-        select(Merchant).where(Merchant.pid == test_pid, Merchant.status == 1)
-    )).first()
-    if not test_merchant:
-        return err(-1, f"测试商户不可用：PID {test_pid} 不存在或已停用，请检查站点配置")
 
     try:
         amount = dmoney(body.amount)
@@ -710,38 +696,49 @@ async def channel_testpay(channel_id: int, body: ChannelTestPayRequest, request:
     if not pt or pt.status != 1:
         return err(-1, "通道的支付方式不可用")
 
-    import random
-    out_trade_no = f"CT{datetime.now().strftime('%y%m%d%H%M%S')}{random.randint(100000, 999999)}"
-    try:
-        order = await create_order(
-            {
-                "pid": test_pid,
-                "out_trade_no": out_trade_no,
-                "name": body.name or "支付测试",
-                "money": str(amount),
-                "type": pt.code,
-                "notify_url": "",
-                "return_url": "",
-                "client_ip": request.client.host if request.client else "",
-            },
-            session, cache, order_type=0,
-        )
-    except ValueError as e:
-        return err(-1, str(e))
-
     settings = await get_all_settings(session, cache)
     site = (settings.get("site_url") or str(request.base_url)).rstrip("/")
-    flow = await process_payment(order, test_merchant, session, cache, site_url=site,
-                                 notify_base=site, return_base=site, channel_id=channel_id)
-    debug = await _test_debug_payload(c, order, flow,
-                                      request.client.host if request.client else "")
-    if not flow.ok:
-        # errors[0] 携带调试信息（前端测试失败弹窗展示）
-        return err(-1, flow.error or "拉起支付失败", errors=[debug])
+
+    import random
+    test_no = f"TEST{datetime.now().strftime('%y%m%d%H%M%S')}{random.randint(100000, 999999)}"
+    # 模拟一笔下单上下文：回调地址仍指向真实域名（部分上游会校验格式），
+    # 但库里没有这笔订单，回调不会被受理 —— 测试只需要拿到支付信息。
+    ctx = PaymentContext(
+        order={
+            "trade_no": test_no,
+            "out_trade_no": test_no,
+            "subject": body.name or "支付测试",
+            "money": str(amount),
+            "realmoney": str(amount),
+            "payment_type_code": pt.code,
+        },
+        notify_url=f"{site}/callbacks/{c.plugin_name}/{test_no}",
+        return_url=f"{site}/callbacks/{c.plugin_name}/{test_no}/return",
+        site_url=site,
+        client_ip=request.client.host if request.client else "",
+    )
+
+    plugin = PluginRegistry.get_payment(c.plugin_name, decrypt_config(c.config))
+    if not plugin:
+        return err(-1, f"支付插件 {c.plugin_name} 未安装")
+
+    debug_ip = request.client.host if request.client else ""
+    try:
+        result = await maybe_await(plugin.submit(ctx))
+    except Exception as e:
+        import traceback
+        return err(-1, "上游通道请求失败", errors=[
+            _test_debug_payload(c, ctx, plugin, debug_ip, error=traceback.format_exc()),
+        ])
+
+    pay_info = result.url or result.html or ""
+    debug = _test_debug_payload(c, ctx, plugin, debug_ip,
+                                error=None if result.kind != "error" else result.msg)
+    if result.kind == "error" or (result.kind != "jump" and not pay_info):
+        return err(-1, result.msg or "获取支付接口数据失败", errors=[debug])
+
     return suc({
-        "trade_no": order.trade_no,
-        "cashier_url": build_cashier_url(site, order.trade_no),
-        "pay_type": flow.pay_type,
-        "pay_info": flow.pay_info,
+        "pay_type": result.kind,
+        "pay_info": pay_info,
         "debug": debug,
     })

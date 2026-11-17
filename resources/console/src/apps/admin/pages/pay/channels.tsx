@@ -298,14 +298,24 @@ export function ChannelsPage() {
   }
 
   // 测试支付：在测试商户名下按本通道建单，打开收银台走完整支付流程
+  // 通道测试：直接用该通道凭证向上游下单，不建订单/不涉及商户。
+  // 拿到支付信息后：链接类直接新窗口打开，二维码/HTML 提示人工查看。
   const submitTest = testForm.handleSubmit(async (values) => {
     if (!testChannel) return
     setTesting(true)
     try {
       const data = await payApi.testChannelPay(testChannel.id, values)
       setTestChannel(null)
-      toast.success("测试支付已发起", { description: data.trade_no })
-      window.open(data.cashier_url, "_blank")
+      const url = /^https?:\/\//.test(data.pay_info || "") ? data.pay_info : ""
+      if (url && data.pay_type !== "html") {
+        window.open(url, "_blank")
+        toast.success(`测试通过：${data.pay_type}`, { description: "已在新窗口打开上游支付页" })
+      } else if (data.pay_type === "qrcode" || data.pay_type === "html") {
+        toast.success(`测试通过：${data.pay_type}`, { description: "上游返回内容见浏览器控制台 / 调试信息" })
+        console.info("[channel testpay]", data)
+      } else {
+        toast.success(`测试通过：${data.pay_type}`)
+      }
       fetchStats()
     } catch (err) {
       const e = err as { errors?: unknown[] }
@@ -779,6 +789,9 @@ export function ChannelsPage() {
           <DialogHeader>
             <DialogTitle>{"测试支付"}{testChannel ? ` - ${testChannel.name}` : ""}</DialogTitle>
           </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            {"直接使用该通道凭证向上游发起一笔测试下单，不创建订单、不涉及商户"}
+          </p>
           <form onSubmit={submitTest}>
             <div className="grid gap-3">
               <Controller
@@ -838,9 +851,9 @@ export function ChannelsPage() {
                 <pre className="text-xs font-mono whitespace-pre-wrap break-all max-h-32 overflow-auto bg-muted/50 rounded p-2">
                   {JSON.stringify(testDebug.channel, null, 2)}
                 </pre>
-                <p className="font-medium">{"订单信息"}</p>
+                <p className="font-medium">{"测试请求"}</p>
                 <pre className="text-xs font-mono whitespace-pre-wrap break-all max-h-32 overflow-auto bg-muted/50 rounded p-2">
-                  {JSON.stringify(testDebug.order, null, 2)}
+                  {JSON.stringify(testDebug.request, null, 2)}
                 </pre>
               </div>
               <div className="rounded-lg border p-3 space-y-1.5">

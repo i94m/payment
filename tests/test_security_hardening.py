@@ -222,31 +222,21 @@ async def test_settings_patch_rejects_hidden_keys(session, client, seeded):
 
 
 @pytest.mark.asyncio
-async def test_settings_page_allows_late_pay_backfill_window(session, client, seeded):
-    """`late_pay_backfill_hours`（P0-4 过期单回补窗口）必须在站点配置页白名单内。
+async def test_settings_page_hides_late_pay_backfill_window(session, client, seeded):
+    """`late_pay_backfill_hours`（过期单回补窗口）不在站点配置页暴露。
 
-    P1-9 白名单收紧后该键一度不在 ADMIN_SETTING_KEYS 内：页面不展示、PATCH 直接
-    422，回补窗口就变成只能改库——回补口径是站点可调项，必须走配置页。
+    回补口径固定用注册表默认值（24h），不走配置页：页面不展示该键，
+    配置接口也拒绝修改（仍可由运维直接改库）。
     """
     headers, _ = await _make_admin(session, "secbackfill")
 
     resp = await client.get("/admin-api/setting", headers=headers)
     items = {i["key"]: i for i in resp.json()["data"]["items"]}
-    assert "late_pay_backfill_hours" in items
-    assert items["late_pay_backfill_hours"]["group"] == "order"
-    assert items["late_pay_backfill_hours"]["default"] == 24
+    assert "late_pay_backfill_hours" not in items
 
     r = await client.patch("/admin-api/setting",
                            json={"late_pay_backfill_hours": 48}, headers=headers)
-    assert r.status_code == 200
-
-    from app.services.settings import get_int_setting
-    assert await get_int_setting(session, "late_pay_backfill_hours") == 48
-
-    # 白名单只决定「能不能改」，类型仍由注册表校验：非法值整体拒绝
-    bad = await client.patch("/admin-api/setting",
-                             json={"late_pay_backfill_hours": "abc"}, headers=headers)
-    assert bad.status_code == 422
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio

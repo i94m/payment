@@ -104,9 +104,9 @@ export interface ChannelStats {
 }
 
 export interface ChannelTestPayResult {
-  trade_no: string
-  cashier_url: string
+  /** 插件返回的支付动作：jump / qrcode / scheme / html */
   pay_type: string
+  /** 支付链接、二维码地址或 HTML 表单（按 pay_type 解释） */
   pay_info: string
   debug?: Record<string, unknown>
 }
@@ -116,7 +116,8 @@ export interface ChannelTestDebug {
   time: string
   client_ip: string
   channel: Record<string, unknown>
-  order: Record<string, unknown>
+  /** 本次测试模拟的下单参数（不落库、不涉及商户） */
+  request: Record<string, unknown>
   upstream_request: Record<string, unknown> | null
   error: string
 }

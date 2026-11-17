@@ -69,10 +69,6 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
         SettingSpec("merchant_reg_open", SettingType.BOOL, False, SettingGroup.SITE, "商户自助注册开关"),
         SettingSpec("merchant_reg_review", SettingType.BOOL, False, SettingGroup.SITE,
                     "注册商户需审核（开启后新注册商户支付权限为待审核）"),
-        SettingSpec("test_pay_enable", SettingType.BOOL, True, SettingGroup.ORDER, "通道测试支付开关"),
-        SettingSpec("test_pay_merchant_pid", SettingType.INT, 0, SettingGroup.ORDER,
-                    "测试支付商户 PID",
-                    description="通道列表「测试」按钮的挂单商户 PID，必须是已启用商户的 PID；0=未配置，通道测试不可用"),
         SettingSpec("deduct_enable", SettingType.BOOL, False, SettingGroup.ORDER, "扣量开关",
                     description="开启后按成功订单频次轮询抽单，商户侧显示为未支付"),
         SettingSpec("deduct_frequency", SettingType.INT, 0, SettingGroup.ORDER,
@@ -126,20 +122,13 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
     ]
 }
 
-# 站点配置页可见 key 白名单：站点名称 + 订单回补窗口 + 扣量 + 结算组（自动结算 / D+1 除外）。
-# 注册开关、api_pay_enable / landing_enable / api_order_rate_limit 等不在页面上暴露
-# （仍由注册表提供默认值、运行期生效，可直接写库或 PATCH 接口调整），
-# 其余项同理只是不在设置页展示/编辑。
+# 站点配置页可见 key 白名单：站点名称 + 扣量 + 结算组（自动结算 / D+1 除外）。
+# 注册开关、api_pay_enable / landing_enable / api_order_rate_limit、过期单回补窗口
+# （late_pay_backfill_hours，固定用默认 24h）等不在页面上暴露——仍由注册表提供默认值、
+# 运行期生效，需要时直接写库；不在页面展示是因为这些口径不需要运维日常调整。
 ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable", "settle_d1_enable"}
-ADMIN_SETTING_ORDER_KEYS: set[str] = {"late_pay_backfill_hours"}
-# 通道测试支付（admin 通道列表「测试」用）：开关 + 挂单商户 PID。
-# 必须放进白名单，否则配置页看不到、PATCH 也会被拒（历史上漏放，导致
-# 通道测试一直报「请先在站点配置中配置测试商户PID」）。
-ADMIN_SETTING_TEST_PAY_KEYS: set[str] = {"test_pay_enable", "test_pay_merchant_pid"}
 ADMIN_SETTING_KEYS: set[str] = (
     {"site_name"}
-    | ADMIN_SETTING_ORDER_KEYS
-    | ADMIN_SETTING_TEST_PAY_KEYS
     | {k for k in SETTINGS_REGISTRY if k.startswith("deduct_")}
     | {k for k, spec in SETTINGS_REGISTRY.items() if spec.group is SettingGroup.SETTLE}
 ) - ADMIN_SETTING_HIDDEN_KEYS
