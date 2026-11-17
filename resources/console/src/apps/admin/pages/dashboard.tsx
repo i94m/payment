@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/chart"
 import {
   IconGauge, IconCoin, IconUsers, IconChartBar, IconRefresh,
+  IconTrendingUp, IconCalendarStats,
 } from "@tabler/icons-react"
 
 const trendChartConfig = {
@@ -208,6 +209,16 @@ export function DashboardPage() {
   const trend: { date: string; count: number; money: number }[] = overview?.trend ?? []
   const kpis = [
     {
+      key: "today_deduct_money", label: "今日预计收入", icon: IconTrendingUp,
+      value: fmtMoney(overview?.today_deduct_money ?? 0), to: "",
+      note: "今日实时汇总",
+    },
+    {
+      key: "yesterday_deduct_money", label: "昨日预计收入", icon: IconCalendarStats,
+      value: fmtMoney(overview?.yesterday_deduct_money ?? 0), to: "",
+      note: "昨日全天汇总",
+    },
+    {
       key: "count1", label: "订单总数", icon: IconChartBar,
       value: fmtNum(overview?.count1 ?? 0), to: "/trade/orders",
       note: "累计支付成功订单",
@@ -316,7 +327,7 @@ export function DashboardPage() {
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
           {/* 统计卡片（shadcn dashboard-01 SectionCards 样式） */}
-          <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @3xl/main:grid-cols-3 @6xl/main:grid-cols-6">
             {kpis.map((kpi) => {
               const inner = (
                 <Card key={kpi.key} className="@container/card bg-gradient-to-t from-primary/5 to-card shadow-xs dark:bg-card">
@@ -344,18 +355,9 @@ export function DashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle>{"交易统计"}</CardTitle>
-                <CardDescription>{"收入与成功率实时汇总"}</CardDescription>
+                <CardDescription>{"近期成功率与已支付笔数实时汇总"}</CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col py-1">
-                <div className="flex flex-wrap items-center gap-x-6">
-                  <StatRow label={`${"今日预计收入"}：`}>
-                    {loading ? <Skeleton className="h-4 w-24" /> : <>{fmtMoney(overview?.today_deduct_money ?? 0)} {"元"}</>}
-                  </StatRow>
-                  <StatRow label={`${"昨日预计收入"}：`}>
-                    {loading ? <Skeleton className="h-4 w-24" /> : <>{fmtMoney(overview?.yesterday_deduct_money ?? 0)} {"元"}</>}
-                  </StatRow>
-                </div>
-                <Separator />
                 <StatRow label={`${"近期订单成功率"}：`}>
                   {loading ? <Skeleton className="h-4 w-40" /> : (
                     <>
