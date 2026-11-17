@@ -57,6 +57,14 @@ class _FakeEpayOverride(BasePayment):
         return PaymentResult(kind="error", msg="stub")
 
 
+class _FakeDropin(BasePayment):
+    # 手工拷入 storage/plugins/dropin/ 的插件（目录名与 meta.name 一致）
+    meta = PluginMeta(name="dropin", showname="拷入插件", types=["alipay"], version="0.1.0")
+
+    async def submit(self, ctx: PaymentContext) -> PaymentResult:
+        return PaymentResult(kind="error", msg="stub")
+
+
 @pytest.fixture
 def upload_root(tmp_path, monkeypatch):
     root = tmp_path / "plugins"
@@ -233,3 +241,117 @@ async def test_upload_bad_so_rolls_back(client, upload_root, admin_headers, monk
     assert "导入失败" in body["message"]
     assert not (upload_root / "badplug").exists()
     assert "badplug" not in PluginRegistry.payment_names()
+
+
+async def test_dropped_dir_visible_and_synced_without_restart(
+        client, upload_root, admin_headers, monkeypatch):
+    """直接往 storage/plugins 拷目录：点一次「已安装插件」就能看到并落库，无需重启。"""
+    monkeypatch.setattr(PluginRegistry, "CHECK_INTERVAL", 0.0)
+
+    def _fake_import(cls, name, so_path):
+        mod = types.ModuleType(f"plugins_upload.{name}.plugin")
+        mod.Plugin = _FakeDropin
+        return mod
+
+    monkeypatch.setattr(PluginRegistry, "_import_upload", classmethod(_fake_import))
+    # 模拟部署方 cp -r 拷入：既没上传、也没点同步、更没重启进程
+    plug_dir = upload_root / "dropin"
+    plug_dir.mkdir(parents=True)
+    (plug_dir / SO_NAME).write_bytes(b"\x7fELF-fake-dropin")
+
+    # 列表页这一次 GET 就自动发现盘上新目录（pending=还没同步进 plugins 表）
+    resp = await client.get("/admin-api/pay/plugins", headers=admin_headers)
+    names = {p["name"]: p for p in resp.json()["data"]}
+    assert names["dropin"]["pending"] is True
+    assert names["dropin"]["source"] == "third"
+    assert names["dropin"]["showname"] == "拷入插件"
+    assert names["dropin"]["supported_types"] == ["alipay"]
+    assert PluginRegistry.get_payment_class("dropin") is _FakeDropin
+
+    # 点「已安装插件（N）」= 同步：落库 + 广播（其他进程 ≤1 秒跟上）
+    r = await client.post("/admin-api/pay/plugins/sync", headers=admin_headers)
+    body = r.json()
+    assert body["code"] == 0, body
+    assert "已同步" in body["data"]["message"]
+    assert body["data"]["synced"] >= 1
+
+    resp = await client.get("/admin-api/pay/plugins", headers=admin_headers)
+    names = {p["name"]: p for p in resp.json()["data"]}
+    assert not names["dropin"].get("pending")
+    assert names["dropin"]["version"] == "0.1.0"
+
+
+def test_stamp_broadcast_reloads_other_processes(upload_root, monkeypatch):
+    """reload() 写刷新戳 = 跨进程广播：其他 worker/副本无需重启即可重扫到新版本。"""
+    monkeypatch.setattr(PluginRegistry, "CHECK_INTERVAL", 0.0)
+    version = {"v": "1.0.0"}
+
+    def _fake_import(cls, name, so_path):
+        mod = types.ModuleType(f"plugins_upload.{name}.plugin")
+        mod.Plugin = type("_HotPlug", (_FakePlugin,), {
+            "meta": PluginMeta(name="hotplug", showname="热更插件",
+                               types=["alipay"], version=version["v"]),
+        })
+        return mod
+
+    monkeypatch.setattr(PluginRegistry, "_import_upload", classmethod(_fake_import))
+    plug_dir = upload_root / "hotplug"
+    plug_dir.mkdir(parents=True)
+    so = plug_dir / SO_NAME
+    so.write_bytes(b"v1")
+    PluginRegistry.reload()
+    assert PluginRegistry.plugin_meta("hotplug").version == "1.0.0"
+
+    # 原位替换 .so（父目录 mtime 不变）：本进程不该凭空知道，必须先有广播
+    version["v"] = "2.0.0"
+    so.write_bytes(b"v2")
+    PluginRegistry.discover()
+    assert PluginRegistry.plugin_meta("hotplug").version == "1.0.0"
+
+    # 另一个进程点了刷新/上传（写戳）→ 本进程下一次检查即重扫
+    PluginRegistry.mark_dirty()
+    PluginRegistry.discover()
+    assert PluginRegistry.plugin_meta("hotplug").version == "2.0.0"
+
+    # 重扫不写戳：多进程不会互相触发无限重扫
+    assert PluginRegistry._sig == PluginRegistry._fingerprint()
+    PluginRegistry.discover()
+    assert PluginRegistry.plugin_meta("hotplug").version == "2.0.0"
+
+
+def test_page_refresh_forces_fingerprint_check(upload_root, monkeypatch):
+    """后台刷新页面走 discover(force=True)：不受业务侧节流限制，一定拿到盘上最新。"""
+    monkeypatch.setattr(PluginRegistry, "CHECK_INTERVAL", 3600.0)
+    version = {"v": "1.0.0"}
+
+    def _fake_import(cls, name, so_path):
+        mod = types.ModuleType(f"plugins_upload.{name}.plugin")
+        mod.Plugin = type("_PagePlug", (_FakePlugin,), {
+            "meta": PluginMeta(name="pageplug", showname="页面插件",
+                               types=["alipay"], version=version["v"]),
+        })
+        return mod
+
+    monkeypatch.setattr(PluginRegistry, "_import_upload", classmethod(_fake_import))
+    plug_dir = upload_root / "pageplug"
+    plug_dir.mkdir(parents=True)
+    so = plug_dir / SO_NAME
+    so.write_bytes(b"v1")
+    PluginRegistry.reload()
+    assert PluginRegistry.plugin_meta("pageplug").version == "1.0.0"
+
+    # 另一个 worker 装了新版本（写戳），本进程还在节流窗口内
+    version["v"] = "2.0.0"
+    so.write_bytes(b"v2")
+    PluginRegistry.mark_dirty()
+    PluginRegistry.discover()  # 业务热点路径：节流窗口内不重扫（可接受）
+    assert PluginRegistry.plugin_meta("pageplug").version == "1.0.0"
+
+    # 后台刷新列表：强制比对，立刻就是最新
+    PluginRegistry.discover(force=True)
+    assert PluginRegistry.plugin_meta("pageplug").version == "2.0.0"
+
+    # 无变化时 force 只比对不重扫（不会每次刷页面都重新导入 .so）
+    cls_after = PluginRegistry.get_payment_class("pageplug")
+    PluginRegistry.discover(force=True)
+    assert PluginRegistry.get_payment_class("pageplug") is cls_after

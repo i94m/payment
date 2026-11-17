@@ -6,6 +6,10 @@
 - 支付插件分两档：builtin=镜像内置（`plugins/`，随镜像编译），
   third=三方（`storage/plugins/`，后台上传或部署方直接拷入 .so 目录），
   同名时三方覆盖内置，无需重建镜像即可上线新插件
+- 跨进程刷新：多 worker/多副本部署下注册表是进程内内存态，单进程 reload()
+  只影响自己。因此 reload() 会写一个「刷新戳」文件（三方目录内），
+  其他进程在热点路径上按指纹（戳内容 + 目录 mtime）发现变化后自动重扫，
+  所以后台上传/点「已安装插件」刷新后，全部进程 ≤CHECK_INTERVAL 秒跟上，无需重启
 - 兼容旧式同步插件：submit/notify 返回值若为可等待对象则 await，
   否则原样返回（由调用方做形态适配）
 """
@@ -15,6 +19,8 @@ import importlib.machinery
 import importlib.util
 import logging
 import sys
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -40,12 +46,21 @@ class PluginRegistry:
     # 同时也是「三方插件」目录：部署方可直接把编译好的 plugin*.so 目录拷进来，
     # 无需重建镜像；与后台上传同一目录、优先级高于镜像内置插件。
     UPLOAD_ROOT = Path("storage") / "plugins"
+    # 跨进程刷新戳（写在三方目录内，随 storage 持久化；扫描时按非目录跳过）
+    STAMP_NAME = ".reload.stamp"
+    # 业务热点路径（每次取插件）检查磁盘指纹的最小间隔（秒）。
+    # 后台页面刷新不看这个间隔（discover(force=True) 强制比对），所以调大它只影响
+    # 「其他 worker 何时跟上新代码」，不影响后台看到的状态是否为最新。
+    CHECK_INTERVAL = 5.0
     _payment: dict[str, type[BasePayment]] = {}
     # 插件来源：builtin=镜像内置（plugins/），third=三方（storage/plugins，覆盖内置）
     _payment_source: dict[str, str] = {}
     _sms: dict[str, type[BaseSms]] = {}
     _mail: dict[str, type[BaseMail]] = {}
     _loaded = False
+    # 上次扫描时的「插件目录指纹」与检查时间（跨进程刷新用）
+    _sig: Optional[str] = None
+    _checked_at: float = 0.0
 
     # (注册表属性, 基类, 包名)：扫描目录 = 包名转路径，import 模块串 = 包名派生
     TYPE_MAP = {
@@ -55,9 +70,84 @@ class PluginRegistry:
     }
 
     @classmethod
-    def discover(cls):
-        if cls._loaded:
+    def discover(cls, force: bool = False):
+        """按需扫描；磁盘指纹变化时自动重扫（跨 worker/副本一致）。
+
+        指纹 = 刷新戳内容 + 三方插件目录 mtime，因此两种场景都能自动发现：
+        - 后台「同步插件」/上传安装 → reload() 写戳 → 其他进程随后跟上
+        - 部署方直接拷入/删除插件目录 → 目录 mtime 变化 → 同样自动发现
+
+        force=True 忽略节流窗口、立刻比对一次（后台插件列表页用）：
+        保证「换个 worker 刷新页面也一定是盘上最新状态」。未变化时不重扫。
+        """
+        if not cls._loaded:
+            cls._rescan()
             return
+        if not force:
+            if not cls._fingerprint_changed():
+                return
+            cls._rescan()
+            return
+        cls._checked_at = time.monotonic()
+        if cls._fingerprint() != cls._sig:
+            cls._rescan()
+
+    @classmethod
+    def _fingerprint_changed(cls) -> bool:
+        """节流后的指纹比对：业务热点路径每 CHECK_INTERVAL 秒最多一次 stat。"""
+        now = time.monotonic()
+        if now - cls._checked_at < cls.CHECK_INTERVAL:
+            return False
+        cls._checked_at = now
+        return cls._fingerprint() != cls._sig
+
+    @classmethod
+    def _fingerprint_changed(cls) -> bool:
+        """节流后的指纹比对：热点路径每秒最多一次 stat。"""
+        now = time.monotonic()
+        if now - cls._checked_at < cls.CHECK_INTERVAL:
+            return False
+        cls._checked_at = now
+        return cls._fingerprint() != cls._sig
+
+    @classmethod
+    def _stamp_path(cls) -> Path:
+        return cls.UPLOAD_ROOT / cls.STAMP_NAME
+
+    @classmethod
+    def _fingerprint(cls) -> str:
+        """插件目录指纹：戳文件内容 + 三方目录 mtime。
+
+        戳内容（uuid）覆盖「同目录内替换 .so」这种不改父目录 mtime 的更新；
+        目录 mtime 覆盖「直接拷入/删除插件目录」这种没走后台的场景。
+        """
+        try:
+            with open(cls._stamp_path(), "rb") as fh:
+                stamp = fh.read(64).decode("utf-8", "ignore")
+        except OSError:
+            stamp = ""
+        try:
+            dir_mtime = str(cls.UPLOAD_ROOT.stat().st_mtime_ns)
+        except OSError:
+            dir_mtime = ""
+        return f"{stamp}:{dir_mtime}"
+
+    @classmethod
+    def _rescan(cls):
+        """本进程重扫（不写戳）：广播由 reload()/mark_dirty() 负责。
+
+        本方法绝不写戳 —— 否则多进程会互相触发无限重扫。
+        """
+        # 上传/三方插件按文件导入会写 sys.modules，重扫前清掉才能加载到新代码
+        # （含虚拟包根 plugins_upload：其 __path__ 绑定的是上一次的目录）
+        for k in [k for k in sys.modules
+                  if k == "plugins_upload" or k.startswith("plugins_upload.")]:
+            del sys.modules[k]
+        cls._payment.clear()
+        cls._payment_source.clear()
+        cls._sms.clear()
+        cls._mail.clear()
+        cls._checked_at = time.monotonic()
         for plugin_type, (attr, base_cls, pkg) in cls.TYPE_MAP.items():
             registry = getattr(cls, attr)
             dirs = [(Path(pkg.replace(".", "/")), pkg, True, "builtin")]
@@ -67,6 +157,8 @@ class PluginRegistry:
                 dirs.append((cls.UPLOAD_ROOT, "", False, "third"))
             for type_dir, pkg_name, from_pkg, source in dirs:
                 cls._scan_type_dir(type_dir, base_cls, pkg_name, from_pkg, registry, source)
+        # 指纹取扫描结束时的状态：并发写戳/拷目录会留到下一次检查再补扫
+        cls._sig = cls._fingerprint()
         cls._loaded = True
 
     @classmethod
@@ -112,6 +204,13 @@ class PluginRegistry:
                     registry[plugin_id] = obj
                     if registry is cls._payment:
                         cls._payment_source[plugin_id] = source
+                        meta = getattr(obj, "meta", None)
+                        if isinstance(meta, PluginMeta) and meta.name != plugin_id:
+                            # 手拷目录不做上传校验，这里只告警：注册键仍是目录名，
+                            # 通道 plugin_name 必须用目录名（后台列表按目录名展示/选择）
+                            _log.warning(
+                                f"插件目录名与 meta.name 不一致：目录 {plugin_id} / "
+                                f"meta.name {meta.name}（按目录名注册）")
                     break
 
     @classmethod
@@ -160,29 +259,37 @@ class PluginRegistry:
 
     @classmethod
     def reload(cls):
-        """强制重新扫描（admin 刷新插件列表 / 上传安装后）。"""
-        # 上传插件按文件导入会写 sys.modules，重扫前清掉才能加载到新代码
-        for k in [k for k in sys.modules if k.startswith("plugins_upload.")]:
-            del sys.modules[k]
-        cls._loaded = False
-        cls._payment.clear()
-        cls._payment_source.clear()
-        cls._sms.clear()
-        cls._mail.clear()
-        cls.discover()
+        """强制重扫并广播：后台同步/上传安装/启动后调用。
+
+        本进程立即生效；其他进程靠刷新戳在 ≤CHECK_INTERVAL 秒内自动重扫，
+        多 worker/多副本部署不再需要重启容器。
+        """
+        cls.mark_dirty()
+        cls._rescan()
+
+    @classmethod
+    def mark_dirty(cls):
+        """写跨进程刷新戳（其他进程发现戳变化后自动重扫）。
+
+        写失败只影响跨进程刷新（本进程照常生效），记 warning 不抛异常。
+        """
+        try:
+            cls.UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+            cls._stamp_path().write_text(uuid.uuid4().hex, encoding="utf-8")
+        except OSError as e:
+            _log.warning(f"插件刷新戳写入失败（其他进程需重启才能生效）: {e}")
 
     @classmethod
     def _lookup(cls, registry: dict, name: str) -> Any:
-        """查注册表；未命中时强制重扫一次。
+        """查注册表；未命中时重扫一次本进程。
 
-        多 worker 部署下「同步插件」只刷新处理该请求的进程，
-        其他进程要等到未命中重扫才能看到新增插件目录，
-        否则新插件创建通道会报「插件不存在或未加载」。
+        重扫不广播：未命中可能只是本进程没见过（或该插件确实不存在），
+        若每次调用都广播，坏通道会把所有进程反复拖去重扫。
         """
         cls.discover()
         obj = registry.get(name)
         if obj is None:
-            cls.reload()
+            cls._rescan()
             obj = registry.get(name)
         return obj
 
@@ -242,7 +349,9 @@ class PluginRegistry:
             meta = cls.plugin_meta(name)
             if meta:
                 result.append({
-                    "name": meta.name,
+                    # 注册键 = 目录名，与通道 plugin_name 同一口径（手拷目录名
+                    # 与 meta.name 不一致时仍可正确建通道；展示名用 showname）
+                    "name": name,
                     "showname": meta.showname,
                     "types": meta.types,
                     "inputs": meta.inputs,

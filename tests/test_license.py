@@ -223,9 +223,9 @@ async def test_soft_lock_middleware(client, monkeypatch):
     assert (await client.get("/health")).status_code == 200
 
 
-async def test_soft_lock_middleware_html_page(client, monkeypatch):
-    """浏览器页面请求（Accept: text/html）返回自包含「无效的授权码」提示页，
-    不泄露原因与配置方法；启动失败与过期同样只出该提示。"""
+async def test_soft_lock_middleware_plain_text_page(client, monkeypatch):
+    """浏览器页面请求（Accept: text/html）直接返回 503 纯文本提示，
+    不返回 HTML 页面、不泄露原因与配置方法；启动失败与过期同样只出该提示。"""
     for lock_state in (
         {"startup_error": "Invalid license code: License code is empty"},
         {"current": {"exp": int(time.time()) - 1}},
@@ -234,10 +234,11 @@ async def test_soft_lock_middleware_html_page(client, monkeypatch):
         monkeypatch.setattr(lic, "current", lock_state.get("current"))
         r = await client.get("/", headers={"accept": "text/html"})
         assert r.status_code == 503
-        assert "Invalid License Code" in r.text
+        assert r.text == "Invalid License Code"
         # 公开页面不泄露原因/配置细节
         assert "empty" not in r.text and ".env" not in r.text and "expired" not in r.text
-        assert "text/html" in r.headers["content-type"]
+        assert "text/plain" in r.headers["content-type"]
+        assert "<html" not in r.text.lower()
 
 
 # ============================================================

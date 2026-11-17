@@ -12,7 +12,7 @@ from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_limiter import FastAPILimiter
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from starlette.responses import FileResponse, JSONResponse, PlainTextResponse
 from starlette.staticfiles import StaticFiles
 
 from app.core.config import config
@@ -73,7 +73,7 @@ async def lifespan(instance: FastAPI):
     # 授权信息展示（强制校验在 config 导入期已完成；失败不退出，进未授权软锁）
     lock = license_lock_reason()
     if lock:
-        logger.warning(f"License not active ({lock}): business APIs are soft-locked, web pages show the invalid-license notice")
+        logger.warning(f"License not active ({lock}): business APIs are soft-locked, page requests get plain text \"Invalid License Code\"")
     else:
         logger.info(f"授权信息: {describe()}")
     # 启动即强刷插件注册表（与后台「已安装插件」刷新同源），不等首次使用或手动点击
@@ -111,36 +111,13 @@ app.add_middleware(
 app.include_router(routers)
 
 
-def _unauthorized_page() -> str:
-    """未授权软锁提示页（自包含内联样式，浏览器直访任意页面均见此内容）。
-
-    面向公众只提示「无效的授权码」：不透露具体原因（空码/坏码/过期）与
-    配置方法，细节留在启动 stderr（docker logs）给运维。
-    """
-    return """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Invalid License Code</title>
-<style>
-  html, body { margin: 0; height: 100%; }
-  body { display: flex; align-items: center; justify-content: center;
-         font: 500 28px/1.4 system-ui, sans-serif;
-         color: #1f2329; background: #fff; }
-</style>
-</head>
-<body>Invalid License Code</body>
-</html>"""
-
-
 # ============================================================
 # 授权软锁中间件：启动校验失败（空码/坏码）或已加载授权过期时拦截
 # 业务请求（均为纯内存判断）。浏览器页面请求（Accept: text/html）返回
-# 自包含的「无效的授权码」提示页；其余（API/回调/静态资源）返回 503 JSON
-# （对外一律只提示「无效的授权码」，不区分原因）。堵住「有效期内启动、
-# 过期后长期不重启」的口子。/health 与 /license/expire 豁免：容器健康检查
-# 保持可用，到期日期随时可查；源码运行恒放行，本地开发不受影响。
+# 503 纯文本「Invalid License Code」；其余（API/回调/静态资源）返回 503
+# JSON 信封的同一提示（对外一律不区分原因）。堵住「有效期内启动、过期后
+# 长期不重启」的口子。/health 与 /license/expire 豁免：容器健康检查保持
+# 可用，到期日期随时可查；源码运行恒放行，本地开发不受影响。
 # ============================================================
 @app.middleware("http")
 async def license_soft_lock_middleware(request: Request, call_next):
@@ -148,7 +125,7 @@ async def license_soft_lock_middleware(request: Request, call_next):
     # /health 与 /license/expire 豁免：健康检查保持可用，到期日期随时可查
     if request.url.path not in ("/health", "/license/expire") and lock:
         if "text/html" in (request.headers.get("accept") or ""):
-            return HTMLResponse(_unauthorized_page(), status_code=503)
+            return PlainTextResponse("Invalid License Code", status_code=503)
         return err(-1, "Invalid License Code", http_status=503)
     return await call_next(request)
 
@@ -176,10 +153,16 @@ async def request_id_middleware(request: Request, call_next):
         )
         request_id_var.reset(token)
 
-# 健康检查
+# 健康检查（附构建期版本信息：镜像版本概念，便于运维确认线上跑的是哪一版；
+# 保持 200 与 message=ok 不变，新增字段向后兼容）
 @app.get("/health")
 async def health():
-    return JSONResponse({"message": "ok"})
+    return JSONResponse({
+        "message": "ok",
+        "version": config.APP_VERSION,
+        "revision": config.APP_REVISION,
+        "build_date": config.APP_BUILD_DATE,
+    })
 
 
 # 授权到期日期（公开、无鉴权，纯文本）：已加载授权时输出 YYYY-MM-DD，

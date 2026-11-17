@@ -19,11 +19,16 @@ public_router = APIRouter()
 
 @public_router.get("/site-info")
 async def get_site_info(session: SessionDep, cache: CacheDep, _rl=rate_limit(times=60)):
-    """站点公开信息：站点名 + 功能开关（商户端菜单显隐），登录页/侧边栏/菜单/landing 用。"""
+    """站点公开信息：站点名 + 功能开关（商户端菜单显隐），登录页/侧边栏/菜单/landing 用。
+
+    version/revision 为镜像构建期元信息（发版标签），后台侧边栏站点名下展示版本用。
+    """
     from app.services.settings import build_public_features, get_all_settings
     settings = await get_all_settings(session, cache=cache)
     return suc({
         "site_name": str(settings.get("site_name") or "聚合支付"),
+        "version": config.APP_VERSION,
+        "revision": config.APP_REVISION,
         "features": build_public_features(settings),
     })
 
@@ -83,7 +88,10 @@ async def get_system_info(session: SessionDep):
     merchant_count = (await session.exec(select(func.count()).select_from(Merchant))).one()
     admin_count = (await session.exec(select(func.count()).select_from(SystemAdmin))).one()
     return suc({
-        "version": "1.0.0",
+        # 版本/修订号来自镜像构建期（Dockerfile build-arg → ENV），源码运行为 dev
+        "version": config.APP_VERSION,
+        "revision": config.APP_REVISION,
+        "build_date": config.APP_BUILD_DATE,
         "framework": "FastAPI",
         "merchant_count": merchant_count,
         "admin_count": admin_count,

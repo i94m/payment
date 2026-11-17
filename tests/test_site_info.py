@@ -17,6 +17,19 @@ async def test_site_info_public(client):
 
 
 @pytest.mark.asyncio
+async def test_site_info_reports_image_version(client, monkeypatch):
+    """后台侧边栏站点名称下方展示的版本号：取自构建期元信息（镜像 ENV）。"""
+    from app.core.config import config
+
+    monkeypatch.setattr(config, "APP_VERSION", "9.9.9")
+    monkeypatch.setattr(config, "APP_REVISION", "deadbeef")
+    for prefix in ("/admin-api", "/merchant-api"):
+        data = (await client.get(f"{prefix}/site-info")).json()["data"]
+        assert data["version"] == "9.9.9"
+        assert data["revision"] == "deadbeef"
+
+
+@pytest.mark.asyncio
 async def test_site_info_features_defaults(client):
     resp = await client.get("/merchant-api/site-info")
     features = resp.json()["data"]["features"]

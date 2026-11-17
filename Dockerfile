@@ -106,6 +106,17 @@ FROM python:3.12-slim AS runtime
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 
+# 构建期版本元信息（「镜像有版本」的唯一落点）：ENV 供 /health 与后台「系统信息」
+# 读取，LABEL 走 OCI 标准标签让 `docker inspect` 直接看到版本。
+# CI 取自发版标签（v1.2.3 → 1.2.3），scripts/build-image.sh 取自 --tag；源码运行为 dev。
+ARG APP_VERSION=dev
+ARG APP_REVISION=unknown
+ARG APP_BUILD_DATE=unknown
+ENV APP_VERSION=${APP_VERSION} APP_REVISION=${APP_REVISION} APP_BUILD_DATE=${APP_BUILD_DATE}
+LABEL org.opencontainers.image.version=${APP_VERSION} \
+      org.opencontainers.image.revision=${APP_REVISION} \
+      org.opencontainers.image.created=${APP_BUILD_DATE}
+
 # venv 与编译产物分开拷：runtime 只可能有这里列出的内容，
 # builder 中间层里的 .py 永远进不了最终镜像（多阶段 COPY 拷的是末态文件系统）
 # venv 同基础镜像同绝对路径传递（shebang/pyvenv.cfg 有效），runtime 不需要 uv

@@ -16,6 +16,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Field, FieldLabel, FieldError, RequiredMark } from "@/components/ui/field"
+import { Badge } from "@/components/ui/badge"
 import { numStr } from "@/lib/form-schema"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
@@ -29,7 +30,7 @@ import {
 } from "@/components/data-list/"
 import type { ActionItem } from "@/components/data-list/"
 import {
-  IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconFlask, IconCopy, IconList, IconUpload,
+  IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconFlask, IconCopy, IconList,
   IconEye, IconEyeOff,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
@@ -141,11 +142,12 @@ export function ChannelsPage() {
   })
   // 测试失败调试弹窗
   const [testDebug, setTestDebug] = React.useState<ChannelTestDebug | null>(null)
-  // 插件同步（插件目录扫描，同步后刷新插件下拉与通道列表）
+  // 插件刷新（插件目录扫描，刷新后同步插件下拉与通道列表）
   const [syncing, setSyncing] = React.useState(false)
   // 上传安装编译后的插件包（zip：build_plugin.sh 产物，仅 .so）
-  const [uploading, setUploading] = React.useState(false)
-  const uploadRef = React.useRef<HTMLInputElement>(null)
+  // 暂不上线「上传插件」按钮：状态与处理函数一并注释，恢复时取消注释即可
+  // const [uploading, setUploading] = React.useState(false)
+  // const uploadRef = React.useRef<HTMLInputElement>(null)
 
   const fetchStats = React.useCallback(() => {
     payApi.channelStats().then(setStats).catch(() => {})
@@ -177,12 +179,12 @@ export function ChannelsPage() {
     applyFilters()
   }
 
-  // 同步插件：扫描 plugins/ 目录刷新注册表（合并自原插件管理页，仅保留同步入口）
+  // 刷新插件：扫描 plugins/ 目录刷新注册表（合并自原插件管理页，仅保留刷新入口）
   const handleSync = async () => {
     setSyncing(true)
     try {
-      await payApi.syncPlugins()
-      toast.success("同步成功")
+      const res = await payApi.syncPlugins()
+      toast.success(res?.message || "同步成功")
       payApi.plugins().then(setPlugins).catch(() => {})
       refresh()
     } catch (err) {
@@ -193,22 +195,23 @@ export function ChannelsPage() {
   }
 
   // 上传插件包：安装到 storage/plugins/（持久卷）并刷新注册表与插件列表
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    e.target.value = ""   // 允许重复选择同一文件
-    if (!f) return
-    setUploading(true)
-    try {
-      await payApi.uploadPlugin(f)
-      toast.success("上传成功")
-      payApi.plugins().then(setPlugins).catch(() => {})
-      refresh()
-    } catch (err) {
-      toast.error(getErrorMessage(err, "上传失败"))
-    } finally {
-      setUploading(false)
-    }
-  }
+  // 暂不上线，随「上传插件」按钮一起注释
+  // const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   const f = e.target.files?.[0]
+  //   e.target.value = ""   // 允许重复选择同一文件
+  //   if (!f) return
+  //   setUploading(true)
+  //   try {
+  //     const res = await payApi.uploadPlugin(f)
+  //     toast.success(res?.note || "上传成功")
+  //     payApi.plugins().then(setPlugins).catch(() => {})
+  //     refresh()
+  //   } catch (err) {
+  //     toast.error(getErrorMessage(err, "上传失败"))
+  //   } finally {
+  //     setUploading(false)
+  //   }
+  // }
 
   const openCreate = () => {
     setEditingId(null)
@@ -595,16 +598,22 @@ export function ChannelsPage() {
               </Button>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing} title="点击同步插件目录">
+              <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing}
+                      title="重新扫描插件目录，刷新插件列表">
                 <IconRefresh className={`size-4 ${syncing ? "animate-spin" : ""}`} />
-                {`已安装插件（${plugins.length}）`}
+                <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                  {plugins.length}
+                </Badge>
+                {"刷新插件"}
               </Button>
+              {/* 暂不上线：上传插件按钮（.so 插件包安装），恢复时取消注释即可
               <Button size="sm" variant="outline" onClick={() => uploadRef.current?.click()}
                       disabled={uploading} title="上传编译后的插件包（zip：build_plugin.sh 产物，仅 .so）">
                 <IconUpload className={`size-4 ${uploading ? "animate-pulse" : ""}`} />
                 {uploading ? "上传中…" : "上传插件"}
               </Button>
               <input ref={uploadRef} type="file" accept=".zip" className="hidden" onChange={handleUpload} />
+              */}
               <Button size="sm" onClick={openCreate}>
                 <IconPlus className="size-4" />
                 {"新增通道"}

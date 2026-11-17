@@ -36,9 +36,12 @@ export const accountApi = {
     apiClient.post("/setting/generate-rsa-keypair") as Promise<{ private_key: string; public_key: string }>,
 
   // ---- admin 系统信息 ----
+  // version/revision/build_date 来自镜像构建期（发版标签），源码运行为 dev
   systemInfo: () =>
     apiClient.get("/systemInfo") as Promise<{
       version: string
+      revision?: string
+      build_date?: string
       framework: string
       merchant_count: number
       admin_count: number

@@ -21,6 +21,16 @@ export interface PluginData {
   version: string
   /** 插件来源：builtin=镜像内置，third=三方（storage/plugins），unknown=已失效 */
   source: string
+  /** 盘上已加载但还没同步进插件表（点「已安装插件」刷新即落库） */
+  pending?: boolean
+}
+
+/** 同步插件目录的返回（POST /pay/plugins/sync） */
+export interface PluginSyncResult {
+  synced: number
+  removed: string[]
+  referenced: string[]
+  message: string
 }
 
 // ============ 支付方式 ============
@@ -129,8 +139,8 @@ export interface ChannelPayload {
 export const payApi = {
   plugins: () => apiClient.get("/pay/plugins") as Promise<PluginData[]>,
 
-  // 扫描 plugins/ 目录刷新插件注册表（支付通道页「同步插件」按钮）
-  syncPlugins: () => apiClient.post("/pay/plugins/sync"),
+  // 扫描 plugins/ 目录刷新插件注册表（支付通道页「刷新插件」按钮；其他 worker 刷新页面即为最新）
+  syncPlugins: () => apiClient.post("/pay/plugins/sync") as Promise<PluginSyncResult>,
 
   // 上传安装编译后的插件包（zip：build_plugin.sh 产物目录，仅含 .so）
   uploadPlugin: (file: File) => {

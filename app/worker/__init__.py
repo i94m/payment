@@ -73,7 +73,7 @@ async def _startup(ctx: dict) -> None:
     # 授权信息展示（强制校验在 config 导入期已完成；失败不退出，进未授权软锁）
     lock = lock_reason()
     if lock:
-        logger.warning(f"License not active ({lock}): business APIs are soft-locked, web pages show the invalid-license notice")
+        logger.warning(f"License not active ({lock}): business APIs are soft-locked, page requests get plain text \"Invalid License Code\"")
     else:
         logger.info(f"授权信息: {describe()}")
 

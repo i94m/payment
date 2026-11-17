@@ -1,4 +1,4 @@
-# 推送到 GitHub 后自动构建镜像并发布到 ghcr.io
+# 只在「发版」时构建镜像并发布到 ghcr.io —— 普通提交（含 push 到 main）不构建。
 #
 # 前置说明：dist 不入库（见 .gitignore），与 scripts/build-image.sh 一致，
 # 此处在 CI 现场构建前端与文档产物，再交给 Dockerfile（内含入口完整性守护）。
@@ -6,17 +6,28 @@
 #（含构建期冒烟与无源码守护），CI 无需任何额外步骤；本地开发不编译。
 #
 # 产物标签（ghcr.io/<owner>/<仓库名小写>）：
-#   push 到 main  → main / latest / sha-xxxxxxx
-#   push tag v1.2.3 → 1.2.3 / 1.2 / sha-xxxxxxx
+#   push tag v1.2.3     → 1.2.3 / 1.2 / 1 / latest / sha-xxxxxxx
+#   手动 dispatch 填版本 → <版本> / sha-xxxxxxx（勾了 update_latest 才加 latest）
+#   手动 dispatch 不填   → 仅 sha-xxxxxxx（应急重建）
+# 版本号必须递增：已有 v1.0.2 时再推 v1.0.1 会直接失败，避免 1.0/1/latest 回退；
+# 预发布标签（v1.2.3-rc1）不动 latest，也不影响随后同号正式版的发布。
+# 老版本标签不会消失，服务器可长期固定在 1.2.3 这样的精确版本上。
 #
 # 权限：GITHUB_TOKEN 自动具备（packages: write），无需额外配置 secrets。
 name: docker-image
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: '版本标签（如 1.2.3，仅手动构建用；留空则只打 sha 标签）'
+        required: false
+      update_latest:
+        description: '同时把 latest 指向本次版本（补发旧版本时别勾）'
+        type: boolean
+        default: false
 
 # 同一分支/标签只保留最新一次构建
 concurrency:
@@ -35,6 +46,48 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 版本顺序校验需要仓库里全部 tag（默认浅克隆只取当前 ref）
+          fetch-depth: 0
+
+      # 版本号校验：tags 触发时必须是 v<major>.<minor>.<patch>（可带预发布后缀），
+      # 否则 metadata-action 的 semver 规则一条都不命中，只会留下 sha 标签的镜像；
+      # 再校验「不回退」——已有 v1.0.2 时再推 v1.0.1 直接失败，避免 1.0/latest 回退。
+      - name: 校验版本标签
+        env:
+          EVENT: ${{ github.event_name }}
+          VERSION_INPUT: ${{ inputs.version }}
+          UPDATE_LATEST: ${{ inputs.update_latest }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            shown="$VERSION_INPUT"
+            src="手动输入"
+          else
+            shown="${GITHUB_REF_NAME}"
+            src="git 标签"
+          fi
+          if [ -z "$shown" ]; then
+            if [ "$UPDATE_LATEST" = "true" ]; then
+              echo "::error::勾选了「同时更新 latest」但没填版本号"
+              exit 1
+            fi
+            echo "::notice::手动构建未填版本号，只发布 sha 标签镜像"
+            exit 0
+          fi
+          ver="${shown#v}"
+          semver='^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'
+          if ! printf '%s' "$ver" | grep -Eq "$semver"; then
+            echo "::error::${src} '${shown}' 不是 v<major>.<minor>.<patch> 形式（如 v1.2.3）"
+            exit 1
+          fi
+
+          # 与仓库内已有版本比较；相等视为重跑，放行。
+          # 仅对 tag push 生效：手动 dispatch 是人工显式操作，允许补发/重发任意版本
+          highest=""
+          if [ "$EVENT" != "workflow_dispatch" ]; then
+            highest="$(python3 scripts/ci_version_check.py "$ver" --git-tags)" || exit 1
+          fi
+          echo "版本号校验通过：${ver}（仓库内已有最高：${highest:-未检查}）"
 
       # ---- 前端与文档构建（对应 build-image.sh 第 1 步）----
       - uses: pnpm/action-setup@v4
@@ -111,15 +164,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 构建时间戳（build-arg 无法在 with: 里跑 shell，先算好再用）
+      - name: 构建元信息
+        id: buildinfo
+        run: echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      # 标签规则：版本标签走 semver（1.2.3 / 1.2 / 1）；手动构建填了版本号就原样打，
+      # latest 只在发版（tag push 或手动填版本）时更新，不再跟随 main 分支提交。
+      # 注意：tags: | 里的内容会原样交给 metadata-action，不能写行内注释。
       - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}
           tags: |
-            type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{major}}
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
+            type=raw,value=latest,enable=${{ (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')) || inputs.update_latest == true }}
             type=sha,prefix=sha-
 
       - uses: docker/build-push-action@v6
@@ -130,6 +192,12 @@ jobs:
           # 一个阶段，会把 ccache-export（scratch 缓存包）当正式镜像发布
           target: runtime
           push: true
+          # 版本元信息写进镜像：ENV 供 /health 与后台系统信息读取，LABEL 供 docker inspect
+          #（steps.meta.outputs.version = 主标签，即 1.2.3 / sha-xxxxxxx / 1.0.1）
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+            APP_REVISION=${{ github.sha }}
+            APP_BUILD_DATE=${{ steps.buildinfo.outputs.created }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

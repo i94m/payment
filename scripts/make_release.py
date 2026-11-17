@@ -104,7 +104,7 @@ def _check_baked_pubkey(gen) -> str | None:
         return "未找到 app/core/license.py 的 PUBLIC_KEY_B64"
     if m.group(1).strip() != gen._pubkey_b64(gen._load_private_key()):
         return ("当前签发改用私钥与镜像内置公钥不一致：镜像需用对应公钥重建，"
-                "否则客户部署后仍显示「无效的授权码」")
+                "否则客户部署后页面仍返回「Invalid License Code」")
     return None
 
 
@@ -184,7 +184,7 @@ app 容器的端口只绑在本机 `127.0.0.1:8000-8002`，由第 3 步的 nginx
 ## 6. 目录说明
 
 - `storage/`：持久化数据（日志/上传/导出/三方插件 `storage/plugins`），请勿删除
-- 三方插件：把编译好的插件目录拷进 `storage/plugins/<插件名>/` 后重启容器即可，无需换镜像
+- 三方插件：把编译好的插件目录拷进 `storage/plugins/<插件名>/` 后，在后台「已安装插件」点一次刷新即可，无需重启容器/换镜像
 - 升级：修改 `PAY_IMAGE` 后重新执行 `bash scripts/deploy.sh`；回滚 = 改回旧版本标签再执行
 """
 

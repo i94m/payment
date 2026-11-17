@@ -16,8 +16,9 @@
 # 排查可直连 127.0.0.1:16379(Redis),仅绑回环。
 services:
   redis:
-    image: redis:8-alpine                     # 本地已有,勿 pull
-    platform: linux/amd64
+    image: redis:8-alpine
+    # 不锁 amd64:Apple Silicon 上 qemu 跑 redis 8 会段错误(healthcheck 恒 unhealthy),
+    # 改用本机原生架构;app/worker 仍按生产锁 amd64(走 Rosetta)
     container_name: pay-local-redis
     # 生产形态要求:监听非回环必须 requirepass(对应 .env 的 REDIS_PASSWORD)
     command: ["redis-server", "--requirepass", "pay-local-redis-2026"]

@@ -41,6 +41,12 @@ class Config(BaseSettings):
 
     # 仅用作 OpenAPI 文档标题；给缺省值避免 worker 等进程因 .env 漏配而启动失败
     APP_NAME: str = "聚合支付"
+    # ---- 构建期元信息（镜像版本概念）----
+    # 由 Dockerfile 的 build-arg 写入 ENV（CI 取自发版标签，本地构建脚本取自 --tag），
+    # 源码运行为默认值。只读不写库，用于 /health、后台「系统信息」核对线上到底跑的哪版。
+    APP_VERSION: str = "dev"
+    APP_REVISION: str = ""
+    APP_BUILD_DATE: str = ""
     # 预留字段，当前代码未实际读取；同上
     APP_URL: str = "http://localhost:8000"
     # 管理后台页面路径前缀（默认 admin）：改掉可隐藏后台入口，如 "console-x9"。
@@ -266,6 +272,6 @@ config = Config()  # type: ignore
 # 启动授权门禁：uvicorn / SAQ worker / 容器内 artisan、alembic 每个入口进程都会
 # 导入本模块，在导入期统一拦截；仅编译形态强制。此刻日志系统尚未初始化，
 # 失败信息由 license 模块直接写 stderr；码为空/无效不退出进程，转未授权软锁
-# （运行期由 main.py 中间件拦截业务请求，Web 页面展示「无效的授权码」）
+# （运行期由 main.py 中间件拦截业务请求，页面请求返回纯文本「Invalid License Code」）
 enforce(config.AUTH_CODE)
 

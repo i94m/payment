@@ -36,9 +36,12 @@ router = APIRouter()
 
 @router.get("/plugins", dependencies=[Depends(PermissionChecker("channel.view"))])
 async def plugin_list(session: SessionDep):
+    # 页面刷新即以盘上为准：强制比对一次指纹（忽略业务侧的节流窗口），
+    # 保证换个 worker 刷新页面看到的也是最新插件，而不是某个进程的旧内存态
+    PluginRegistry.discover(force=True)
     # Plugin 主键为 name（无自增 id），按名称排序
     rows = (await session.exec(select(Plugin).order_by(col(Plugin.name)))).all()
-    return suc([{
+    data = [{
         "name": p.name,
         "showname": p.showname,
         "supported_types": (p.supported_types or "").split(",") if p.supported_types else [],
@@ -47,18 +50,39 @@ async def plugin_list(session: SessionDep):
         "version": p.version or "",
         # 插件来源：builtin=镜像内置，third=三方（storage/plugins）；行已失效时兜底 unknown
         "source": PluginRegistry.plugin_source(p.name) or "unknown",
-    } for p in rows])
+    } for p in rows]
+
+    # 盘上已装好、库里还没有的插件（手工拷目录后没点同步，或别的副本刚上传）
+    # 也一并返回：后台「已安装插件」点一次刷新即可看到并落库，无需重启
+    known = {p.name for p in rows}
+    for item in PluginRegistry.list_plugins():
+        if item["name"] in known:
+            continue
+        data.append({
+            "name": item["name"],
+            "showname": item["showname"],
+            "supported_types": item["types"],
+            "inputs": item["inputs"],
+            "is_enabled": True,
+            "version": item["version"] or "",
+            "source": item["source"] or "third",
+            # 尚未同步进 plugins 表（点「已安装插件」刷新即落库）
+            "pending": True,
+        })
+    data.sort(key=lambda x: x["name"])
+    return suc(data)
 
 
 @router.post("/plugins/sync", dependencies=[Depends(PermissionChecker("channel.update"))])
 async def plugin_sync(session: SessionDep):
-    """扫描 plugins/ 目录刷新插件注册表；盘上已不存在的插件行一并清理
+    """扫描插件目录刷新注册表；盘上已不存在的插件行一并清理
     （仍被通道引用的跳过，避免通道静默失效，提示人工处理）。
 
     与 `db init` / `migrate upgrade` 走同一个服务函数（app/services/plugin_sync.py）。
+    重扫会写跨进程刷新戳：其他 worker/副本随后自动跟上（页面刷新则强制比对、一定是最新）。
     """
     result = await sync_plugins(session)
-    return suc(result["message"])
+    return suc(result)
 
 
 # 上传插件包大小上限
@@ -76,7 +100,7 @@ async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
     zip 内目录名，元信息/版本号来自插件类的 meta（不再支持 info.json，包内残留的
     info.json 会被忽略）。安装到 storage/plugins/<插件名>/（持久卷随 storage 备份，
     容器重建不丢），安装后立即刷新注册表并同步 Plugin 表。
-    多 worker/多副本部署时其他进程需重启生效。
+    重扫会写跨进程刷新戳：其他 worker/副本随后自动跟上，无需重启。
     """
     data = await file.read()
     if len(data) > _UPLOAD_MAX_SIZE:
@@ -170,7 +194,7 @@ async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
                            inputs_schema=inputs, version=version, is_enabled=True))
     await session.commit()
     return suc({"name": name, "showname": showname,
-                "note": "多进程/多副本部署时，其他进程需重启后生效"})
+                "note": "安装成功；其他 worker/副本随后自动生效，后台刷新即可看到"})
 
 
 # ============================================================

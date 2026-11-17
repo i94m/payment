@@ -7,6 +7,10 @@
 规则与后台「同步插件」按钮一致（幂等）：
 - 按 name upsert：showname / supported_types / inputs_schema / version
 - 盘上已不存在的插件行清理；仍被通道引用的跳过，避免通道静默失效
+
+`sync_plugins` 内的 `PluginRegistry.reload()` 会写跨进程刷新戳：多 worker/
+多副本部署下其他进程随后自动重扫，后台上传/同步后不需要重启容器
+（后台插件列表刷新时会强制比对，一定返回盘上最新状态）。
 """
 from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession

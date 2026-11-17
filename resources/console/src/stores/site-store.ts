@@ -27,6 +27,10 @@ export const DEFAULT_SITE_FEATURES: SiteFeatures = {
 
 interface SiteState {
   siteName: string
+  /** 镜像版本（构建期写入，源码运行为 dev）：后台侧边栏站点名称下方展示 */
+  version: string
+  /** 镜像构建的提交号，作为版本号的 tooltip 补充 */
+  revision: string
   features: SiteFeatures
   /** /site-info 是否已拉取（含失败）：路由级开关判定前先等它，避免默认值闪现已关闭的功能 */
   loaded: boolean
@@ -38,17 +42,23 @@ interface SiteState {
 // /site-info 为公开端点（admin-api 与 merchant-api 双前缀挂载），未登录也可读取。
 export const useSiteStore = create<SiteState>((set) => ({
   siteName: "",
+  version: "",
+  revision: "",
   features: DEFAULT_SITE_FEATURES,
   loaded: false,
   fetchSite: async () => {
     try {
       const res = await apiClient.get("/site-info") as {
         site_name?: string
+        version?: string
+        revision?: string
         features?: Partial<SiteFeatures>
       }
       // 每次 set 都放新对象引用，保证订阅 features 的组件（侧边栏）重渲染
       set({
         siteName: (res.site_name || "").trim(),
+        version: (res.version || "").trim(),
+        revision: (res.revision || "").trim(),
         features: { ...DEFAULT_SITE_FEATURES, ...(res.features ?? {}) },
         loaded: true,
       })

@@ -7,8 +7,9 @@
   强制；本地源码运行 / pytest 一律跳过 —— 环境变量无法把 .so 伪装回 .py
 - 在 config 导入期执行，此刻日志系统尚未初始化，失败信息直接写 stderr
 - 授权码为空/无效不退出进程：记录 startup_error，进入「未授权软锁」——
-  Web 页面展示「无效的授权码」，业务请求由 main.py 中间件一律 503，
-  /health 豁免供容器监控（页面可访问、业务全断，比启动失败更好排障）
+  浏览器页面请求返回 503 纯文本「Invalid License Code」，业务请求由 main.py
+  中间件一律 503，/health 豁免供容器监控（页面可访问、业务全断，比启动失败
+  更好排障）
 - 授权码格式：<b64url(payload_json)>.<b64url(ed25519签名)>（两段），
   payload 形如 {"exp":<unix秒>,"iat":<unix秒>,"sub":"<客户备注>"}，
   签名覆盖 payload 段的原始 ASCII 字节；旧版码前的 "PAY1." 前缀兼容可验
@@ -130,8 +131,8 @@ def verify(code: str) -> dict:
 def enforce(code: str) -> None:
     """启动门禁：源码运行直接放行；编译镜像校验失败不退出，转未授权软锁。
 
-    码为空/无效：记录 startup_error（lock_reason 据此软锁，页面展示
-    「无效的授权码」，业务请求 503），容器保持运行便于排障；
+    码为空/无效：记录 startup_error（lock_reason 据此软锁，页面请求返回
+    503 纯文本「Invalid License Code」，业务请求 503），容器保持运行便于排障；
     内置公钥缺失/损坏属镜像构建问题（部署方无法自修），仍写 stderr 退出。
 
     config 导入期调用（此刻 app 日志尚未初始化），所有入口
@@ -165,8 +166,8 @@ def enforce(code: str) -> None:
             "Fix: obtain a valid license code, set AUTH_CODE= in .env, then restart\n"
             "     the container (docker compose up -d). Verification is fully offline\n"
             "     and never accesses the network\n"
-            "While unlicensed: web pages show the invalid-license notice, all\n"
-            "business APIs return 503\n"
+            "While unlicensed: page requests get plain text \"Invalid License Code\",\n"
+            "all business APIs return 503\n"
             "==========================================================\n"
         )
         sys.stderr.flush()

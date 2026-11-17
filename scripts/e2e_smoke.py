@@ -123,7 +123,7 @@ def main():
             ("/trade/notifylogs", "尝试次数"),
             ("/merchants", "商户密钥"),
             ("/pay/channels", "商户费率"),
-            ("/pay/plugins", "同步插件"),
+            ("/pay/plugins", "刷新插件"),
             ("/pay/types", "新增支付方式"),
             ("/settle", "结算单号"),
             ("/announces", "新建公告"),

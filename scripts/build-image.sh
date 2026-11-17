@@ -55,8 +55,9 @@ if [ "$SKIP_WEB" -eq 0 ]; then
 fi
 
 # ---- 2. 版本标签 ----
+GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
+GIT_SHA_LONG=$(git rev-parse HEAD 2>/dev/null || echo nogit)
 if [ -z "$TAG" ]; then
-  GIT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo nogit)
   TAG="$(date +%Y%m%d-%H%M)-${GIT_SHA}"
 fi
 IMAGE=pay-gateway
@@ -66,9 +67,15 @@ IMAGE=pay-gateway
 log "构建镜像 ${IMAGE}:${TAG} ..."
 # ccache 目录：Dockerfile builder 的 COPY 需要（CI 由 actions/cache 恢复；本地为空目录，仅保构建不报错）
 mkdir -p .ci-ccache
+# --build-arg 把版本写进镜像（与 CI 一致）：/health 与后台「系统信息」可查，
+# 同时落 OCI LABEL，`docker inspect` 可见版本/提交/构建时间
 # --target runtime：不带 target 时 docker build 默认取 Dockerfile 最后一个阶段
 #（ccache-export 已移到 runtime 之前，此处显式指定双保险）
-docker build --target runtime -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" .
+docker build --target runtime \
+  --build-arg APP_VERSION="${TAG}" \
+  --build-arg APP_REVISION="${GIT_SHA_LONG}" \
+  --build-arg APP_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t "${IMAGE}:${TAG}" -t "${IMAGE}:latest" .
 
 # ---- 4. 推送 ----
 if [ "$PUSH" -eq 1 ]; then

@@ -34,8 +34,46 @@ git pull && PAY_IMAGE=registry.example.com/myns/pay-gateway:<tag> ./scripts/depl
 `--scale N` 调 app 实例数，`--no-pull` 跳过拉取。
 
 `PAY_IMAGE` 环境变量决定 compose 用的镜像名（默认 `ghcr.io/i94m/payment:latest`，
-GitHub Actions 自动构建发布；本机 `scripts/build-image.sh` 产出 `pay-gateway:<tag>`，
-用 `PAY_IMAGE=pay-gateway:<tag>` 指定）。服务器上请固定带版本标签拉取，避免 latest 漂移。
+本机 `scripts/build-image.sh` 产出 `pay-gateway:<tag>`，用 `PAY_IMAGE=pay-gateway:<tag>`
+指定）。服务器上请固定带版本标签拉取，避免 latest 漂移。
+
+GitHub Actions **只在发版（打版本标签）时构建**，普通提交（含 push 到 main）不产出镜像：
+
+```shell
+git tag -a v1.2.3 -m "1.2.3"     # 在要发布的提交上打标签
+git push origin v1.2.3           # 只推这一个标签，触发构建
+# 产物标签：1.2.3 / 1.2 / 1 / latest / sha-xxxxxxx（ghcr.io/i94m/payment）
+```
+
+也可以在 GitHub 网页创建：仓库 → **Releases → Draft a new release** → 「Choose a tag」里
+输入 `v1.2.3` → 选择目标分支/提交 → Publish；或用
+`gh release create v1.2.3 --target main --generate-notes`。两种方式最终都会推一个
+`v1.2.3` 标签，触发同一个 workflow（**`v` 前缀不能省**，工作流只匹配 `v*` 标签）。
+
+规则：
+
+- 标签必须是 `v<major>.<minor>.<patch>` 形式，否则 CI 直接失败（防止只产出 sha 标签的镜像）。
+- **版本号必须递增**：仓库里已有 `v1.0.2` 时再推 `v1.0.1`，workflow 会在第一步就报错退出，
+  不会构建。原因：`1.0`、`1`、`latest` 是浮动标签，回退版本会把线上 `latest` 拉回旧镜像。
+  确需补发旧版本，用 **Actions → docker-image → Run workflow** 手动填版本号（此时跳过顺序校验，
+  且默认不动 `latest`；要让 `latest` 指过去需勾 `update_latest`）。
+- 同一版本标签重推会被拒（GitHub 上标签不可覆盖，需先 `git tag -d` / 远端删除）；只是重跑
+  构建则用手动 dispatch，版本号相同是允许的。
+- 别用 `git push --tags` 批量推：历史标签会逐个触发构建，其中低于最高版本的会被上述校验拦下报错。
+
+老版本标签长期保留，客户可直接固定在 `PAY_IMAGE=ghcr.io/i94m/payment:1.2.3`。
+
+**版本写进了镜像本身**（不只是标签）：构建时把版本号 / 提交 / 构建时间作为 build-arg
+写进 ENV 和 OCI 标签，随时可查线上跑的到底是哪版：
+
+```shell
+docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' ghcr.io/i94m/payment:1.2.3
+curl -s localhost:8000/health     # {"message":"ok","version":"1.2.3","revision":"<sha>","build_date":"..."}
+```
+
+后台接口 `/admin-api/systemInfo`（需 `system.admin` 权限）同样返回 `version` / `revision` /
+`build_date`；源码直接运行时为 `dev`。管理后台侧边栏的**站点名称下方**直接显示版本号
+（`v1.2.3`，hover 可见构建提交号；商户端/代理端不展示）。
 
 ### 生成客户部署包（一条命令交付）
 
@@ -201,7 +239,9 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 
 - 部署/升级统一走 `scripts/deploy.sh`（建表/迁移已内置，无需手工 db init）
 - **三方插件目录**：`storage/plugins/<插件名>/`（compose 已挂载整个 `storage/`，无需改编排）。
-  把编译好的插件目录（`plugin*.so`）拷进去后重启容器即可，**不用重建镜像**；
+  把编译好的插件目录（`plugin*.so`）拷进去后，在后台「支付通道 → 已安装插件」点一次刷新即可，
+  **不用重启容器、不用重建镜像**（上传/同步会写跨进程刷新戳；后台插件列表刷新时强制比对，
+  换个 worker 看到的也一定是最新。手工拷入的目录同样会被自动发现，列表先以「未同步」出现，点刷新落库）。
   与后台上传安装是同一目录，同名时覆盖镜像内置插件，后台来源标记为「三方」。
   `deploy.sh` 会自动预创建该目录（部署用户属主，便于 scp 投放）。
 - `.env`：`DB_POOL_SIZE / DB_MAX_OVERFLOW` 按“连接数预算”收敛；`WORKER_CONCURRENCY` 按 CPU 调
@@ -216,7 +256,7 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 ### 授权码（AUTH_CODE）
 
 编译镜像启动时校验 `.env` 中的 `AUTH_CODE`（校验完全离线，不访问网络；本地源码运行不校验）。
-缺失或无效时容器**不退出**，以未授权模式运行：Web 页面展示「无效的授权码」（不区分原因），
+缺失或无效时容器**不退出**，以未授权模式运行：Web 页面请求直接返回纯文本「Invalid License Code」（不区分原因、不返回 HTML 页面），
 业务接口（后台 API / 下单 / 回调）一律 503，`/health` 保持 200 供容器监控；
 `/license/expire` 公开输出授权到期日期（纯文本 `YYYY-MM-DD`，未授权时输出「未授权」）；
 具体原因见 `docker logs`，常见对照：

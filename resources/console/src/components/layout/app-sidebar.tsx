@@ -18,6 +18,7 @@ import {
 import { useAuthStore } from "@/stores/auth-store"
 import { useSiteStore } from "@/stores/site-store"
 import { SidebarContext } from "@/App"
+import { APP_MODULE } from "@/lib/config"
 import type { MenuSection } from "@/apps/merchant/sidebar"
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -26,6 +27,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const user = useAuthStore((s) => s.user)
   const permissions = useAuthStore((s) => s.permissions)
   const siteName = useSiteStore((s) => s.siteName)
+  const version = useSiteStore((s) => s.version)
+  const revision = useSiteStore((s) => s.revision)
   // 订阅 features 引用：商户端菜单按开关过滤（main.tsx 的 getMenu 内读取），
   // fetchSite 每次落新对象，开关变更后此处触发重渲染取到新菜单
   useSiteStore((s) => s.features)
@@ -53,7 +56,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuButton asChild size="lg" tooltip={"数据统计"}>
               <Link to="/">
                 <img src="/images/logo.svg" alt="" className="size-5!" />
-                <span className="truncate group-data-[collapsible=icon]:hidden">{siteName}</span>
+                <span className="flex min-w-0 flex-col group-data-[collapsible=icon]:hidden">
+                  <span className="truncate">{siteName}</span>
+                  {/* 版本号仅管理后台展示（商户/代理端不暴露平台版本）：
+                      取自镜像构建期，源码运行为 dev，hover 可看构建提交号 */}
+                  {APP_MODULE === "admin" && version && (
+                    <span
+                      className="truncate text-[11px] leading-tight text-sidebar-foreground/50"
+                      title={revision ? `构建提交 ${revision}` : undefined}
+                    >
+                      {/^\d/.test(version) ? `v${version}` : version}
+                    </span>
+                  )}
+                </span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
