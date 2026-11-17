@@ -65,7 +65,8 @@ Local demo: `scripts/seed_demo.py` (demo/demo123456, pid=1001), `scripts/mock_up
 - `app/core/` — `config`, `database` (async engine/session), `security` (JWT + RBAC), `cache`, `settings`, `modules` (module registry for admin/merchant), `frontend` (static + SPA fallback), `logger` (named loggers `app`/`plugins`/`plugin` + request_id tracing + QueueHandler async file output; NOT root — third-party logs don't land in app.log).
 - `app/routers/` — `admin/` (`/admin-api`), `merchant/` (`/merchant-api`), `agent/` (`/agent-api`, 代理面板), plus public `openapi.py` (`/orders`), `callbacks.py` (`/callbacks/{plugin}/{trade_no}`), `cashier.py` + `web.py` (`/cashier`), `paypage.py` (免登录聚合收款页 `/p/{code}`).
 - `app/addons/` — non-payment addons: `sms/`, `mail/` (providers like aliyun/qcloud/smtp), `storage/` (local/oss/cos). Payment plugins live only in `plugins/`.
-- `app/services/` — `order.py` (idempotent create + `process_paid_order` accounting funnel), `channel.py` (routing/limits), `balance.py` (only balance mutation entrypoint, row-locked), `notify.py` (ladder retry), `plugin.py`/`plugin_interfaces.py`, `settings.py`, `crypto.py`.
+- `app/services/` — `order.py` (idempotent create + `process_paid_order` accounting funnel), `channel.py` (routing/limits), `balance.py` (only balance mutation entrypoint, row-locked), `notify.py` (ladder retry), `plugin.py`/`plugin_interfaces.py`, `settings.py`, `crypto.py`, `upgrade.py` (镜像版本发现 + 面板升级标记协议).
+- `app/upgrader.py` — 面板一键升级执行器（compose profile `upgrade` 的 upgrader 服务）：httpx 直连 docker.sock 轮询 `storage/upgrade/` 请求，拉镜像→迁移→逐台重建容器→自更新；命令行升级走 `scripts/deploy.sh upgrade`（经 `artisan.py upgrade` 查版本）。
 - `app/worker/jobs/__init__.py` — SAQ jobs and cron list; register new jobs in `functions` and `cron_jobs`.
 - `app/commands/` — artisan command modules, auto-registered by `artisan.py`.
 - `app/logic/api_verify.py` + `app/lib/sign.py` — downstream merchant signature verification (MD5/RSA, 300s replay window).

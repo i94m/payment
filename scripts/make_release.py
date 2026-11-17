@@ -140,7 +140,7 @@ vi .env
 | `DB_HOST` / `DB_PORT` / `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` | 宿主机 MySQL（需提前建库，字符集 utf8mb4） |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` | 宿主机 Redis |
 | `APP_PORT_RANGE` / `APP_REPLICAS` | app 实例端口范围与数量（默认 8000-8002 / 3，按需调整） |
-| `PAY_IMAGE` | 镜像版本（当前 `{image}`；升级/回滚只改这一行） |
+| `PAY_IMAGE` | 镜像版本（当前 `{image}`；一般无需手改，升级见下文「6. 升级」） |
 
 **不要修改**（已生成，改了会导致登录异常或授权失效）：
 `APP_SECRET_KEY`、`STORAGE_LOCAL_SECRET`、`AUTH_CODE`。
@@ -152,7 +152,7 @@ bash scripts/deploy.sh
 ```
 
 脚本会：拉镜像 → 起容器 → 等健康检查 → 空库自动建表初始化（管理后台/admin、支付方式、
-权限树、默认设置）或已有库自动增量迁移。可重复执行（升级 = 改 `PAY_IMAGE` 后再跑一次）。
+权限树、默认设置）或已有库自动增量迁移。可重复执行。
 
 服务器无法访问镜像仓库时：先在本机 `docker save` 镜像传到服务器 `docker load`，
 再用 `bash scripts/deploy.sh --no-pull`。
@@ -181,11 +181,22 @@ app 容器的端口只绑在本机 `127.0.0.1:8000-8002`，由第 3 步的 nginx
 - 授权对象：`{name}`
 - 到期日期：`{until}`（当天 23:59:59 前有效；过期后业务接口 503，需换新授权码重启）
 
-## 6. 目录说明
+## 6. 升级 / 回滚
+
+```shell
+bash scripts/deploy.sh upgrade          # 自动检查并升到最新版本（交互确认）
+bash scripts/deploy.sh upgrade 1.2.3    # 升级/回滚到指定版本
+bash scripts/deploy.sh upgrade --check  # 只查看当前版本与可用版本
+```
+
+脚本会在线查询镜像仓库的可用版本，确认后自动改 `.env` 的 `PAY_IMAGE` 并重新部署
+（拉镜像 → 重启容器 → 数据库增量迁移）。也可以在管理后台「系统配置 → 版本升级」
+页一键升级（需按部署文档开启 upgrader，默认未开启）。
+
+## 7. 目录说明
 
 - `storage/`：持久化数据（日志/上传/导出/三方插件 `storage/plugins`），请勿删除
 - 三方插件：把编译好的插件目录拷进 `storage/plugins/<插件名>/` 后，在后台「刷新插件」点一次即可，无需重启容器/换镜像
-- 升级：修改 `PAY_IMAGE` 后重新执行 `bash scripts/deploy.sh`；回滚 = 改回旧版本标签再执行
 """
 
 
