@@ -86,7 +86,6 @@ PERMISSION_TREE: list[tuple[str, str, list[tuple[str, str]]]] = [
     (
         "系统管理", "system", [
             ("管理员账号", "system.admin"),
-            ("审计日志", "system.audit"),
         ]
     ),
 ]

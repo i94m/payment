@@ -27,7 +27,6 @@ from app.models import (
     SystemAdmin,
     SystemAdminLogin,
     SystemAdminPermission,
-    SystemAuditLog,
     SystemPermission,
 )
 
@@ -221,13 +220,6 @@ async def test_settings_patch_rejects_hidden_keys(session, client, seeded):
     assert any(i["key"] == "site_name" and i["value"] == "新站名"
                for i in r.json()["data"]["items"])
 
-    # 审计留痕（P1-7）
-    audit = (await session.exec(
-        select(SystemAuditLog).where(SystemAuditLog.action == "setting.update")
-    )).first()
-    assert audit is not None
-    assert audit.actor_name == "管理员"
-
 
 @pytest.mark.asyncio
 async def test_settings_page_allows_late_pay_backfill_window(session, client, seeded):
@@ -397,47 +389,6 @@ async def test_openapi_pid_enumeration_unified(session, client, seeded):
     r = await client.post("/api/orders", json=body)
     assert r.status_code == 400
     assert r.json()["message"] == "商户不存在或已停用"
-
-
-# ------------------------------------------------------------
-# P1-7 审计
-# ------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_balance_adjust_writes_audit(session, client, seeded):
-    headers, admin = await _make_admin(session, "secaudit")
-    merchant = seeded["merchant"]
-
-    r = await client.post(f"/admin-api/merchant/{merchant.id}/balance",
-                          json={"amount": "12.34", "remark": "测试调账"},
-                          headers=headers)
-    assert r.status_code == 200, r.text
-
-    audit = (await session.exec(
-        select(SystemAuditLog).where(SystemAuditLog.action == "merchant.balance_adjust")
-    )).first()
-    assert audit is not None
-    assert audit.actor_guard == "admin" and audit.actor_id == admin.id
-    assert audit.target_type == "merchant" and audit.target_id == str(merchant.id)
-    assert audit.after["balance"] == "12.34"
-
-    r = await client.get("/admin-api/audit/list", headers=headers)
-    assert r.status_code == 200
-    assert any(i["action"] == "merchant.balance_adjust"
-               for i in r.json()["data"]["items"])
-
-
-@pytest.mark.asyncio
-async def test_audit_scrubs_secret_fields():
-    from app.services.audit import changed_pairs, record_audit  # noqa: F401
-    from app.services.audit import _scrub
-
-    scrubbed = _scrub({"appkey": "realkey", "appurl": "https://x/",
-                       "nested": {"password": "p", "amount": "1.00"}})
-    assert scrubbed["appkey"] == MASK
-    assert scrubbed["nested"]["password"] == MASK
-    assert scrubbed["appurl"] == "https://x/"
-    assert scrubbed["nested"]["amount"] == "1.00"
 
 
 # ------------------------------------------------------------

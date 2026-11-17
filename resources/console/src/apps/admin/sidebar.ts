@@ -1,7 +1,7 @@
 import {
   IconGauge, IconListDetails, IconBuildingStore, IconHistory,
   IconReceipt, IconSpeakerphone, IconRoute,
-  IconAdjustments, IconPlugConnected, IconBell, IconShieldCheck,
+  IconAdjustments, IconPlugConnected, IconBell,
   IconCreditCard, IconShieldLock,
 } from "@tabler/icons-react"
 import type { MenuSection } from "@/apps/merchant/sidebar"
@@ -51,13 +51,6 @@ export function getAdminMenu(): MenuSection[] {
         { title: "站点配置", url: "/setting/pay", icon: IconAdjustments, permission: "pay_setting.view" },
         // 管理员账号（RBAC）与后端 MENU_TREE 对齐；超管与有 system.admin 的子账号可见
         { title: "管理员账号", url: "/system/accounts", icon: IconShieldLock, permission: "system.admin" },
-      ],
-    },
-    {
-      label: "系统管理",
-      items: [
-        // 审计日志：只读，仅授予 system.audit 的账号可见（默认超管）
-        { title: "审计日志", url: "/system/audit", icon: IconShieldCheck, permission: "system.audit" },
       ],
     },
   ]

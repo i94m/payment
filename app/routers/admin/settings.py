@@ -8,13 +8,12 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import RootModel
 from sqlmodel import select
 
-from app.constants.settings import ADMIN_SETTING_KEYS, SETTINGS_REGISTRY
+from app.constants.settings import ADMIN_SETTING_KEYS
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import AdminUser, PermissionChecker
 from app.core.settings import merged_items
 from app.models import Setting
 from app.responses import err, suc
-from app.services.audit import record_audit
 from app.services.settings import set_settings
 from app.lib.sign import pem_to_flat
 
@@ -47,11 +46,6 @@ async def update_settings(body: UpdateSettingsRequest, session: SessionDep, cach
     if rejected:
         return err(422, f"不允许通过该接口修改的配置项：{', '.join(rejected)}", http_status=422)
 
-    before_rows = (await session.exec(
-        select(Setting).where(Setting.key.in_(list(updates)))
-    )).all()
-    before = {row.key: row.value for row in before_rows}
-
     try:
         await set_settings(session, updates, cache)
     except ValueError as e:
@@ -60,14 +54,6 @@ async def update_settings(body: UpdateSettingsRequest, session: SessionDep, cach
         return err(422, str(e), http_status=422)
 
     rows = (await session.exec(select(Setting))).all()
-    after_map = {row.key: row.value for row in rows}
-    changed_before = {k: before.get(k, SETTINGS_REGISTRY[k].default) for k in updates}
-    changed_after = {k: after_map.get(k, SETTINGS_REGISTRY[k].default) for k in updates}
-    await record_audit(
-        session, action="setting.update", actor=auth, request=request,
-        target_type="setting", target_id=",".join(sorted(updates))[:64],
-        before=changed_before, after=changed_after,
-    )
     return suc({"items": merged_items(rows)})
 
 

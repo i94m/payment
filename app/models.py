@@ -141,44 +141,6 @@ class SystemAdminLogin(SQLModel, table=True):
     model_config = ConfigDict(from_attributes=True)
 
 
-class SystemAuditLog(SQLModel, table=True):
-    """后台敏感操作审计（只增不改）。
-
-    记录「谁 / 做了什么 / 对哪个对象 / 前后值 / 何时 / 从哪来」：
-    - actor_guard/actor_id/actor_name：操作人（admin 为主，system 表示定时任务）
-    - action：点分动作名，如 merchant.balance_adjust / settle.pay / plugin.install
-    - target_type/target_id：被操作对象（merchant/channel/order/settlement/setting/plugin）
-    - before/after：变更前后的关键字段快照（写入前已按字段名脱敏密码/密钥类键）
-    - ip/user_agent/created_at：来源与时间
-
-    与 merchant_records（资金流水）互补：流水记钱，审计记「谁下的手」。
-    """
-    __tablename__ = "system_audit_logs"
-    __table_args__ = (
-        Index("ix_system_audit_logs_action", "action", "created_at"),
-        Index("ix_system_audit_logs_target", "target_type", "target_id"),
-        Index("ix_system_audit_logs_actor", "actor_guard", "actor_id"),
-        _MYSQL_ARGS,
-    )
-
-    id: int = Field(sa_column=Column(BigIntPK, primary_key=True, autoincrement=True))
-    actor_guard: str = Field(default="system",
-                             sa_column=Column(String(16), server_default=text("'system'"), nullable=False))
-    actor_id: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))
-    actor_name: str = Field(default="", sa_column=Column(String(64), server_default=text("''"), nullable=False))
-    action: str = Field(sa_column=Column(String(64), nullable=False))
-    target_type: str = Field(default="", sa_column=Column(String(32), server_default=text("''"), nullable=False))
-    target_id: str = Field(default="", sa_column=Column(String(64), server_default=text("''"), nullable=False))
-    before: Optional[dict] = Field(default=None, sa_column=Column(JSON))
-    after: Optional[dict] = Field(default=None, sa_column=Column(JSON))
-    ip: Optional[str] = Field(default=None, sa_column=Column(String(45)))
-    user_agent: Optional[str] = Field(default=None, sa_column=Column(String(255)))
-    remark: Optional[str] = Field(default=None, sa_column=Column(String(255)))
-    created_at: Optional[datetime] = _ts_created()
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class PersonalAccessToken(SQLModel, table=True):
     __tablename__ = "personal_access_tokens"
     __table_args__ = (

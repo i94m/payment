@@ -6,8 +6,6 @@
 - 固定保护（fixed）：免受批量随机金额影响
 - 精细搜索（按字段）+ 状态筛选 + 排序 + 高级搜索（N 天无订单）+ CSV 导出
 - SSO 一键登录商户后台（一次性 token，60 秒有效）
-
-敏感操作（改密/调账/封禁/删除）统一写 system_audit_logs（P1-7）。
 """
 import secrets
 from datetime import datetime, timedelta
@@ -28,7 +26,6 @@ from app.lib.export import export_csv
 from app.models import Merchant, MerchantRecord, Order, Settlement
 from app.responses import err, paginate, suc
 from app.routers.common.params import parse_int
-from app.services.audit import changed_pairs, record_audit
 from app.services.merchant import generate_merchant_pid
 from app.services.balance import change_merchant_balance, dmoney
 from app.services.settings import get_all_settings
@@ -142,18 +139,6 @@ async def _get_merchant_or_404(session, merchant_id: int) -> Merchant | None:
 
 
 # 审计快照字段：改密/资金/状态类变更必须可追溯（密码本身不进快照，只记动作）
-_AUDIT_FIELDS = (
-    "email", "phone", "qq", "url", "allowed_domains", "rate", "status",
-    "pay_status", "settle_status", "settle_type", "settle_account", "settle_name",
-    "default_notify_url", "default_return_url", "random_enable", "random_min",
-    "random_max", "random_ratelimit", "fixed",
-)
-
-
-def _audit_snapshot(m: Merchant) -> dict:
-    return {name: str(getattr(m, name, "")) for name in _AUDIT_FIELDS}
-
-
 @router.post("/list", dependencies=[Depends(PermissionChecker("merchant.view"))])
 async def merchant_list(session: SessionDep, page: int = Query(1, ge=1),
                         per_page: int = Query(20, ge=1, le=100), body: dict | None = None):
@@ -318,7 +303,6 @@ async def update_merchant(merchant_id: int, body: UpdateMerchantRequest, session
     m = await _get_merchant_or_404(session, merchant_id)
     if not m:
         return err(404, "商户不存在")
-    before = _audit_snapshot(m)
     # 金额字段统一在此解析，非法输入返回业务错误而非 500
     try:
         new_rate = dmoney(body.rate) if body.rate != "" else None
@@ -380,12 +364,6 @@ async def update_merchant(merchant_id: int, body: UpdateMerchantRequest, session
         # 改密即吊销该商户全部登录令牌：被盗会话不能在改密后继续使用
         await revoke_all_tokens("merchant", m.id, session, cache=cache)
     await session.commit()
-    b, a = changed_pairs(before, _audit_snapshot(m))
-    await record_audit(
-        session, action="merchant.update", actor=auth, request=request,
-        target_type="merchant", target_id=m.id, before=b, after=a,
-        remark="密码已重置并吊销登录令牌" if password_changed else "",
-    )
     return suc(_dump_merchant(m))
 
 
@@ -401,7 +379,6 @@ async def set_merchant_status(merchant_id: int, body: SetStatusRequest, session:
     m = await _get_merchant_or_404(session, merchant_id)
     if not m:
         return err(404, "商户不存在")
-    before = _audit_snapshot(m)
     if body.type == "user":
         if body.status not in (0, 1):
             return err(-1, "状态取值不合法")
@@ -422,11 +399,6 @@ async def set_merchant_status(merchant_id: int, body: SetStatusRequest, session:
         return err(-1, "不支持的状态类型")
     session.add(m)
     await session.commit()
-    b, a = changed_pairs(before, _audit_snapshot(m))
-    await record_audit(
-        session, action=f"merchant.status_{body.type}", actor=auth, request=request,
-        target_type="merchant", target_id=m.id, before=b, after=a,
-    )
     return suc("success")
 
 
@@ -456,10 +428,6 @@ async def delete_merchant(merchant_id: int, session: SessionDep, cache: CacheDep
     await revoke_all_tokens("merchant", m.id, session, cache=cache)
     await session.delete(m)
     await session.commit()
-    await record_audit(
-        session, action="merchant.delete", actor=auth, request=request,
-        target_type="merchant", target_id=merchant_id, before=deleted,
-    )
     return suc("success")
 
 
@@ -494,7 +462,7 @@ async def reset_password(merchant_id: int, session: SessionDep, cache: CacheDep,
                          request: Request, auth: AdminUser):
     """重置登录密码：生成 10 位随机密码返回一次（商户找回密码的管理侧兜底）。
 
-    重置即吊销该商户全部登录令牌（P1-10），并写审计（P1-7）。
+    重置即吊销该商户全部登录令牌（P1-10）。
     """
     m = await _get_merchant_or_404(session, merchant_id)
     if not m:
@@ -505,11 +473,6 @@ async def reset_password(merchant_id: int, session: SessionDep, cache: CacheDep,
     session.add(m)
     await revoke_all_tokens("merchant", m.id, session, cache=cache)
     await session.commit()
-    await record_audit(
-        session, action="merchant.password_reset", actor=auth, request=request,
-        target_type="merchant", target_id=m.id,
-        remark="管理员重置密码，登录令牌全部吊销",
-    )
     return suc({"password": new_password})
 
 
@@ -521,10 +484,7 @@ class AdjustBalanceRequest(BaseModel):
 @router.post("/{merchant_id}/balance", dependencies=[Depends(PermissionChecker("merchant.balance"))])
 async def adjust_balance(merchant_id: int, body: AdjustBalanceRequest, session: SessionDep,
                          request: Request, auth: AdminUser):
-    """调整余额（必须写流水）。
-
-    资金操作双留痕：merchant_records 记「钱怎么变的」，system_audit_logs 记「谁下的手」。
-    """
+    """调整余额（必须写流水）。"""
     try:
         amount = dmoney(body.amount)
     except Exception:
@@ -534,7 +494,6 @@ async def adjust_balance(merchant_id: int, body: AdjustBalanceRequest, session: 
     m = await _get_merchant_or_404(session, merchant_id)
     if not m:
         return err(404, "商户不存在")
-    balance_before = str(m.balance)
     try:
         record = await change_merchant_balance(
             session, merchant_id, amount,
@@ -543,12 +502,6 @@ async def adjust_balance(merchant_id: int, body: AdjustBalanceRequest, session: 
         await session.commit()
     except ValueError as e:
         return err(-1, str(e))
-    await record_audit(
-        session, action="merchant.balance_adjust", actor=auth, request=request,
-        target_type="merchant", target_id=merchant_id,
-        before={"balance": balance_before}, after={"balance": str(m.balance)},
-        remark=(body.remark or "管理员调整")[:200],
-    )
     return suc({"balance": str(m.balance), "record_id": record.id})
 
 

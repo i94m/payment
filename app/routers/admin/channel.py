@@ -21,7 +21,6 @@ from app.core.security import AdminUser, PermissionChecker, check_permission, re
 from app.lib.linktoken import cashier_url as build_cashier_url
 from app.models import Channel, Merchant, Order, PaymentType, Plugin
 from app.responses import err, paginate, suc
-from app.services.audit import record_audit
 from app.services.balance import dmoney
 from app.services.crypto import decrypt_config, encrypt_config
 from app.services.plugin import PluginRegistry
@@ -170,12 +169,6 @@ async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
         session.add(Plugin(name=name, showname=showname, supported_types=types,
                            inputs_schema=inputs, version=version, is_enabled=True))
     await session.commit()
-    await record_audit(
-        session, action="plugin.install", actor=auth, request=request,
-        target_type="plugin", target_id=name,
-        after={"name": name, "showname": showname, "version": version or "",
-               "types": types},
-    )
     return suc({"name": name, "showname": showname,
                 "note": "多进程/多副本部署时，其他进程需重启后生效"})
 
@@ -333,7 +326,7 @@ async def type_delete(type_id: int, session: SessionDep):
 # 凭证脱敏哨兵：列表/详情默认把密钥类字段替换为该值回显；
 # 编辑提交时「值等于哨兵」表示不修改，服务端保留库内原值（前端无需改造）。
 CONFIG_MASK = "******"
-# 字段名命中这些片段即视为密钥类（与 audit._SECRET_HINTS 同口径，按子串匹配）
+# 字段名命中这些片段即视为密钥类（与 crypto 的凭证掩码同口径，按子串匹配）
 _SECRET_FIELD_HINTS = ("key", "secret", "password", "passwd", "token", "private")
 
 
@@ -501,13 +494,6 @@ async def channel_create(body: ChannelRequest, session: SessionDep,
     session.add(c)
     await session.commit()
     await session.refresh(c)
-    await record_audit(
-        session, action="channel.create", actor=auth, request=request,
-        target_type="channel", target_id=c.id,
-        after={"name": c.name, "plugin_name": c.plugin_name,
-               "payment_type_id": c.payment_type_id,
-               "config": _mask_config(decrypt_config(c.config))},
-    )
     return suc(_dump_channel(c))
 
 
@@ -532,9 +518,6 @@ async def channel_update(channel_id: int, body: ChannelRequest, session: Session
     if not pt:
         return err(-1, "支付方式不存在")
 
-    before = {"name": c.name, "plugin_name": c.plugin_name,
-              "payment_type_id": c.payment_type_id, "status": c.status,
-              "config": _mask_config(decrypt_config(c.config))}
     c.name = body.name.strip()
     c.plugin_name = body.plugin_name
     c.payment_type_id = body.payment_type_id
@@ -555,14 +538,6 @@ async def channel_update(channel_id: int, body: ChannelRequest, session: Session
         c.config = encrypt_config(_merge_config(body.config, decrypt_config(c.config)))
     session.add(c)
     await session.commit()
-    await record_audit(
-        session, action="channel.update", actor=auth, request=request,
-        target_type="channel", target_id=c.id,
-        before=before,
-        after={"name": c.name, "plugin_name": c.plugin_name,
-               "payment_type_id": c.payment_type_id, "status": c.status,
-               "config": _mask_config(decrypt_config(c.config))},
-    )
     return suc(_dump_channel(c))
 
 
@@ -572,16 +547,8 @@ async def channel_delete(channel_id: int, session: SessionDep, request: Request,
     c = await session.get(Channel, channel_id)
     if not c:
         return err(404, "通道不存在")
-    before = {"name": c.name, "plugin_name": c.plugin_name,
-              "payment_type_id": c.payment_type_id, "status": c.status,
-              "config": _mask_config(decrypt_config(c.config))}
-    channel_id_copy = c.id
     await session.delete(c)
     await session.commit()
-    await record_audit(
-        session, action="channel.delete", actor=auth, request=request,
-        target_type="channel", target_id=channel_id_copy, before=before,
-    )
     return suc("success")
 
 
