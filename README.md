@@ -163,7 +163,7 @@ docs/
   关闭后 `/` 显示站点标题 + 商户登录链接的极简页，不在后台页面展示、直接改库生效）；商户中心登录入口：`/merchant`
 - 本地体验：`uv run python scripts/demo.py 10.00` 生成订单 → 收银台支付 → 模拟上游完成闭环
   （`scripts/mock_upstream.py`；本地环境万能验证码 `0000` 仅供自动化测试，`APP_ENV != local` 时自动关闭）
-- 端到端：`uv run python scripts/e2e_smoke.py`（Playwright，23 项：双后台登录/页面/权限、浏览器完整支付闭环）
+- 端到端（可选，需先装 e2e 组的 Playwright + 浏览器）：`uv sync --group e2e && uv run playwright install chromium && uv run --group e2e python scripts/e2e_smoke.py`（23 项：双后台登录/页面/权限、浏览器完整支付闭环）
 
 ## 已知边界（后续迭代）
 

@@ -37,9 +37,19 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
     "aiosqlite>=0.20.0",
-    "playwright>=1.63.0",
+    # SQLAlchemy 2.0 的 greenlet 依赖带 platform_machine 环境标记，只列了 aarch64，
+    # 而 macOS Apple Silicon 报的是 arm64 —— 本地不会自动装，async 引擎/测试直接崩。
+    # （此前是被 playwright 顺带装进来的；生产 linux 镜像靠标记即可满足。）
+    "greenlet>=3.0",
     # 源码保护编译用（scripts/compile_backend.py，仅容器 builder 阶段实际执行）
     "cython==3.3.*",
+]
+# 浏览器端到端冒烟（scripts/e2e_smoke.py）专用：非默认组，`uv sync` 不装
+# （包 145MB + 浏览器缓存 586MB）。需要时：
+#   uv sync --group e2e && uv run playwright install chromium
+#   uv run --group e2e python scripts/e2e_smoke.py
+e2e = [
+    "playwright>=1.63.0",
 ]
 
 [[tool.uv.index]]

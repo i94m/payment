@@ -858,9 +858,12 @@ dependencies = [
 dev = [
     { name = "aiosqlite" },
     { name = "cython" },
-    { name = "playwright" },
+    { name = "greenlet" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+]
+e2e = [
+    { name = "playwright" },
 ]
 
 [package.metadata]
@@ -896,10 +899,11 @@ requires-dist = [
 dev = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
     { name = "cython", specifier = "==3.3.*" },
-    { name = "playwright", specifier = ">=1.63.0" },
+    { name = "greenlet", specifier = ">=3.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
 ]
+e2e = [{ name = "playwright", specifier = ">=1.63.0" }]
 
 [[package]]
 name = "pillow"

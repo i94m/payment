@@ -7,7 +7,9 @@
 - 前端产物 static/console 已构建（现场构建，不入库）；/docs 为独立 VitePress 构建，
   未构建时登录后访问接入文档会 404，故本套件不对其内容做断言
 
-运行：uv run python scripts/e2e_smoke.py
+运行（playwright 在可选组 e2e 里，默认 `uv sync` 不装；首次需拉浏览器）：
+    uv sync --group e2e && uv run playwright install chromium
+    uv run --group e2e python scripts/e2e_smoke.py
 """
 import json
 import sys
