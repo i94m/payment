@@ -323,7 +323,7 @@ async def test_queue_stats_api(engine, seeded, session, client, monkeypatch):
     resp = await client.post("/admin-api/queue/stats")
     assert resp.status_code == 401
 
-    # 非超管且无 queue.view 权限 → 403（与其它 PermissionChecker 端点一致）
+    # 非超管且无 queue.view 权限 → HTTP 403 + body code 403（与其他 PermissionChecker 端点一致）
     resp = await client.post("/admin-api/queue/stats", headers=sub_headers)
     assert resp.status_code == 403
     assert resp.json()["code"] == 403

@@ -26,6 +26,7 @@ from app.services.balance import dmoney
 from app.services.crypto import decrypt_config, encrypt_config
 from app.services.plugin import PluginRegistry
 from app.services.plugin_interfaces import PluginMeta
+from app.services.plugin_sync import sync_plugins
 
 router = APIRouter()
 
@@ -53,48 +54,12 @@ async def plugin_list(session: SessionDep):
 @router.post("/plugins/sync", dependencies=[Depends(PermissionChecker("channel.update"))])
 async def plugin_sync(session: SessionDep):
     """扫描 plugins/ 目录刷新插件注册表；盘上已不存在的插件行一并清理
-    （仍被通道引用的跳过，避免通道静默失效，提示人工处理）。"""
-    PluginRegistry.reload()
-    metas = PluginRegistry.list_plugins()
-    names = {m["name"] for m in metas}
-    for meta in metas:
-        row = await session.get(Plugin, meta["name"])
-        inputs = meta.get("inputs", [])
-        version = (meta.get("version") or "")[:16] or None
-        if row:
-            row.showname = meta["showname"]
-            row.supported_types = ",".join(meta["types"])
-            row.inputs_schema = inputs
-            row.version = version
-        else:
-            session.add(Plugin(
-                name=meta["name"],
-                showname=meta["showname"],
-                supported_types=",".join(meta["types"]),
-                inputs_schema=inputs,
-                version=version,
-                is_enabled=True,
-            ))
-    # 清理：注册表中已不存在的插件行；仍被通道引用的跳过并提示
-    removed, referenced = [], []
-    for row in (await session.exec(select(Plugin))).all():
-        if row.name in names:
-            continue
-        used = (await session.exec(
-            select(func.count()).select_from(Channel).where(Channel.plugin_name == row.name)
-        )).one()
-        if used:
-            referenced.append(row.name)
-            continue
-        await session.delete(row)
-        removed.append(row.name)
-    await session.commit()
-    msg = f"已同步 {len(metas)} 个插件"
-    if removed:
-        msg += f"，清理失效插件 {len(removed)} 个"
-    if referenced:
-        msg += f"；{len(referenced)} 个插件仍被通道引用未删除：{','.join(referenced)}"
-    return suc(msg)
+    （仍被通道引用的跳过，避免通道静默失效，提示人工处理）。
+
+    与 `db init` / `migrate upgrade` 走同一个服务函数（app/services/plugin_sync.py）。
+    """
+    result = await sync_plugins(session)
+    return suc(result["message"])
 
 
 # 上传插件包大小上限
