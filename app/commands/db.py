@@ -23,6 +23,8 @@ PAY_TYPE_SEEDS = [
     {"code": "alipay", "name": "支付宝", "sort": 1, "device": 0},
     {"code": "wxpay", "name": "微信支付", "sort": 2, "device": 0},
 ]
+# 种子收敛前的老内置支付方式：初始化时清掉未被引用的空记录（与 alembic 0009 同口径）
+LEGACY_PAY_TYPE_CODES = ("qqpay", "bank")
 
 
 @app.command()
@@ -157,7 +159,7 @@ async def _adminer(session: AsyncSession):
 
 
 async def _seed_pay_types(session: AsyncSession):
-    """内置支付方式"""
+    """内置支付方式：只播种 alipay/wxpay，并清理旧内置方式的空记录。"""
     for seed in PAY_TYPE_SEEDS:
         existing = (await session.exec(
             select(PaymentType).where(PaymentType.code == seed["code"])
@@ -165,7 +167,47 @@ async def _seed_pay_types(session: AsyncSession):
         if not existing:
             session.add(PaymentType(**seed, status=1))
     await session.commit()
-    typer.secho(f"[支付方式] 种子完成（{len(PAY_TYPE_SEEDS)} 项）", fg=typer.colors.GREEN)
+
+    removed, kept = await _prune_legacy_pay_types(session)
+    await session.commit()
+    typer.secho(
+        f"[支付方式] 种子完成（{len(PAY_TYPE_SEEDS)} 项，清理旧内置 {removed} 项）",
+        fg=typer.colors.GREEN,
+    )
+    if kept:
+        typer.secho(
+            f"[支付方式] 旧内置方式 {', '.join(kept)} 仍被通道/订单引用，已保留"
+            "（如需彻底移除，先在后台/数据库清理引用）",
+            fg=typer.colors.YELLOW,
+        )
+
+
+async def _prune_legacy_pay_types(session: AsyncSession) -> tuple[int, list[str]]:
+    """删除旧内置支付方式（qqpay/bank 等）中未被通道/订单引用的记录。
+
+    被引用的保留，避免通道失效、历史订单统计断档；可重复执行。
+    """
+    from app.models import Channel, Order
+
+    legacy = (await session.exec(
+        select(PaymentType).where(PaymentType.code.in_(LEGACY_PAY_TYPE_CODES))
+    )).all()
+    removed, kept = 0, []
+    for t in legacy:
+        used_by_channel = (await session.exec(
+            select(func.count()).select_from(Channel)
+            .where(Channel.payment_type_id == t.id)
+        )).one()
+        used_by_order = (await session.exec(
+            select(func.count()).select_from(Order)
+            .where(Order.payment_type_id == t.id)
+        )).one()
+        if used_by_channel or used_by_order:
+            kept.append(t.code)
+            continue
+        await session.delete(t)
+        removed += 1
+    return removed, kept
 
 
 async def _seed_settings(session: AsyncSession):

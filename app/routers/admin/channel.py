@@ -349,8 +349,7 @@ async def type_set_status(type_id: int, body: PaymentTypeStatusRequest, session:
 
 @router.delete("/types/{type_id}", dependencies=[Depends(PermissionChecker("payment_type.delete"))])
 async def type_delete(type_id: int, session: SessionDep):
-    if type_id < 4:
-        return err(-1, "系统自带支付方式暂不支持删除")
+    """删除支付方式（含系统自带）；仍被通道引用时拦截。"""
     t = await session.get(PaymentType, type_id)
     if not t:
         return err(404, "支付方式不存在")

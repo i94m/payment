@@ -45,14 +45,11 @@ async def test_admin_pay_type_crud(session, client):
                              json={"code": "alipay", "name": "支付宝2", "device": 0})
     assert resp.json()["message"] == "同一个调用值+支持设备不能重复"
 
-    # 新增成功：新调用值，默认开启；补足到 id>=4（id<4 为系统自带保护段）
-    new_id = None
-    for code, name in [("np1", "填充1"), ("np2", "填充2"), ("newpay", "新支付")]:
-        resp = await client.post("/admin-api/pay/types", headers=headers,
-                                 json={"code": code, "name": name, "device": 2})
-        assert resp.status_code == 200, resp.json()
-        new_id = resp.json()["data"]["id"]
-    assert new_id >= 4
+    # 新增成功：新调用值，默认开启
+    resp = await client.post("/admin-api/pay/types", headers=headers,
+                             json={"code": "newpay", "name": "新支付", "device": 2})
+    assert resp.status_code == 200, resp.json()
+    new_id = resp.json()["data"]["id"]
 
     resp = await client.get("/admin-api/pay/types", headers=headers)
     item = next(x for x in resp.json()["data"] if x["id"] == new_id)
@@ -74,13 +71,23 @@ async def test_admin_pay_type_crud(session, client):
     item = next(x for x in resp.json()["data"] if x["id"] == new_id)
     assert item["status"] == 0
 
-    # 删除保护：id<4 系统自带不可删
+    # 删除保护：存在使用该支付方式的通道时不可删除（系统自带同理）
     resp = await client.delete("/admin-api/pay/types/1", headers=headers)
-    assert resp.json()["message"] == "系统自带支付方式暂不支持删除"
+    assert resp.json()["message"] == "删除失败，存在使用该支付方式的支付通道"
 
     # 删除成功
     resp = await client.delete(f"/admin-api/pay/types/{new_id}", headers=headers)
     assert resp.status_code == 200
+
+    # 系统自带支付方式也可以删除：先移除占用它的通道
+    from sqlalchemy import delete as sa_delete
+    from app.models import Channel
+    await session.exec(sa_delete(Channel.__table__).where(Channel.payment_type_id == 1))
+    await session.commit()
+    resp = await client.delete("/admin-api/pay/types/1", headers=headers)
+    assert resp.status_code == 200, resp.json()
+    resp = await client.get("/admin-api/pay/types", headers=headers)
+    assert all(x["id"] != 1 for x in resp.json()["data"])
 
     # 今日收款统计接口可用
     resp = await client.get("/admin-api/pay/types/stats", headers=headers)
