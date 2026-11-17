@@ -17,6 +17,7 @@ router = APIRouter()
 
 @router.post("/stats", dependencies=[Depends(PermissionChecker("queue.view"))])
 async def queue_stats(session: SessionDep):
+    """队列/通知聚合监控。无 queue.view 由 PermissionChecker 抛 HTTP 403（B11）。"""
     from app.worker import queue
     try:
         info = await queue.info()

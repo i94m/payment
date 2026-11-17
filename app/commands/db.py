@@ -113,7 +113,13 @@ async def _init_async():
         await _seed_pay_types(session)
         await _seed_settings(session)
 
-    # 3. 同步权限
+    # 3. 同步插件表（全新安装「已安装插件」不再为 0，新增通道下拉可用）
+    typer.secho("[插件] 开始同步...", fg=typer.colors.CYAN)
+    async with session_maker() as session:
+        result = await _sync_plugins(session)
+    typer.secho(f"[插件] {result['message']}", fg=typer.colors.GREEN)
+
+    # 4. 同步权限
     from app.commands.permission import _sync_tree
     typer.secho("[权限] 开始同步...", fg=typer.colors.CYAN)
     async with session_maker() as session:
@@ -121,6 +127,13 @@ async def _init_async():
     typer.secho("[权限] 完成", fg=typer.colors.GREEN)
 
     typer.secho("\n数据初始化完成", fg=typer.colors.GREEN, bold=True)
+
+
+async def _sync_plugins(session: AsyncSession):
+    """把插件注册表落库到 plugins 表（与后台「同步插件」同一实现，幂等）。"""
+    from app.services.plugin_sync import sync_plugins
+
+    return await sync_plugins(session)
 
 
 async def _adminer(session: AsyncSession):

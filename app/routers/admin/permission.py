@@ -1,4 +1,8 @@
-"""admin 管理员账号管理（RBAC）。仅超管可用。"""
+"""admin 管理员账号管理（RBAC）。仅超管可用。
+
+无权限统一抛 HTTPException(403)（B11）：早前 `return err(403, ...)` 落成
+HTTP 400 + body code 403，前端 403 分支与监控统计都会漏掉。
+"""
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -7,7 +11,7 @@ from sqlalchemy import delete as sa_delete
 from sqlmodel import col, func, select
 
 from app.core.deps import SessionDep
-from app.core.security import AdminUser, hash_password
+from app.core.security import AdminUser, hash_password, require_super_admin
 from app.models import (
     SystemAdmin,
     SystemAdminPermission,
@@ -18,8 +22,9 @@ from app.responses import err, paginate, suc
 router = APIRouter()
 
 
-def _require_super(auth: AdminUser):
-    return auth.is_super_admin
+# 复用 app/core/security.py 的超管依赖（与 channel.py 的插件安装同一口径）；
+# 早前 `return err(403, ...)` 落成 HTTP 400 + body code 403（B11）。
+_require_super = [Depends(require_super_admin)]
 
 
 class AccountRequest(BaseModel):
@@ -65,14 +70,11 @@ async def _sync_permissions(session, admin_id: int, permission_ids: list[int]):
     await session.commit()
 
 
-@router.get("/accounts")
-async def accounts_index(auth: AdminUser, session: SessionDep,
+@router.get("/accounts", dependencies=_require_super)
+async def accounts_index(session: SessionDep,
                          status: Optional[str] = Query(None),
                          keyword: Optional[str] = Query(None),
                          page: int = Query(1, ge=1), per_page: int = Query(20, ge=1, le=100)):
-    if not _require_super(auth):
-        return err(403, "forbidden")
-
     query = select(SystemAdmin).where(SystemAdmin.is_super_admin == False)  # noqa: E712
     if status == "forbid":
         query = query.where(SystemAdmin.is_forbid == True)  # noqa: E712
@@ -94,10 +96,8 @@ async def accounts_index(auth: AdminUser, session: SessionDep,
                         has_more_pages=page * per_page < total, has_pages=total > per_page))
 
 
-@router.post("/accounts")
-async def accounts_store(body: AccountRequest, auth: AdminUser, session: SessionDep):
-    if not _require_super(auth):
-        return err(403, "forbidden")
+@router.post("/accounts", dependencies=_require_super)
+async def accounts_store(body: AccountRequest, session: SessionDep):
     if not body.password:
         return err(-1, "密码不能为空")
     existing = (await session.exec(
@@ -119,10 +119,8 @@ async def accounts_store(body: AccountRequest, auth: AdminUser, session: Session
     return suc(_dump_admin(admin, permissions=await _load_perms(session, admin.id)))
 
 
-@router.put("/accounts/{item_id}")
-async def accounts_update(item_id: int, body: AccountRequest, auth: AdminUser, session: SessionDep):
-    if not _require_super(auth):
-        return err(403, "forbidden")
+@router.put("/accounts/{item_id}", dependencies=_require_super)
+async def accounts_update(item_id: int, body: AccountRequest, session: SessionDep):
     admin = await session.get(SystemAdmin, item_id)
     if not admin:
         return err(404, "记录不存在")
@@ -141,10 +139,8 @@ async def accounts_update(item_id: int, body: AccountRequest, auth: AdminUser, s
     return suc(_dump_admin(admin, permissions=await _load_perms(session, admin.id)))
 
 
-@router.delete("/accounts/{item_id}")
-async def accounts_destroy(item_id: int, auth: AdminUser, session: SessionDep):
-    if not _require_super(auth):
-        return err(403, "forbidden")
+@router.delete("/accounts/{item_id}", dependencies=_require_super)
+async def accounts_destroy(item_id: int, session: SessionDep):
     admin = await session.get(SystemAdmin, item_id)
     if not admin:
         return err(404, "记录不存在")
@@ -157,10 +153,8 @@ async def accounts_destroy(item_id: int, auth: AdminUser, session: SessionDep):
     return suc("success")
 
 
-@router.get("/permissions")
-async def permissions_tree(auth: AdminUser, session: SessionDep):
-    if not _require_super(auth):
-        return err(403, "forbidden")
+@router.get("/permissions", dependencies=_require_super)
+async def permissions_tree(session: SessionDep):
     all_perms = (await session.exec(
         select(SystemPermission).order_by(col(SystemPermission.id).desc())
     )).all()
