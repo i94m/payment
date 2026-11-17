@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom"
 import { merchantsApi, merchantSecurityApi } from "@/api"
 import type { MerchantData } from "@/api"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -31,7 +33,7 @@ import {
   IconSearch, IconRefresh, IconPlus, IconEdit,
   IconKey, IconHistory, IconDownload,
   IconDice, IconAdjustments,
-  IconTrash, IconPin, IconLockPassword,
+  IconTrash, IconLockPassword,
   IconList, IconReceipt,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
@@ -54,15 +56,6 @@ const dstatusOptions = [
   { value: "settle_0", label: "结算状态关闭" },
 ]
 
-/** 排序（order 参数） */
-const sortOptions = [
-  { value: "", label: "商户号倒序" },
-  { value: "money_desc", label: "余额倒序" },
-  { value: "money_asc", label: "余额正序" },
-  { value: "lasttime_desc", label: "登录时间倒序" },
-  { value: "lasttime_asc", label: "登录时间正序" },
-]
-
 /** 结算方式（settle_id） */
 const settleTypeOptions = [
   { value: 1, label: "支付宝" },
@@ -71,31 +64,40 @@ const settleTypeOptions = [
   { value: 4, label: "银行卡" },
 ]
 
-/** 可点击状态徽标（点击切换状态） */
-function ClickableBadge({ label, tone, title, onClick, icon }: {
-  label: string
-  tone: "ok" | "warn" | "bad" | "muted"
+/** 行内开关（状态/支付/结算/配置锁定） */
+function StatusSwitch({ checked, disabled, title, onCheckedChange }: {
+  checked: boolean
+  disabled?: boolean
   title?: string
-  onClick: () => void
-  icon?: React.ReactNode
+  onCheckedChange: (checked: boolean) => void
 }) {
-  const toneCls = {
-    ok: "bg-emerald-500/10 text-emerald-600",
-    warn: "bg-amber-500/10 text-amber-600",
-    bad: "bg-rose-500/10 text-rose-500",
-    muted: "bg-muted text-muted-foreground",
-  }[tone]
   return (
-    <button
-      type="button"
+    <Switch
+      size="sm"
+      checked={checked}
+      disabled={disabled}
       title={title}
-      onClick={onClick}
-      className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-medium transition-colors hover:opacity-80 ${toneCls}`}
-    >
-      {icon}
-      {label}
-    </button>
+      onCheckedChange={onCheckedChange}
+      className="mx-auto"
+    />
   )
+}
+
+/** 随机金额区间校验：「整数」开启时只能是整数，否则最多两位小数 */
+function validateRandomRange(min: string, max: string, integerOnly: boolean): string | null {
+  const lo = Number(min)
+  const hi = Number(max)
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0) {
+    return "请填写大于 0 的随机金额"
+  }
+  if (integerOnly && (!Number.isInteger(lo) || !Number.isInteger(hi))) {
+    return "已开启「整数」，请填写整数"
+  }
+  if (!integerOnly) {
+    const hasCent = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) > 1e-6
+    if (hasCent(lo) || hasCent(hi)) return "随机金额最多两位小数"
+  }
+  return null
 }
 
 const recordSchema = z.object({
@@ -120,8 +122,9 @@ export function MerchantsPage() {
   // ---- 筛选 ----
   const [keyword2, setKeyword2] = React.useState("")
   const [dstatus, setDstatus] = React.useState("")
-  const [sortOrder, setSortOrder] = React.useState("")
   const [orderDays, setOrderDays] = React.useState("")
+  // 行内开关请求中的 key（`${id}:${type}`），避免重复点击
+  const [pendingToggle, setPendingToggle] = React.useState<Record<string, boolean>>({})
 
   // ---- 基础弹窗 ----
   const [formOpen, setFormOpen] = React.useState(false)
@@ -131,11 +134,13 @@ export function MerchantsPage() {
   const [balanceRemark, setBalanceRemark] = React.useState("")
 
   const [pwdTarget, setPwdTarget] = React.useState<MerchantData | null>(null)
+  const [pwdValue, setPwdValue] = React.useState("")
   const [deleteTarget, setDeleteTarget] = React.useState<MerchantData | null>(null)
 
   // ---- ulist 对齐弹窗 ----
   const [randomTarget, setRandomTarget] = React.useState<MerchantData | null>(null)
   const [randomEnable, setRandomEnable] = React.useState("0")
+  const [randomInteger, setRandomInteger] = React.useState(false)
   const [randomMin, setRandomMin] = React.useState("")
   const [randomMax, setRandomMax] = React.useState("")
   const [ratelimitTarget, setRatelimitTarget] = React.useState<MerchantData | null>(null)
@@ -159,6 +164,7 @@ export function MerchantsPage() {
   const [advanceDaysInput, setAdvanceDaysInput] = React.useState("30")
   const [batchRandomOpen, setBatchRandomOpen] = React.useState(false)
   const [batchRandomEnable, setBatchRandomEnable] = React.useState("1")
+  const [batchRandomInteger, setBatchRandomInteger] = React.useState(false)
   const [batchRandomMin, setBatchRandomMin] = React.useState("")
   const [batchRandomMax, setBatchRandomMax] = React.useState("")
 
@@ -166,29 +172,40 @@ export function MerchantsPage() {
     const params: Record<string, unknown> = {}
     if (keyword2.trim()) params.keyword = keyword2.trim()
     if (dstatus) params.dstatus = dstatus
-    if (sortOrder) params.order = sortOrder
     const days = toIntParam(orderDays)
     if (days !== undefined) params.order_days = days
     return params
-  }, [keyword2, dstatus, sortOrder, orderDays])
+  }, [keyword2, dstatus, orderDays])
 
   // ---- 行内操作（columns 引用；refresh/updateRow 由下方 useDataList 解构，
   //      仅在事件回调里执行，运行时已初始化）----
   const toggle = async (item: MerchantData, type: "user" | "pay" | "settle" | "fixed", status: number) => {
+    const key = `${item.id}:${type}`
+    if (pendingToggle[key]) return
+    setPendingToggle((prev) => ({ ...prev, [key]: true }))
     try {
       await merchantsApi.setStatus(item.id, type, status)
       // 本地更新该行，避免整表刷新
-      const field = type === "user" ? "status" : type === "pay" ? "pay_status" : type === "settle" ? "settle_status" : "fixed"
-      updateRow(item.id, { [field]: status } as Partial<MerchantData>)
+      const patch: Partial<MerchantData> = type === "fixed"
+        ? { fixed: status === 1 }
+        : { [type === "user" ? "status" : type === "pay" ? "pay_status" : "settle_status"]: status }
+      updateRow(item.id, patch)
       toast.success("状态已更新")
     } catch (err) {
       toast.error(getErrorMessage(err, "操作失败"))
+    } finally {
+      setPendingToggle((prev) => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
     }
   }
 
   const openRandomDialog = (item: MerchantData) => {
     setRandomTarget(item)
     setRandomEnable(item.random_enable ? "1" : "0")
+    setRandomInteger(!!item.random_integer)
     // 数据库存 Numeric(12,2)，回显去掉 .00 尾零（5.00 → 5）
     setRandomMin(item.random_enable ? String(Number(item.random_min)) : "")
     setRandomMax(item.random_enable ? String(Number(item.random_max)) : "")
@@ -238,7 +255,6 @@ export function MerchantsPage() {
       {
         // 用户名
         accessorKey: "username",
-        enableSorting: false,
         header: () => "用户名",
         cell: ({ row }) => (
           <span className="text-sm font-medium">{row.original.username}</span>
@@ -248,7 +264,6 @@ export function MerchantsPage() {
       {
         // 商户号
         accessorKey: "pid",
-        enableSorting: false,
         header: () => "商户号",
         cell: ({ row }) => (
           <span className="text-sm font-bold tabular-nums">{row.original.pid}</span>
@@ -258,7 +273,6 @@ export function MerchantsPage() {
       {
         // 余额（点击弹出充值/扣除）
         accessorKey: "balance",
-        enableSorting: false,
         header: () => "余额",
         cell: ({ row }) => (
           <button
@@ -283,18 +297,21 @@ export function MerchantsPage() {
             <button
               type="button"
               title={"点击修改结算账号"}
-              className="flex flex-col text-left text-xs hover:underline"
+              className="inline-flex items-center gap-1 text-left text-sm hover:underline"
               onClick={() => openSettleDialog(m)}
             >
-              {m.settle_account ? (
-                <span>
-                  {prefix && <span className="text-emerald-600">{prefix}</span>}
-                  {m.settle_account}
-                </span>
-              ) : (
-                <span className="text-muted-foreground">未设置</span>
-              )}
-              <span className="text-muted-foreground">{m.settle_name || ""}</span>
+              <span className="flex min-w-0 flex-col">
+                {m.settle_account ? (
+                  <span className="truncate">
+                    {prefix && <span className="text-emerald-600">{prefix}</span>}
+                    {m.settle_account}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">未设置</span>
+                )}
+                <span className="truncate text-muted-foreground">{m.settle_name || ""}</span>
+              </span>
+              <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
             </button>
           )
         },
@@ -317,14 +334,18 @@ export function MerchantsPage() {
             <button
               type="button"
               title={"点击设置随机金额"}
-              className={`text-sm hover:underline ${m.random_enable ? "font-bold tabular-nums text-blue-600" : "text-muted-foreground"}`}
+              className={`inline-flex items-center gap-1 text-sm hover:underline ${m.random_enable ? "font-bold tabular-nums text-blue-600" : "text-muted-foreground"}`}
               onClick={() => openRandomDialog(m)}
             >
               {label}
+              {m.random_integer && (
+                <Badge variant="secondary" className="h-4 px-1 text-[10px]">{"整数"}</Badge>
+              )}
+              <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
             </button>
           )
         },
-        meta: { headClassName: "w-[110px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
       },
       {
         // 建单限流（点击弹出设置）：同一付款 IP 每分钟建单上限，0=不限
@@ -337,86 +358,88 @@ export function MerchantsPage() {
             <button
               type="button"
               title={"点击设置建单限流（同一付款 IP 每分钟建单上限，0=不限）"}
-              className={`text-sm hover:underline ${m.random_ratelimit > 0 ? "font-bold tabular-nums text-blue-600" : "text-muted-foreground"}`}
+              className={`inline-flex items-center gap-1 text-sm hover:underline ${m.random_ratelimit > 0 ? "font-bold tabular-nums text-blue-600" : "text-muted-foreground"}`}
               onClick={() => openRatelimitDialog(m)}
             >
               {m.random_ratelimit > 0 ? m.random_ratelimit : "不限"}
+              <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
             </button>
           )
         },
-        meta: { headClassName: "w-[70px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[80px] text-center", cellClassName: "text-center" },
       },
       {
-        // 用户状态：正常 / 禁用（点击切换）
+        // 用户状态：正常 / 禁用（开关实时切换）
         accessorKey: "status",
-        enableSorting: false,
         header: () => "状态",
         cell: ({ row }) => {
           const m = row.original
           return (
-            <ClickableBadge
-              label={m.status === 1 ? "正常" : "禁用"}
-              tone={m.status === 1 ? "ok" : "bad"}
-              onClick={() => toggle(m, "user", m.status === 1 ? 0 : 1)}
+            <StatusSwitch
+              checked={m.status === 1}
+              disabled={!!pendingToggle[`${m.id}:user`]}
+              title={m.status === 1 ? "点击禁用该商户" : "点击启用该商户"}
+              onCheckedChange={(v) => toggle(m, "user", v ? 1 : 0)}
             />
           )
         },
         meta: { headClassName: "w-[70px] text-center", cellClassName: "text-center" },
       },
       {
-        // 支付权限：待审核 / 开启 / 关闭（点击循环切换）
+        // 支付权限：开启 / 关闭（待审核时额外提示，开关切换 开启↔关闭）
         accessorKey: "pay_status",
-        enableSorting: false,
         header: () => "支付",
         cell: ({ row }) => {
           const m = row.original
           return (
-            <ClickableBadge
-              label={m.pay_status === 2 ? "待审核" : m.pay_status === 1 ? "开启" : "关闭"}
-              tone={m.pay_status === 2 ? "warn" : m.pay_status === 1 ? "ok" : "bad"}
-              title={"待审核→开启；开启→关闭；关闭→开启"}
-              onClick={() => toggle(m, "pay", m.pay_status === 2 ? 1 : m.pay_status === 1 ? 0 : 1)}
-            />
+            <div className="flex items-center justify-center gap-1.5">
+              <StatusSwitch
+                checked={m.pay_status === 1}
+                disabled={!!pendingToggle[`${m.id}:pay`]}
+                title={m.pay_status === 1 ? "点击关闭支付权限" : "点击开启支付权限"}
+                onCheckedChange={(v) => toggle(m, "pay", v ? 1 : 0)}
+              />
+              {m.pay_status === 2 && (
+                <Badge variant="secondary" className="h-4 px-1 text-[10px]">{"待审核"}</Badge>
+              )}
+            </div>
           )
         },
-        meta: { headClassName: "w-[70px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[86px] text-center", cellClassName: "text-center" },
       },
       {
-        // 结算权限：开启 / 关闭（点击切换），关闭=能收款但余额冻结不可提
+        // 结算权限：开启 / 关闭（开关实时切换），关闭=能收款但余额冻结不可提
         accessorKey: "settle_status",
-        enableSorting: false,
         header: () => "结算",
         cell: ({ row }) => {
           const m = row.original
           return (
-            <ClickableBadge
-              label={m.settle_status === 1 ? "开启" : "关闭"}
-              tone={m.settle_status === 1 ? "ok" : "bad"}
+            <StatusSwitch
+              checked={m.settle_status === 1}
+              disabled={!!pendingToggle[`${m.id}:settle`]}
               title={"关闭后仍可收款，但结算/提现被冻结"}
-              onClick={() => toggle(m, "settle", m.settle_status === 1 ? 0 : 1)}
+              onCheckedChange={(v) => toggle(m, "settle", v ? 1 : 0)}
             />
           )
         },
         meta: { headClassName: "w-[70px] text-center", cellClassName: "text-center" },
       },
       {
-        // 固定（点击切换）：固定后该商户不受批量随机金额影响
+        // 配置锁定（开关）：锁定后该商户不受批量随机金额影响
         accessorKey: "fixed",
-        enableSorting: false,
-        header: () => "固定",
+        header: () => "配置锁定",
         cell: ({ row }) => {
           const m = row.original
           return (
-            <ClickableBadge
-              label={m.fixed ? "固定" : "未固定"}
-              tone={m.fixed ? "ok" : "muted"}
-              title={"固定后该商户不受批量随机金额影响，再次点击取消"}
-              icon={m.fixed ? <IconPin className="size-3" /> : undefined}
-              onClick={() => toggle(m, "fixed", m.fixed ? 0 : 1)}
+            <StatusSwitch
+              checked={!!m.fixed}
+              disabled={!!pendingToggle[`${m.id}:fixed`]}
+              title={"锁定后该商户不受批量随机金额影响"}
+              onCheckedChange={(v) => toggle(m, "fixed", v ? 1 : 0)}
             />
           )
         },
-        meta: { headClassName: "w-[80px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[84px] text-center", cellClassName: "text-center" },
       },
       actionsColumn([
         { label: "API密钥", onClick: (item) => openDetail(item) },
@@ -425,7 +448,7 @@ export function MerchantsPage() {
         { label: "资金明细", icon: <IconHistory className="size-4" />, placement: "menu", title: "资金流水", onClick: (item) => navigate(`/records?merchant_id=${item.id}`) },
         { label: "交易订单", icon: <IconList className="size-4" />, placement: "menu", onClick: (item) => navigate(`/trade/orders?merchant_id=${item.id}`) },
         { label: "结算", icon: <IconReceipt className="size-4" />, placement: "menu", onClick: (item) => navigate(`/settle?merchant_id=${item.id}`) },
-        { label: "重置密码", icon: <IconLockPassword className="size-4" />, placement: "menu", onClick: (item) => setPwdTarget(item) },
+        { label: "重置密码", icon: <IconLockPassword className="size-4" />, placement: "menu", onClick: (item) => { setPwdValue(""); setPwdTarget(item) } },
         { label: "编辑", icon: <IconEdit className="size-4" />, placement: "menu", onClick: (item) => { setEditingId(item.id); setFormOpen(true) } },
         { label: "删除", icon: <IconTrash className="size-4" />, placement: "menu", variant: "destructive", title: "删除商户", onClick: (item) => setDeleteTarget(item) },
       ] as ActionItem<MerchantData>[], { width: 240 }),
@@ -436,7 +459,6 @@ export function MerchantsPage() {
     setKeyword("")
     setKeyword2("")
     setDstatus("")
-    setSortOrder("")
     setOrderDays("")
     applyFilters()
   }
@@ -454,17 +476,19 @@ export function MerchantsPage() {
 
   const submitRandom = async () => {
     if (!randomTarget) return
-    if (randomEnable === "1" && (!randomMin || !randomMax)) {
-      toast.error("若最小与最大设为相同值，买家实付金额将固定为该值（如都填 5 则固定 5 元）"); return
-    }
-    if (randomEnable === "1" && (!Number.isInteger(Number(randomMin)) || !Number.isInteger(Number(randomMax)))) {
-      toast.error("随机金额仅支持整数"); return
+    if (randomEnable === "1") {
+      if (!randomMin || !randomMax) {
+        toast.error("请填写最小和最大金额"); return
+      }
+      const invalid = validateRandomRange(randomMin, randomMax, randomInteger)
+      if (invalid) { toast.error(invalid); return }
     }
     try {
       await merchantsApi.setRandom(randomTarget.id, {
         random_enable: randomEnable === "1",
         random_min: randomMin || "0",
         random_max: randomMax || "0",
+        random_integer: randomInteger,
       })
       toast.success("随机金额设置已保存")
       setRandomTarget(null)
@@ -508,18 +532,19 @@ export function MerchantsPage() {
   }
 
   const submitBatchRandom = async () => {
-    if (batchRandomEnable === "1" && (!batchRandomMin || !batchRandomMax)) {
-      toast.error("若最小与最大设为相同值，买家实付金额将固定为该值（如都填 5 则固定 5 元）"); return
+    if (batchRandomEnable === "1") {
+      if (!batchRandomMin || !batchRandomMax) {
+        toast.error("请填写最小和最大金额"); return
+      }
+      const invalid = validateRandomRange(batchRandomMin, batchRandomMax, batchRandomInteger)
+      if (invalid) { toast.error(invalid); return }
     }
-    if (batchRandomEnable === "1" && (!Number.isInteger(Number(batchRandomMin)) || !Number.isInteger(Number(batchRandomMax)))) {
-      toast.error("随机金额仅支持整数"); return
-    }
-    if (!window.confirm("此操作将应用于所有未固定的商户，确定继续？")) return
     try {
       const msg = await merchantsApi.setAllRandom({
         random_enable: batchRandomEnable === "1",
         random_min: batchRandomMin || "0",
         random_max: batchRandomMax || "0",
+        random_integer: batchRandomInteger,
       })
       toast.success(String(msg || "批量设置完成"))
       setBatchRandomOpen(false)
@@ -565,11 +590,18 @@ export function MerchantsPage() {
 
   const submitResetPwd = async () => {
     if (!pwdTarget) return
-    // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
-    const res = await merchantSecurityApi.resetPassword(pwdTarget.id)
-    toast.success(`${"新密码"}: ${res.password}`, { duration: 15000 })
-    setPwdTarget(null)
-    refresh()
+    const pwd = pwdValue.trim()
+    if (pwd.length < 6) {
+      toast.error("密码至少 6 位"); return
+    }
+    try {
+      await merchantSecurityApi.resetPassword(pwdTarget.id, pwd)
+      toast.success("密码已重置，该商户现有登录会话已失效")
+      setPwdTarget(null)
+      refresh()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "操作失败"))
+    }
   }
 
   const submitDelete = async () => {
@@ -585,28 +617,18 @@ export function MerchantsPage() {
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         <FilterCard>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 items-end">
-            <div className="col-span-1">
-              <Input
-                placeholder={"用户名/商户号"}
-                className="h-9"
-                value={keyword2}
-                onChange={(e) => setKeyword2(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") applyFilters() }}
-              />
-            </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_9rem]">
+            <Input
+              placeholder={"用户名/商户号"}
+              className="h-9"
+              value={keyword2}
+              onChange={(e) => setKeyword2(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") applyFilters() }}
+            />
             <Select value={dstatus || "_all"} onValueChange={(v) => setDstatus(v === "_all" ? "" : v)}>
               <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {dstatusOptions.map((o) => (
-                  <SelectItem key={o.value || "_all"} value={o.value || "_all"}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={sortOrder || "_all"} onValueChange={(v) => setSortOrder(v === "_all" ? "" : v)}>
-              <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {sortOptions.map((o) => (
                   <SelectItem key={o.value || "_all"} value={o.value || "_all"}>{o.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -633,15 +655,27 @@ export function MerchantsPage() {
                   {"导出 Excel"}
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={() => { setBatchRandomEnable("1"); setBatchRandomMin(""); setBatchRandomMax(""); setBatchRandomOpen(true) }}>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setBatchRandomEnable("1")
+                  setBatchRandomInteger(false)
+                  setBatchRandomMin("")
+                  setBatchRandomMax("")
+                  setBatchRandomOpen(true)
+                }}
+              >
                 <IconDice className="size-4" />
                 {"批量随机金额"}
               </Button>
+              <Button size="sm" onClick={() => { setEditingId(null); setFormOpen(true) }}>
+                <IconPlus className="size-4" />
+                {"新增商户"}
+              </Button>
             </div>
-            <Button size="sm" onClick={() => { setEditingId(null); setFormOpen(true) }}>
-              <IconPlus className="size-4" />
-              {"新增商户"}
-            </Button>
           </div>
         </FilterCard>
 
@@ -662,7 +696,7 @@ export function MerchantsPage() {
         onOpenChange={setFormOpen}
         editingId={null}
         schema={recordSchema}
-        width="sm:max-w-md"
+        width="sm:max-w-sm"
         fields={[
           { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", required: true, props: { autoComplete: "off" } },
           { type: "password", name: "password", label: "密码", placeholder: "密码", span: "full", required: true, props: { autoComplete: "new-password" } },
@@ -699,7 +733,7 @@ export function MerchantsPage() {
         onOpenChange={setFormOpen}
         editingId={editingId}
         schema={editSchema}
-        width="sm:max-w-md"
+        width="sm:max-w-sm"
         fields={[
           { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", props: { disabled: true } },
           {
@@ -799,17 +833,31 @@ export function MerchantsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 重置登录密码 */}
-      <ConfirmDialog
-        open={!!pwdTarget}
-        onOpenChange={(open) => { if (!open) setPwdTarget(null) }}
-        title={"重置密码"}
-        description={"确认重置该商户的登录密码？将生成随机密码且现有登录会话全部失效"}
-        variant="danger"
-        cancelLabel={"取消"}
-        confirmLabel={"确定"}
-        onConfirm={submitResetPwd}
-      />
+      {/* 重置登录密码（管理员直接输入新密码） */}
+      <Dialog open={!!pwdTarget} onOpenChange={(open) => { if (!open) setPwdTarget(null) }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{"重置密码"} - {pwdTarget?.username}</DialogTitle>
+            <DialogDescription>{"输入新密码后立即生效，该商户现有登录会话将全部失效"}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Label htmlFor="reset-pwd">{"新密码"}</Label>
+            <Input
+              id="reset-pwd"
+              type="text"
+              autoComplete="new-password"
+              value={pwdValue}
+              onChange={(e) => setPwdValue(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") submitResetPwd() }}
+              placeholder={"至少 6 位"}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPwdTarget(null)}>{"取消"}</Button>
+            <Button onClick={submitResetPwd} disabled={pwdValue.trim().length < 6}>{"确定"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 删除商户 */}
       <ConfirmDialog
@@ -828,7 +876,7 @@ export function MerchantsPage() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"随机金额"} - {randomTarget?.username}</DialogTitle>
-            <DialogDescription>{"若最小与最大设为相同值，买家实付金额将固定为该值（如都填 5 则固定 5 元）"}</DialogDescription>
+            <DialogDescription>{"在区间内随机生成买家实付金额；关闭「整数」时支持两位小数"}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -839,13 +887,31 @@ export function MerchantsPage() {
               />
               <Label htmlFor="random-enable" className="cursor-pointer">{"随机金额"}</Label>
             </div>
-            {randomEnable === "1" && (
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                <Input type="number" min={1} step={1} value={randomMin} onChange={(e) => setRandomMin(e.target.value)} placeholder={"最小金额（整数）"} />
-                <span>~</span>
-                <Input type="number" min={1} step={1} value={randomMax} onChange={(e) => setRandomMax(e.target.value)} placeholder={"最大金额（整数）"} />
+            <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+              <Input
+                type="number" min={randomInteger ? 1 : 0.01} step={randomInteger ? 1 : 0.01}
+                value={randomMin} onChange={(e) => setRandomMin(e.target.value)}
+                placeholder={"最小金额"}
+                disabled={randomEnable !== "1"}
+              />
+              <span>~</span>
+              <Input
+                type="number" min={randomInteger ? 1 : 0.01} step={randomInteger ? 1 : 0.01}
+                value={randomMax} onChange={(e) => setRandomMax(e.target.value)}
+                placeholder={"最大金额"}
+                disabled={randomEnable !== "1"}
+              />
+              <div className="flex items-center gap-1.5">
+                <Switch
+                  id="random-integer" size="sm"
+                  checked={randomInteger}
+                  disabled={randomEnable !== "1"}
+                  onCheckedChange={setRandomInteger}
+                />
+                <Label htmlFor="random-integer" className="cursor-pointer">{"整数"}</Label>
               </div>
-            )}
+            </div>
+            <p className="text-xs text-muted-foreground">{"最小与最大金额一致时为固定金额（如都填 5 则固定 5 元）"}</p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRandomTarget(null)}>{"取消"}</Button>
@@ -939,7 +1005,7 @@ export function MerchantsPage() {
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"批量随机金额"}</DialogTitle>
-            <DialogDescription>{"若最小与最大设为相同值，买家实付金额将固定为该值（如都填 5 则固定 5 元）"}</DialogDescription>
+            <DialogDescription>{"在区间内随机生成付款金额；开启「整数」时为整数"}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -950,14 +1016,36 @@ export function MerchantsPage() {
               />
               <Label htmlFor="batch-random-enable" className="cursor-pointer">{"随机金额"}</Label>
             </div>
-            {batchRandomEnable === "1" && (
-              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                <Input type="number" min={1} step={1} value={batchRandomMin} onChange={(e) => setBatchRandomMin(e.target.value)} placeholder={"最小金额（整数）"} />
-                <span>~</span>
-                <Input type="number" min={1} step={1} value={batchRandomMax} onChange={(e) => setBatchRandomMax(e.target.value)} placeholder={"最大金额（整数）"} />
+            <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
+              <Input
+                type="number" min={batchRandomInteger ? 1 : 0.01} step={batchRandomInteger ? 1 : 0.01}
+                value={batchRandomMin} onChange={(e) => setBatchRandomMin(e.target.value)}
+                placeholder={"最小金额"}
+                disabled={batchRandomEnable !== "1"}
+              />
+              <span>~</span>
+              <Input
+                type="number" min={batchRandomInteger ? 1 : 0.01} step={batchRandomInteger ? 1 : 0.01}
+                value={batchRandomMax} onChange={(e) => setBatchRandomMax(e.target.value)}
+                placeholder={"最大金额"}
+                disabled={batchRandomEnable !== "1"}
+              />
+              <div className="flex items-center gap-1.5">
+                <Switch
+                  id="batch-random-integer" size="sm"
+                  checked={batchRandomInteger}
+                  disabled={batchRandomEnable !== "1"}
+                  onCheckedChange={setBatchRandomInteger}
+                />
+                <Label htmlFor="batch-random-integer" className="cursor-pointer">{"整数"}</Label>
               </div>
-            )}
-            <p className="text-xs text-amber-600">{"此操作将应用于所有未固定的商户，确定继续？"}</p>
+            </div>
+            <p className="text-xs text-muted-foreground">{"最小与最大金额一致时为固定金额（如都填 5 则固定 5 元）"}</p>
+            <Alert variant="warning" className="px-3 py-2.5">
+              <AlertDescription className="mt-0 text-xs">
+                {"此操作将应用于所有未锁定的商户，锁定的商户不受影响"}
+              </AlertDescription>
+            </Alert>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBatchRandomOpen(false)}>{"取消"}</Button>

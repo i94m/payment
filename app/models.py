@@ -217,6 +217,8 @@ class Merchant(SQLModel, table=True):
     random_enable: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     random_min: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
     random_max: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
+    # 仅整数金额：关闭时随机金额支持两位小数
+    random_integer: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     random_ratelimit: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))  # 同IP每分钟建单上限 0=不限
     # 固定保护：不受批量随机金额影响
     fixed: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))

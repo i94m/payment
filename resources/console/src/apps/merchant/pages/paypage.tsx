@@ -17,16 +17,25 @@ import { PanelError } from "@/components/data-list"
 import { getErrorMessage } from "@/lib/error"
 import { toast } from "sonner"
 
-// 收款页设置：随机金额开启时最小/最大金额必填且仅支持整数；建单限流为非负整数（0=不限）
+// 收款页设置：随机金额开启时最小/最大金额必填（未开启「整数」时支持两位小数）；
+// 建单限流为非负整数（0=不限）
 const paypageSchema = z.object({
   randomEnable: z.boolean(),
-  randomMin: numStr("最小金额", { min: 0.01, integer: true, optional: true }),
-  randomMax: numStr("最大金额", { min: 0.01, integer: true, optional: true }),
+  randomInteger: z.boolean(),
+  randomMin: numStr("最小金额", { min: 0.01, optional: true }),
+  randomMax: numStr("最大金额", { min: 0.01, optional: true }),
   ratelimit: z.number().int("建单限流需为整数").min(0, "建单限流不能小于 0"),
 }).superRefine((v, ctx) => {
   if (!v.randomEnable) return
   if (!v.randomMin.trim()) ctx.addIssue({ code: "custom", path: ["randomMin"], message: "最小金额不能为空" })
   if (!v.randomMax.trim()) ctx.addIssue({ code: "custom", path: ["randomMax"], message: "最大金额不能为空" })
+  if (!v.randomInteger) return
+  for (const key of ["randomMin", "randomMax"] as const) {
+    const s = v[key].trim()
+    if (s && !Number.isInteger(Number(s))) {
+      ctx.addIssue({ code: "custom", path: [key], message: "已开启「整数」，需为整数" })
+    }
+  }
 })
 
 export function PaypageMchPage() {
@@ -38,10 +47,11 @@ export function PaypageMchPage() {
 
   const form = useForm<z.infer<typeof paypageSchema>>({
     resolver: zodResolver(paypageSchema),
-    defaultValues: { randomEnable: false, randomMin: "0", randomMax: "0", ratelimit: 0 },
+    defaultValues: { randomEnable: false, randomInteger: false, randomMin: "0", randomMax: "0", ratelimit: 0 },
   })
   // 随机金额开关：控制金额输入禁用态与必填标记（watch 订阅以驱动条件渲染）
   const randomEnable = form.watch("randomEnable")
+  const randomInteger = form.watch("randomInteger")
 
   React.useEffect(() => {
     setSettingsLoading(true)
@@ -50,6 +60,7 @@ export function PaypageMchPage() {
       setSettings(res)
       form.reset({
         randomEnable: res.random_enable,
+        randomInteger: !!res.random_integer,
         // 数据库存 Numeric(12,2)，回显去掉 .00 尾零（5.00 → 5）
         randomMin: String(Number(res.random_min)),
         randomMax: String(Number(res.random_max)),
@@ -71,7 +82,8 @@ export function PaypageMchPage() {
     try {
       await paypageApi.update({
         random_enable: values.randomEnable, random_min: values.randomMin,
-        random_max: values.randomMax, random_ratelimit: Number(values.ratelimit) || 0,
+        random_max: values.randomMax, random_integer: values.randomInteger,
+        random_ratelimit: Number(values.ratelimit) || 0,
       })
       toast.success("保存成功")
     } catch (err) {
@@ -129,14 +141,15 @@ export function PaypageMchPage() {
                     </Field>
                   )}
                 />
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_1fr_auto]">
                   <Controller
                     name="randomMin"
                     control={form.control}
                     render={({ field, fieldState }) => (
                       <Field data-invalid={fieldState.invalid}>
                         <FieldLabel htmlFor={field.name}>{"最小金额"}{randomEnable && <RequiredMark />}</FieldLabel>
-                        <Input id={field.name} inputMode="numeric" value={field.value ?? ""} placeholder={"如 1"}
+                        <Input id={field.name} inputMode="decimal" value={field.value ?? ""}
+                          placeholder={randomInteger ? "如 1" : "如 1.50"}
                           onChange={(e) => field.onChange(e.target.value)} disabled={!randomEnable || formDisabled}
                           aria-invalid={fieldState.invalid || undefined} />
                         {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
@@ -149,13 +162,30 @@ export function PaypageMchPage() {
                     render={({ field, fieldState }) => (
                       <Field data-invalid={fieldState.invalid}>
                         <FieldLabel htmlFor={field.name}>{"最大金额"}{randomEnable && <RequiredMark />}</FieldLabel>
-                        <Input id={field.name} inputMode="numeric" value={field.value ?? ""} placeholder={"如 100"}
+                        <Input id={field.name} inputMode="decimal" value={field.value ?? ""}
+                          placeholder={randomInteger ? "如 100" : "如 9.90"}
                           onChange={(e) => field.onChange(e.target.value)} disabled={!randomEnable || formDisabled}
                           aria-invalid={fieldState.invalid || undefined} />
                         {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
                       </Field>
                     )}
                   />
+                  <Controller
+                    name="randomInteger"
+                    control={form.control}
+                    render={({ field }) => (
+                      <Field orientation="horizontal" className="pb-2.5">
+                        <input id={field.name} type="checkbox" checked={!!field.value}
+                          disabled={!randomEnable || formDisabled}
+                          onChange={(e) => field.onChange(e.target.checked)} />
+                        <FieldLabel htmlFor={field.name} className="font-normal">
+                          {"整数"}
+                        </FieldLabel>
+                      </Field>
+                    )}
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <Controller
                     name="ratelimit"
                     control={form.control}

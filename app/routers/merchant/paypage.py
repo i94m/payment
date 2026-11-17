@@ -3,6 +3,9 @@
 收款页本体（公开）见 routers/paypage.py；random_ratelimit 为同一付款 IP
 每分钟对该商户的建单上限（0=不限），即限制拉单口径。
 """
+from decimal import Decimal
+from typing import Optional
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -26,6 +29,7 @@ async def paypage_settings(session: SessionDep, auth: MerchantUser):
         "random_enable": bool(m.random_enable),
         "random_min": str(m.random_min),
         "random_max": str(m.random_max),
+        "random_integer": bool(m.random_integer),
         "random_ratelimit": m.random_ratelimit,
         # 短码链接（/p/{code}）：不暴露 pid，按需惰性生成终身复用
         "link": paypage_url(await paytoken.get_or_create(session, m.id)),
@@ -36,6 +40,8 @@ class PaypageSettingsRequest(BaseModel):
     random_enable: bool
     random_min: str = "0"
     random_max: str = "0"
+    # 仅整数金额：开关由平台侧控制，商户端未提交时保持原值
+    random_integer: Optional[bool] = None
     random_ratelimit: int = 0
 
 
@@ -44,6 +50,7 @@ async def update_paypage_settings(body: PaypageSettingsRequest, session: Session
                                   auth: MerchantUser):
     """商户自助调整随机金额与建单限流（平台全局开关只读）。"""
     m = auth.user
+    integer = m.random_integer if body.random_integer is None else body.random_integer
     try:
         rmin = dmoney(body.random_min) if body.random_min else dmoney(0)
         rmax = dmoney(body.random_max) if body.random_max else dmoney(0)
@@ -52,13 +59,17 @@ async def update_paypage_settings(body: PaypageSettingsRequest, session: Session
     if body.random_enable:
         if rmin <= 0 or rmax <= 0:
             return err(-1, "请填写最小和最大金额")
-        if rmin != rmin.to_integral_value() or rmax != rmax.to_integral_value():
-            return err(-1, "随机金额仅支持整数")
+        if integer:
+            if rmin != rmin.to_integral_value() or rmax != rmax.to_integral_value():
+                return err(-1, "已开启「整数」，请填写整数")
+        elif rmin != rmin.quantize(Decimal("0.01")) or rmax != rmax.quantize(Decimal("0.01")):
+            return err(-1, "随机金额最多两位小数")
         if rmin > rmax:
             rmin, rmax = rmax, rmin
     m.random_enable = body.random_enable
     m.random_min = rmin
     m.random_max = rmax
+    m.random_integer = integer
     m.random_ratelimit = max(int(body.random_ratelimit or 0), 0)
     session.add(m)
     await session.commit()

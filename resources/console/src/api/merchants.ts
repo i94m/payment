@@ -22,6 +22,7 @@ export interface MerchantData {
   random_enable: boolean
   random_min: string
   random_max: string
+  random_integer: boolean     // 仅整数金额（关闭时支持两位小数）
   random_ratelimit: number
   fixed: boolean
   settle_type: number           // 1=支付宝 2=微信 3=QQ 4=银行卡
@@ -112,12 +113,12 @@ export const merchantsApi = {
   setStatus: (id: number, type: "user" | "pay" | "settle" | "fixed", status: number) =>
     apiClient.post(`/merchant/${id}/status`, { type, status }) as Promise<null>,
 
-  /** 随机金额（min==max 固定金额） */
-  setRandom: (id: number, data: { random_enable: boolean; random_min?: string; random_max?: string }) =>
+  /** 随机金额（min==max 固定金额；random_integer=仅整数金额） */
+  setRandom: (id: number, data: { random_enable: boolean; random_min?: string; random_max?: string; random_integer?: boolean }) =>
     apiClient.post(`/merchant/${id}/random`, data) as Promise<null>,
 
-  /** 批量随机金额（跳过 fixed 商户） */
-  setAllRandom: (data: { random_enable: boolean; random_min?: string; random_max?: string }) =>
+  /** 批量随机金额（跳过 配置锁定 商户） */
+  setAllRandom: (data: { random_enable: boolean; random_min?: string; random_max?: string; random_integer?: boolean }) =>
     apiClient.post("/merchant/random/set-all", data) as Promise<string>,
 
   /** 限制拉单：同一付款人 IP 每分钟建单上限，0=不限 */
@@ -134,8 +135,9 @@ export const merchantsApi = {
 
 // 重置登录密码（生成随机密码返回一次）
 export const merchantSecurityApi = {
-  resetPassword: (id: number) =>
-    apiClient.post(`/merchant/${id}/resetpwd`) as Promise<{ password: string }>,
+  /** 重置登录密码：不传密码时后端生成随机密码并返回一次 */
+  resetPassword: (id: number, password = "") =>
+    apiClient.post(`/merchant/${id}/resetpwd`, { password }) as Promise<{ password: string }>,
 }
 
 // 资金明细（全商户流水，商户列表「资金明细」快捷跳转的落地页）

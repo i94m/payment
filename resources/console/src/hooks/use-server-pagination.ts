@@ -32,7 +32,7 @@ export function useServerPagination<T>({
   const appliedKeywordRef = React.useRef("")
   const [keyword, setKeywordState] = React.useState("")
   const [appliedKeyword, setAppliedKeyword] = React.useState("")
-  const [sorting, setSorting] = React.useState<SortingState>([])
+  const [sorting, setSortingState] = React.useState<SortingState>([])
   const [loading, setLoading] = React.useState(true)
   const [statistics, setStatistics] = React.useState<StatisticItem[] | undefined>(undefined)
   const [summary, setSummary] = React.useState<Record<string, unknown> | undefined>(undefined)
@@ -100,6 +100,13 @@ export function useServerPagination<T>({
   const setPage = (page: number) => {
     setCurrentPage(page)
   }
+
+  // 排序变化回到第一页：否则停留在旧页码上，看到的是新排序的第 N 页
+  // （React 事件内两次 setState 会被合并，只触发一次请求）
+  const setSorting = React.useCallback((updater: Updater<SortingState>) => {
+    setSortingState(updater)
+    setCurrentPage(1)
+  }, [])
 
   const pagination = React.useMemo(
     () => ({ pageIndex: currentPage - 1, pageSize }),

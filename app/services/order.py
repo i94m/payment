@@ -22,6 +22,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.cache import CacheClient, try_lock, release_lock
 from app.models import Counter, Merchant, Order, PaymentType
 from app.services.balance import change_merchant_balance, dmoney, lock_merchant
+from app.services.merchant import random_money
 from app.services.pay_debug import write_pay_debug
 from app.services.channel import ResolvedChannel, choose_channel
 from app.services.plugin import PluginRegistry, maybe_await
@@ -441,13 +442,7 @@ async def process_payment(
         if order.realmoney is not None and order.realmoney > 0:
             realmoney = _quant(order.realmoney)
         else:
-            rmin, rmax = merchant.random_min, merchant.random_max
-            if rmin > rmax:
-                rmin, rmax = rmax, rmin
-            if rmin == rmax:
-                realmoney = Decimal(int(rmin)).quantize(CENT)
-            else:
-                realmoney = Decimal(random.randint(int(rmin), int(rmax))).quantize(CENT)
+            realmoney = _quant(random_money(merchant))
     merchant_income, channel_cost, profit = compute_amounts(
         realmoney, resolved.merchant_rate, resolved.cost_rate
     )

@@ -2,8 +2,8 @@
 
 - CRUD / 启停 / 删除 / 重置密钥 / 余额调整（必写流水）/ 流水查询
 - 支付/结算独立开关（pay: 0=关 1=开 2=待审核；settle: 0/1）
-- 随机金额（单个/批量，min==max 固定金额）与限制拉单（同 IP 每分钟建单上限）
-- 固定保护（fixed）：免受批量随机金额影响
+- 随机金额（单个/批量，min==max 固定金额；可开启「仅整数金额」）与限制拉单（同 IP 每分钟建单上限）
+- 配置锁定（fixed）：免受批量随机金额影响
 - 精细搜索（按字段）+ 状态筛选 + 排序 + 高级搜索（N 天无订单）+ Excel 导出
 - SSO 一键登录商户后台（一次性 token，60 秒有效）
 """
@@ -55,6 +55,19 @@ _SORTS = {
     "lasttime_asc": col(Merchant.last_login_at).asc(),
 }
 
+# 列头排序（order_by 参数，前端 DataTable 传 `key` / `-key`）
+_ORDER_BY_FIELDS = {
+    "username": col(Merchant.username),
+    "pid": col(Merchant.pid),
+    "balance": col(Merchant.balance),
+    "status": col(Merchant.status),
+    "pay_status": col(Merchant.pay_status),
+    "settle_status": col(Merchant.settle_status),
+    "fixed": col(Merchant.fixed),
+    "last_login_at": col(Merchant.last_login_at),
+    "created_at": col(Merchant.created_at),
+}
+
 
 def _dump_merchant(m: Merchant) -> dict:
     return {
@@ -78,6 +91,7 @@ def _dump_merchant(m: Merchant) -> dict:
         "random_enable": bool(m.random_enable),
         "random_min": str(m.random_min),
         "random_max": str(m.random_max),
+        "random_integer": bool(m.random_integer),
         "random_ratelimit": m.random_ratelimit,
         "fixed": bool(m.fixed),
         "settle_type": m.settle_type,     # 1支付宝 2微信 3QQ 4银行卡
@@ -128,9 +142,16 @@ def _build_query(body: dict):
             col(Order.created_at) >= cutoff,
         ).exists()
         query = query.where(~recent_order)
-    # 排序
-    order = str(body.get("order", "") or "")
-    query = query.order_by(_SORTS.get(order, _SORTS[""]))
+    # 排序：列头排序（order_by）优先，其余沿用 order 兼容参数
+    order_by = str(body.get("order_by", "") or "").strip()
+    sort_col = _ORDER_BY_FIELDS.get(order_by.lstrip("-")) if order_by else None
+    if sort_col is not None:
+        primary = sort_col.desc() if order_by.startswith("-") else sort_col.asc()
+        # 追加主键倒序，保证翻页时同值行顺序稳定
+        query = query.order_by(primary, col(Merchant.id).desc())
+    else:
+        order = str(body.get("order", "") or "")
+        query = query.order_by(_SORTS.get(order, _SORTS[""]))
     return query
 
 
@@ -457,18 +478,31 @@ async def generate_rsa_key(merchant_id: int, session: SessionDep):
     return suc({"public_key": public_flat, "private_key": pem_to_flat(private_pem)})
 
 
+class ResetPasswordRequest(BaseModel):
+    """新密码（明文由管理员指定）。为空时退回随机生成（兼容旧调用）。"""
+    password: str = ""
+
+
 @router.post("/{merchant_id}/resetpwd", dependencies=[Depends(PermissionChecker("merchant.update"))])
 async def reset_password(merchant_id: int, session: SessionDep, cache: CacheDep,
-                         request: Request, auth: AdminUser):
-    """重置登录密码：生成 10 位随机密码返回一次（商户找回密码的管理侧兜底）。
+                         request: Request, auth: AdminUser,
+                         body: ResetPasswordRequest | None = None):
+    """重置登录密码：管理员直接指定新密码；未指定时生成 10 位随机密码返回。
 
     重置即吊销该商户全部登录令牌（P1-10）。
     """
     m = await _get_merchant_or_404(session, merchant_id)
     if not m:
         return err(404, "商户不存在")
-    alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-    new_password = "".join(secrets.choice(alphabet) for _ in range(10))
+    new_password = (body.password if body else "").strip()
+    if new_password:
+        if len(new_password) < 6:
+            return err(-1, "密码至少 6 位")
+        if len(new_password) > 64:
+            return err(-1, "密码最多 64 位")
+    else:
+        alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        new_password = "".join(secrets.choice(alphabet) for _ in range(10))
     m.password = hash_password(new_password)
     session.add(m)
     await revoke_all_tokens("merchant", m.id, session, cache=cache)
@@ -536,6 +570,8 @@ class SetRandomRequest(BaseModel):
     random_enable: bool
     random_min: str = "0"
     random_max: str = "0"
+    # 仅整数金额：关闭时支持两位小数
+    random_integer: bool = False
 
 
 def _apply_random(merchant: Merchant, body: SetRandomRequest) -> str | None:
@@ -547,13 +583,17 @@ def _apply_random(merchant: Merchant, body: SetRandomRequest) -> str | None:
     if body.random_enable:
         if rmin <= 0 or rmax <= 0:
             return "请填写最小和最大金额"
-        if rmin != rmin.to_integral_value() or rmax != rmax.to_integral_value():
-            return "随机金额仅支持整数"
+        if body.random_integer:
+            if rmin != rmin.to_integral_value() or rmax != rmax.to_integral_value():
+                return "已开启「整数」，请填写整数"
+        elif rmin != rmin.quantize(Decimal("0.01")) or rmax != rmax.quantize(Decimal("0.01")):
+            return "随机金额最多两位小数"
         if rmin > rmax:
             rmin, rmax = rmax, rmin
     merchant.random_enable = body.random_enable
     merchant.random_min = rmin
     merchant.random_max = rmax
+    merchant.random_integer = body.random_integer
     return None
 
 
@@ -584,6 +624,7 @@ async def set_all_merchant_random(body: SetRandomRequest, session: SessionDep):
         m.random_enable = body.random_enable
         m.random_min = probe.random_min
         m.random_max = probe.random_max
+        m.random_integer = probe.random_integer
         session.add(m)
     await session.commit()
     return suc(f"已应用到 {len(merchants)} 个商户")

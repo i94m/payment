@@ -20,6 +20,7 @@ from app.core.limiter import rate_limit
 from app.models import Agent, Merchant, PaymentType
 from app.responses import err, suc_data
 from app.services.balance import dmoney
+from app.services.merchant import random_money
 from app.services.order import create_order, process_payment
 from app.lib.linktoken import cashier_url as build_cashier_url
 from app.services import paytoken
@@ -142,10 +143,7 @@ async def create_paypage_order_core(body: PaypageOrderRequest, request: Request,
 
     # 金额：随机模式服务端生成；普通模式取用户输入
     if _random_ready(m):
-        rmin, rmax = int(m.random_min), int(m.random_max)
-        if rmin > rmax:
-            rmin, rmax = rmax, rmin
-        money = dmoney(Decimal(random.randint(rmin, rmax) if rmin != rmax else rmin))
+        money = dmoney(random_money(m))
     else:
         if not body.money:
             return -1, "请输入付款金额", None

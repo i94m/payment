@@ -8,6 +8,7 @@
    批量随机金额（跳过 fixed）、商户状态开关切换
 """
 import pytest
+from decimal import Decimal
 from sqlmodel import col, select
 
 from app.models import Merchant, MerchantRecord, SystemAdmin
@@ -215,3 +216,106 @@ async def test_admin_set_status_and_ratelimit(client, seeded, session):
     assert resp.json()["code"] == 0
     await session.refresh(m)
     assert m.random_ratelimit == 5
+
+
+# ---- 仅整数金额开关（random_integer） ----
+
+@pytest.mark.asyncio
+async def test_random_money_integer_flag(seeded, session):
+    """random_integer 开启只随机整数；关闭时按分随机（支持两位小数）。"""
+    from app.services.merchant import random_money
+
+    m = await _get_merchant(session)
+    m.random_enable = True
+    m.random_min = dmoney("2")
+    m.random_max = dmoney("2.50")
+    m.random_integer = False
+    seen = {random_money(m) for _ in range(200)}
+    assert all(dmoney("2") <= v <= dmoney("2.50") for v in seen)
+    assert all(v == v.quantize(Decimal("0.01")) for v in seen)
+    assert any(v != v.to_integral_value() for v in seen)  # 关闭时能出现两位小数
+
+    m.random_integer = True
+    m.random_min = dmoney("2")
+    m.random_max = dmoney("5")
+    values = {random_money(m) for _ in range(200)}
+    assert values <= {dmoney(n) for n in range(2, 6)}
+    assert len(values) > 1  # 区间内应随机到多个整数
+
+
+@pytest.mark.asyncio
+async def test_admin_random_integer_validation(client, seeded, session):
+    headers = await _admin_headers(session)
+    m = await _get_merchant(session)
+
+    # 开启仅整数金额后，小数区间被拒绝
+    resp = await client.post(
+        f"/admin-api/merchant/{m.id}/random",
+        json={"random_enable": True, "random_min": "1.5", "random_max": "8",
+              "random_integer": True}, headers=headers)
+    assert resp.json()["code"] == -1
+    assert "整数" in resp.json()["message"]
+
+    # 整数区间 + 开关落库
+    resp = await client.post(
+        f"/admin-api/merchant/{m.id}/random",
+        json={"random_enable": True, "random_min": "2", "random_max": "8",
+              "random_integer": True}, headers=headers)
+    assert resp.json()["code"] == 0
+    await session.refresh(m)
+    assert m.random_integer is True
+    assert m.random_min == dmoney("2")
+
+    # 关闭开关后允许两位小数
+    resp = await client.post(
+        f"/admin-api/merchant/{m.id}/random",
+        json={"random_enable": True, "random_min": "1.55", "random_max": "8.20",
+              "random_integer": False}, headers=headers)
+    assert resp.json()["code"] == 0
+    await session.refresh(m)
+    assert m.random_integer is False
+    assert m.random_min == dmoney("1.55")
+
+
+@pytest.mark.asyncio
+async def test_order_realmoney_integer_only(client, seeded, session):
+    m = await _get_merchant(session)
+    m.random_enable = True
+    m.random_min = dmoney("2")
+    m.random_max = dmoney("6")
+    m.random_integer = True
+    session.add(m)
+    await session.commit()
+
+    data, order = await _create_order(client, out_trade_no="RANDINT", money="100.00")
+    assert data["code"] == 0
+    assert dmoney("2") <= order.realmoney <= dmoney("6")
+    assert order.realmoney == order.realmoney.to_integral_value()
+
+
+@pytest.mark.asyncio
+async def test_admin_reset_password_with_plain_input(client, seeded, session):
+    """重置密码：管理员直接输入新密码（不再只能生成随机密码）。"""
+    from app.core.security import verify_password
+
+    headers = await _admin_headers(session)
+    m = await _get_merchant(session)
+
+    # 过短拒绝
+    resp = await client.post(
+        f"/admin-api/merchant/{m.id}/resetpwd", json={"password": "123"},
+        headers=headers)
+    assert resp.json()["code"] == -1
+
+    resp = await client.post(
+        f"/admin-api/merchant/{m.id}/resetpwd", json={"password": "newpass123"},
+        headers=headers)
+    assert resp.json()["code"] == 0
+    await session.refresh(m)
+    assert verify_password("newpass123", m.password)
+
+    # 不传密码仍兼容：生成随机密码
+    resp = await client.post(
+        f"/admin-api/merchant/{m.id}/resetpwd", json={}, headers=headers)
+    assert resp.json()["code"] == 0
+    assert len(resp.json()["data"]["password"]) == 10
