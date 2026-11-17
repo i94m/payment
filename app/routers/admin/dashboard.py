@@ -35,6 +35,7 @@ from app.services.home_config import (
     get_ratelimit_map,
     replace_ratelimit_map,
     set_payroute_item,
+    set_payroute_items,
     set_ratelimit_last,
     set_ratelimit_one,
 )
@@ -145,9 +146,12 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
     )).one()
 
     # ---- 支付方式 / 通道名称映射（仅启用）----
-    paytype = {str(t.id): t.name for t in (await session.exec(
+    enabled_types = (await session.exec(
         select(PaymentType).where(col(PaymentType.status) == 1).order_by(PaymentType.sort, PaymentType.id)
-    )).all()}
+    )).all()
+    paytype = {str(t.id): t.name for t in enabled_types}
+    # 今日统计表头图标：id → 图标（与名称映射同口径）
+    paytype_icon = {str(t.id): (t.icon or "") for t in enabled_types}
     channel = {str(c.id): c.name for c in (await session.exec(
         select(Channel).where(col(Channel.status) == 1).order_by(Channel.sort, Channel.id)
     )).all()}
@@ -236,6 +240,7 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
         "sucnum_10m": suc10,
         "sucnum_1m": suc1m,
         "paytype": paytype,
+        "paytype_icon": paytype_icon,
         "channel": channel,
         "order_today": order_today,
         "server_time": now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -254,7 +259,8 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
 @router.get("/config", dependencies=[Depends(PermissionChecker("dashboard.view"))])
 async def home_config(session: SessionDep):
     """首页右侧快捷面板数据：支付方式、通道、金额路由与限速当前配置。"""
-    pay_types = [{"id": t.id, "code": t.code, "name": t.name} for t in (await session.exec(
+    pay_types = [{"id": t.id, "code": t.code, "name": t.name, "icon": t.icon or ""}
+                 for t in (await session.exec(
         select(PaymentType).where(col(PaymentType.status) == 1).order_by(PaymentType.sort, PaymentType.id)
     )).all()]
     channels = [{"id": c.id, "name": c.name, "payment_type_id": c.payment_type_id}
@@ -272,7 +278,7 @@ async def home_config(session: SessionDep):
     })
 
 
-class PayrouteRequest(BaseModel):
+class PayrouteItem(BaseModel):
     type_id: int
     enable: bool = False
     min: str = "0.00"
@@ -280,22 +286,33 @@ class PayrouteRequest(BaseModel):
     channel: int = 0
 
 
-@router.post("/payroute", dependencies=[Depends(PermissionChecker("channel.update"))])
-async def save_payroute(body: PayrouteRequest, session: SessionDep):
-    """保存单个支付方式的金额路由配置（首页「金额路由」面板）。"""
+class PayrouteRequest(PayrouteItem):
+    pass
+
+
+class PayrouteBatchRequest(BaseModel):
+    items: list[PayrouteItem] = []
+
+
+async def _check_route_item(session: AsyncSession, body: PayrouteItem) -> str | None:
+    """校验单个金额路由配置，返回错误文案（None 表示通过）。
+
+    固定通道必须属于该支付方式；金额区间两端都须大于 0 且 min <= max ——
+    money_ok() 对任一 <=0 的区间直接判不生效，这里提前拦截，避免存下不会生效的配置。
+    """
     pay_type = (await session.exec(
         select(PaymentType).where(col(PaymentType.id) == body.type_id)
     )).first()
     if not pay_type:
-        return err(-1, "支付方式不存在")
+        return "支付方式不存在"
 
     try:
         minv = Decimal(str(body.min or 0).strip() or 0)
         maxv = Decimal(str(body.max or 0).strip() or 0)
     except InvalidOperation:
-        return err(-1, "金额格式错误")
+        return "金额格式错误"
     if minv < 0 or maxv < 0:
-        return err(-1, "金额不能为负数")
+        return "金额不能为负数"
 
     channel_id = int(body.channel or 0)
     if channel_id > 0:
@@ -303,12 +320,43 @@ async def save_payroute(body: PayrouteRequest, session: SessionDep):
             select(Channel).where(col(Channel.id) == channel_id)
         )).first()
         if not ch or ch.payment_type_id != body.type_id:
-            return err(-1, "固定支付通道与支付方式不匹配")
+            return "固定支付通道与支付方式不匹配"
+        if minv <= 0 or maxv <= 0:
+            return "启用金额路由时，最小/最大金额都须大于 0"
+        if maxv < minv:
+            return "最大金额不能小于最小金额"
+    return None
 
-    await set_payroute_item(session, body.type_id, {
+
+def _route_payload(body: PayrouteItem) -> dict:
+    return {
         "enable": 1 if body.enable else 0,
-        "min": minv, "max": maxv, "channel": channel_id,
-    })
+        "min": body.min, "max": body.max, "channel": int(body.channel or 0),
+    }
+
+
+@router.post("/payroute", dependencies=[Depends(PermissionChecker("channel.update"))])
+async def save_payroute(body: PayrouteRequest, session: SessionDep):
+    """保存单个支付方式的金额路由配置（首页「金额路由」面板）。"""
+    msg = await _check_route_item(session, body)
+    if msg:
+        return err(-1, msg)
+    await set_payroute_item(session, body.type_id, _route_payload(body))
+    return suc("保存成功")
+
+
+@router.post("/payroute/batch", dependencies=[Depends(PermissionChecker("channel.update"))])
+async def save_payroute_batch(body: PayrouteBatchRequest, session: SessionDep):
+    """批量保存金额路由（首页「金额路由」面板一次提交所有支付方式）。"""
+    if not body.items:
+        return err(-1, "没有需要保存的配置")
+    if len({item.type_id for item in body.items}) != len(body.items):
+        return err(-1, "支付方式重复")
+    for item in body.items:
+        msg = await _check_route_item(session, item)
+        if msg:
+            return err(-1, msg)
+    await set_payroute_items(session, {item.type_id: _route_payload(item) for item in body.items})
     return suc("保存成功")
 
 

@@ -45,23 +45,36 @@ async def test_admin_pay_type_crud(session, client):
                              json={"code": "alipay", "name": "支付宝2", "device": 0})
     assert resp.json()["message"] == "同一个调用值+支持设备不能重复"
 
-    # 新增成功：新调用值，默认开启
+    # 新增成功：新调用值，默认开启，图标可为内置图标库路径
     resp = await client.post("/admin-api/pay/types", headers=headers,
-                             json={"code": "newpay", "name": "新支付", "device": 2})
+                             json={"code": "newpay", "name": "新支付", "device": 2,
+                                   "icon": "/icons/pay/paypal.svg"})
     assert resp.status_code == 200, resp.json()
     new_id = resp.json()["data"]["id"]
 
     resp = await client.get("/admin-api/pay/types", headers=headers)
     item = next(x for x in resp.json()["data"] if x["id"] == new_id)
     assert item["device"] == 2 and item["status"] == 1
+    assert item["icon"] == "/icons/pay/paypal.svg"
 
-    # 编辑：改名 + 改设备；状态保持不变
+    # 编辑：改名 + 改设备 + 换图标；状态保持不变
     resp = await client.put(f"/admin-api/pay/types/{new_id}", headers=headers,
-                            json={"code": "newpay", "name": "新支付改名", "device": 1})
+                            json={"code": "newpay", "name": "新支付改名", "device": 1,
+                                  "icon": "https://cdn.example.com/pay.svg"})
     assert resp.status_code == 200
     resp = await client.get("/admin-api/pay/types", headers=headers)
     item = next(x for x in resp.json()["data"] if x["id"] == new_id)
     assert item["name"] == "新支付改名" and item["device"] == 1 and item["status"] == 1
+    assert item["icon"] == "https://cdn.example.com/pay.svg"
+
+    # 非法协议（javascript: 等）不会入库，按未配置处理
+    resp = await client.put(f"/admin-api/pay/types/{new_id}", headers=headers,
+                            json={"code": "newpay", "name": "新支付改名", "device": 1,
+                                  "icon": "javascript:alert(1)"})
+    assert resp.status_code == 200
+    resp = await client.get("/admin-api/pay/types", headers=headers)
+    item = next(x for x in resp.json()["data"] if x["id"] == new_id)
+    assert item["icon"] == ""
 
     # 状态开关：列表开关直接切换状态
     resp = await client.put(f"/admin-api/pay/types/{new_id}/status", headers=headers,

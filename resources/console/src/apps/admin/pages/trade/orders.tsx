@@ -17,6 +17,7 @@ import { Separator } from "@/components/ui/separator"
 import { ConfirmDialog } from "@/components/data-list/confirm-dialog"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
+import { PayIcon } from "@/components/pay-icon"
 import {
   useDataList,
   ListError,
@@ -163,8 +164,13 @@ export function OrdersPage() {
         accessorKey: "type",
         enableSorting: false,
         header: () => "支付方式",
-        // 后端同时返回 type_name（支付方式的显示名称），缺失时退回调用值
-        cell: ({ row }) => <span className="text-sm">{row.original.type_name || row.original.type}</span>,
+        // 后端同时返回 type_name/type_icon（支付方式显示名与图标），缺失时退回调用值 + 内置图标
+        cell: ({ row }) => (
+          <span className="flex items-center gap-1.5 text-sm">
+            <PayIcon code={row.original.type} icon={row.original.type_icon} />
+            {row.original.type_name || row.original.type}
+          </span>
+        ),
         meta: { headClassName: "w-[80px]" },
       },
       {
@@ -389,7 +395,8 @@ export function OrdersPage() {
               <DetailRow label={"实付金额"} value={detailOrder.realmoney ? `¥${detailOrder.realmoney}` : "—"} />
               <DetailRow label={"商户到账"} value={detailOrder.merchant_income ? `¥${detailOrder.merchant_income}` : "—"} />
               <DetailRow label={"平台利润"} value={detailOrder.profit ? `¥${detailOrder.profit}` : "—"} />
-              <DetailRow label={"支付方式"} value={detailOrder.type_name || detailOrder.type} />
+              <DetailRow label={"支付方式"} value={detailOrder.type_name || detailOrder.type}
+                         icon={<PayIcon code={detailOrder.type} icon={detailOrder.type_icon} />} />
               <DetailRow label={"通道插件"} value={detailOrder.plugin_name} />
               <DetailRow label={"上游订单号"} value={detailOrder.api_trade_no} mono />
               <DetailRow label={"商户订单号"} value={detailOrder.out_trade_no} mono />
@@ -422,12 +429,14 @@ export function OrdersPage() {
   )
 }
 
-function DetailRow({ label, value, mono, wrap }: { label: string; value?: string | null; mono?: boolean; wrap?: boolean }) {
+function DetailRow({ label, value, icon, mono, wrap }: {
+  label: string; value?: string | null; icon?: React.ReactNode; mono?: boolean; wrap?: boolean
+}) {
   return (
     <div className="flex items-start justify-between gap-4 py-1.5">
       <span className="text-muted-foreground shrink-0">{label}</span>
       <span className={`text-right ${mono ? "font-mono text-xs" : ""} ${wrap ? "break-all" : "truncate"}`} title={value ?? ""}>
-        {value || "—"}
+        {icon ? <span className="inline-flex items-center gap-1.5 align-middle">{icon}{value || "—"}</span> : (value || "—")}
       </span>
     </div>
   )

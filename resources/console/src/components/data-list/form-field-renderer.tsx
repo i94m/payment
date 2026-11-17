@@ -1,12 +1,14 @@
 import type { Control, FieldValues, Path } from "react-hook-form"
 import * as React from "react"
-import { Controller } from "react-hook-form"
+import { Controller, useFormState } from "react-hook-form"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Uploader } from "@/components/ui/uploader"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field, FieldLabel, FieldError, RequiredMark } from "@/components/ui/field"
+import { cn } from "@/lib/utils"
 
 // RichEditor(tiptap + prosemirror) 体积大，lazy 加载：仅当表单真正用到 editor 字段时才拉取
 const RichEditor = React.lazy(() =>
@@ -35,6 +37,8 @@ export function FormFieldRenderer<T extends FieldValues>({
   disabled,
 }: FormFieldRendererProps<T>) {
   const fieldName = config.name as Path<T>
+  // checkbox-group 是多字段一组，错误统一取 errorField 指向的那个字段（如「至少选一个」）
+  const { errors } = useFormState({ control })
 
   // 开关组：一行多个开关，每项独立注册到表单（值为 boolean）
   if (config.type === "switch-group") {
@@ -65,6 +69,42 @@ export function FormFieldRenderer<T extends FieldValues>({
     )
   }
 
+  // 复选组：一行多个复选框，值各自独立注册为 boolean
+  if (config.type === "checkbox-group") {
+    const msg = config.errorField
+      ? (errors as Record<string, { message?: string } | undefined>)[config.errorField]?.message
+      : undefined
+    return (
+      <Field data-invalid={!!msg}>
+        {config.label && <FieldLabel>{config.label}</FieldLabel>}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+          {config.items?.map((item) => (
+            <Controller
+              key={item.name}
+              name={item.name as Path<T>}
+              control={control}
+              render={({ field }) => (
+                <label
+                  htmlFor={item.name}
+                  className="flex cursor-pointer items-center gap-2"
+                >
+                  <Checkbox
+                    id={item.name}
+                    checked={!!field.value}
+                    onCheckedChange={(checked) => field.onChange(checked === true)}
+                    disabled={disabled}
+                  />
+                  <span className="text-sm text-muted-foreground">{item.label}</span>
+                </label>
+              )}
+            />
+          ))}
+        </div>
+        {msg && <FieldError>{msg}</FieldError>}
+      </Field>
+    )
+  }
+
   if (config.dependsOn) {
     const depValue = formData[config.dependsOn.field]
     if (config.dependsOn.visible && !config.dependsOn.visible(depValue)) {
@@ -78,15 +118,23 @@ export function FormFieldRenderer<T extends FieldValues>({
       control={control}
       render={({ field, fieldState }) => (
         <Field data-invalid={fieldState.invalid}>
-          {config.type !== "switch" && config.label && (
+          {config.type !== "switch" && config.type !== "checkbox" && config.label && (
             <FieldLabel htmlFor={fieldName}>
               {config.label}
               {config.required && <RequiredMark />}
             </FieldLabel>
           )}
-          {renderField(config, field, disabled)}
-          {config.type === "switch" && config.label && (
-            <span className="text-sm text-muted-foreground ml-2">{config.label}</span>
+          {config.type === "switch" || config.type === "checkbox" ? (
+            <div className="flex items-center gap-2 pt-1">
+              {renderField(config, field, disabled)}
+              {config.label && (
+                <label htmlFor={config.name} className="cursor-pointer text-sm text-muted-foreground">
+                  {config.label}
+                </label>
+              )}
+            </div>
+          ) : (
+            renderField(config, field, disabled)
           )}
           {fieldState.invalid && fieldState.error?.message && (
             <FieldError>{fieldState.error.message}</FieldError>
@@ -182,13 +230,22 @@ function renderField(
 
     case "switch":
       return (
-        <div className="flex items-center gap-2 pt-1">
-          <Switch
-            checked={!!field.value}
-            onCheckedChange={field.onChange}
-            disabled={disabled}
-          />
-        </div>
+        <Switch
+          id={config.name}
+          checked={!!field.value}
+          onCheckedChange={field.onChange}
+          disabled={disabled}
+        />
+      )
+
+    case "checkbox":
+      return (
+        <Checkbox
+          id={config.name}
+          checked={!!field.value}
+          onCheckedChange={(checked) => field.onChange(checked === true)}
+          disabled={disabled}
+        />
       )
 
     case "editor":
@@ -210,6 +267,36 @@ function renderField(
           {...(config.props as Record<string, unknown>)}
         />
       )
+
+    // 图标选择：只能从内置图标库（config.options，value 即图标地址）点选，不暴露地址输入
+    case "icon-picker": {
+      const value = (field.value as string) ?? ""
+      const options = config.options ?? []
+      return (
+        <div className="flex flex-wrap gap-2">
+          {options.map((opt) => {
+            const src = String(opt.value)
+            const active = value === src
+            return (
+              <button
+                key={src}
+                type="button"
+                disabled={disabled}
+                onClick={() => field.onChange(active ? "" : src)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition-colors",
+                  active ? "border-primary bg-primary/5 text-foreground" : "text-muted-foreground hover:bg-muted",
+                )}
+                title={opt.label}
+              >
+                <img src={src} alt="" className="h-4 w-4 shrink-0 rounded-[2px]" />
+                {opt.label}
+              </button>
+            )
+          })}
+        </div>
+      )
+    }
 
     case "video":
       return (

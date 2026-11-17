@@ -68,7 +68,7 @@ Docker 全链路：`docker compose -f docker-compose.production.yml up -d`（镜
 生产部署与 MySQL 高并发配置见 `DEPLOY.md`。）
 
 初始化后：admin 登录 `/admin-api/auth/login`（admin / 123456，首次后改密）。
-配置流程：插件管理→同步插件 → 支付方式（内置 alipay/wxpay，可按需新增）→
+配置流程：插件管理→同步插件 → 支付方式（内置微信/支付宝/QQ钱包/网银/京东/PayPal 六项并带图标，可按需改图标或删除）→
 创建通道（选「易支付」插件填 appurl/appid/appkey；V2 上游选「易支付V2」再填平台公钥/商户私钥，凭证自动加密）→ 创建商户拿到 pid，
 商户面板「安全设置」一键生成 RSA 密钥对后即可调用开放 API。
 

@@ -56,6 +56,8 @@ export interface PaymentTypePayload {
   code: string
   name: string
   device: number
+  /** 图标地址：内置图标库路径（/icons/pay/*.svg）或自定义 URL，留空不显示 */
+  icon?: string
 }
 
 export interface PaymentTypeStats {

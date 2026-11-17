@@ -261,10 +261,22 @@ async def type_stats(session: SessionDep):
 
 
 class PaymentTypeRequest(BaseModel):
-    """字段与老版 pay_type.php 表单一致：调用值/显示名称/支持设备。"""
+    """字段与老版 pay_type.php 表单一致：调用值/显示名称/支持设备，另加图标。"""
     code: str
     name: str
     device: int = 0
+    # 图标 URL：内置图标库取值形如 /icons/pay/wxpay.svg；留空表示不显示图标
+    icon: str = ""
+
+
+def _normalize_icon(icon: str) -> str:
+    """图标地址归一化：只接受站内路径（/...）或 http(s) 外链，其余视为未配置。"""
+    value = (icon or "").strip()
+    if not value:
+        return ""
+    if value.startswith("/") or value.startswith(("http://", "https://")):
+        return value[:255]
+    return ""
 
 
 async def _check_type_unique(session, code: str, device: int,
@@ -306,7 +318,8 @@ async def type_create(body: PaymentTypeRequest, session: SessionDep):
         return err(-1, msg)
     # 老版新增固定开启，状态由列表开关切换
     t = PaymentType(code=body.code.strip(), name=body.name.strip(),
-                    device=body.device, status=1)
+                    device=body.device, icon=_normalize_icon(body.icon) or None,
+                    status=1)
     session.add(t)
     await session.commit()
     await session.refresh(t)
@@ -325,6 +338,7 @@ async def type_update(type_id: int, body: PaymentTypeRequest, session: SessionDe
     t.code = body.code.strip()
     t.name = body.name.strip()
     t.device = body.device  # 老版编辑不改状态，状态由列表开关切换
+    t.icon = _normalize_icon(body.icon) or None
     session.add(t)
     await session.commit()
     return suc("success")

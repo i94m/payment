@@ -39,6 +39,8 @@ export interface AdminOverview {
   sucnum_10m: number
   sucnum_1m: number
   paytype: Record<string, string>
+  /** 支付方式 id → 图标 URL（今日统计表头用） */
+  paytype_icon?: Record<string, string>
   channel: Record<string, string>
   order_today: DayStat
   server_time: string
@@ -64,8 +66,17 @@ export interface PayRouteItem {
   channel: number
 }
 
+/** 金额路由保存载荷（enable 由 channel 是否选择推导） */
+export interface PayRouteSaveItem {
+  type_id: number
+  enable: boolean
+  min: string
+  max: string
+  channel: number
+}
+
 export interface HomeConfig {
-  pay_types: { id: number; code: string; name: string }[]
+  pay_types: { id: number; code: string; name: string; icon?: string }[]
   channels: { id: number; name: string; payment_type_id: number }[]
   payroute: Record<string, PayRouteItem>
   ratelimit: Record<string, number>
@@ -88,8 +99,8 @@ export const dashboardApi = {
       : apiClient.get("/dashboard") as Promise<AdminOverview>,
   homeConfig: () =>
     apiClient.get("/dashboard/config") as Promise<HomeConfig>,
-  savePayroute: (data: { type_id: number; enable: boolean; min: string; max: string; channel: number }) =>
-    apiClient.post("/dashboard/payroute", data) as Promise<null>,
+  savePayrouteBatch: (items: PayRouteSaveItem[]) =>
+    apiClient.post("/dashboard/payroute/batch", { items }) as Promise<null>,
   saveRatelimit: (data: { channel_id: number; value?: number }) =>
     apiClient.post("/dashboard/ratelimit", data) as Promise<null>,
   saveRatelimitLast: (channel_id: number) =>

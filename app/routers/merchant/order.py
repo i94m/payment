@@ -22,6 +22,7 @@ from app.services.order import (
     ORDER_REFUNDED,
     fmt_money,
     get_order_by_trade_no,
+    payment_type_icon_map,
     payment_type_name_map,
     refundable_base,
 )
@@ -30,7 +31,8 @@ from app.worker import enqueue
 router = APIRouter()
 
 
-def _dump_order(o: Order, type_names: dict[str, str] | None = None) -> dict:
+def _dump_order(o: Order, type_names: dict[str, str] | None = None,
+                type_icons: dict[str, str] | None = None) -> dict:
     deducted = bool(o.is_deducted)
     type_code = o.payment_type_code or ""
     return {
@@ -38,6 +40,7 @@ def _dump_order(o: Order, type_names: dict[str, str] | None = None) -> dict:
         "out_trade_no": o.out_trade_no,
         "type": type_code,
         "type_name": (type_names or {}).get(type_code, type_code),
+        "type_icon": (type_icons or {}).get(type_code, ""),
         "subject": o.subject,
         "money": str(o.money),
         "realmoney": "" if deducted else str(o.realmoney or ""),
@@ -119,8 +122,9 @@ async def order_list(session: SessionDep, auth: MerchantUser,
     count, money_sum, income_sum = (await session.exec(count_q)).one()
 
     type_names = await payment_type_name_map(session)
+    type_icons = await payment_type_icon_map(session)
     return suc(paginate(
-        items=[_dump_order(o, type_names) for o in items], total=total,
+        items=[_dump_order(o, type_names, type_icons) for o in items], total=total,
         page=page, per_page=per_page,
         has_more_pages=page * per_page < total, has_pages=total > per_page,
         summary={"count": int(count), "money": str(money_sum), "income": str(income_sum)},
@@ -134,10 +138,11 @@ async def order_export(session: SessionDep, auth: MerchantUser, body: dict | Non
     query = _build_query(auth, body).limit(10000)
     items = (await session.exec(query)).all()
     type_names = await payment_type_name_map(session)
+    type_icons = await payment_type_icon_map(session)
     status_text = {0: "待支付", 1: "已支付", 2: "已退款", 3: "已过期"}
     rows = []
     for o in items:
-        row = _dump_order(o, type_names)
+        row = _dump_order(o, type_names, type_icons)
         # 导出文件里支付方式/状态给人类可读文案，避免导出 alipay / 2 这类裸 code
         row["type"] = row["type_name"]
         row["status"] = status_text.get(row["status"], str(row["status"]))
@@ -168,7 +173,8 @@ async def order_detail(trade_no: str, session: SessionDep, auth: MerchantUser):
     order = await get_order_by_trade_no(session, trade_no)
     if not order or order.merchant_id != auth.user.id:
         return err(404, "订单不存在")
-    payload = _dump_order(order, await payment_type_name_map(session))
+    payload = _dump_order(order, await payment_type_name_map(session),
+                          await payment_type_icon_map(session))
     payload["api_trade_no"] = order.api_trade_no or ""
     payload["channel_id"] = order.channel_id
 

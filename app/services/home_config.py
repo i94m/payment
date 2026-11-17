@@ -74,12 +74,20 @@ async def get_payroute_config(session: AsyncSession) -> dict[int, dict]:
     return result
 
 
-async def set_payroute_item(session: AsyncSession, type_id: int, item: dict) -> None:
-    """合并写入单个支付方式的路由配置。"""
+async def set_payroute_items(session: AsyncSession, items: dict[int, dict]) -> None:
+    """批量合并写入多个支付方式的路由配置（一次读写，避免逐项覆盖丢失更新）。"""
+    if not items:
+        return
     raw = await _read(session, KEY_PAYROUTE)
     raw = dict(raw) if isinstance(raw, dict) else {}
-    raw[str(int(type_id))] = normalize_route_item(item)
+    for type_id, item in items.items():
+        raw[str(int(type_id))] = normalize_route_item(item)
     await _write(session, KEY_PAYROUTE, raw)
+
+
+async def set_payroute_item(session: AsyncSession, type_id: int, item: dict) -> None:
+    """合并写入单个支付方式的路由配置。"""
+    await set_payroute_items(session, {int(type_id): item})
 
 
 # ============================================================

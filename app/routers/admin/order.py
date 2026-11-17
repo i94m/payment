@@ -18,6 +18,7 @@ from app.services.order import (
     get_order_by_trade_no,
     ORDER_PENDING,
     fmt_money,
+    payment_type_icon_map,
     payment_type_name_map,
     process_paid_order,
 )
@@ -26,7 +27,8 @@ from app.worker import enqueue
 router = APIRouter()
 
 
-def _dump_order(order: Order, merchant_username: str = "", type_name: str = "") -> dict:
+def _dump_order(order: Order, merchant_username: str = "", type_name: str = "",
+                type_icon: str = "") -> dict:
     return {
         "id": order.id,
         "trade_no": order.trade_no,
@@ -36,6 +38,7 @@ def _dump_order(order: Order, merchant_username: str = "", type_name: str = "") 
         "merchant_username": merchant_username,
         "type": order.payment_type_code,
         "type_name": type_name,
+        "type_icon": type_icon,
         "channel_id": order.channel_id,
         "plugin_name": order.plugin_name or "",
         "subject": order.subject,
@@ -101,8 +104,10 @@ async def order_list(session: SessionDep, page: int = Query(1, ge=1),
                                        dump_fn=lambda o: _dump_order(o))
     # 补支付方式显示名（与商户端/代理端共用 services.order.payment_type_name_map，避免各写一份）
     type_names = await payment_type_name_map(session)
+    type_icons = await payment_type_icon_map(session)
     for it in data["items"]:
         it["type_name"] = type_names.get(it["type"], "")
+        it["type_icon"] = type_icons.get(it["type"], "")
     # 补商户名
     merchant_ids = {it["merchant_id"] for it in data["items"]}
     if merchant_ids:
@@ -165,8 +170,10 @@ async def order_detail(trade_no: str, session: SessionDep):
         return err(404, "订单不存在")
     merchant = await session.get(Merchant, order.merchant_id)
     type_names = await payment_type_name_map(session)
+    type_icons = await payment_type_icon_map(session)
     return suc(_dump_order(order, merchant.username if merchant else "",
-                           type_names.get(order.payment_type_code, "")))
+                           type_names.get(order.payment_type_code, ""),
+                           type_icons.get(order.payment_type_code, "")))
 
 
 @router.post("/refill", dependencies=[Depends(PermissionChecker("order.refill"))])

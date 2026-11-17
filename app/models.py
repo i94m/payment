@@ -268,6 +268,7 @@ class PaymentType(SQLModel, table=True):
     name: str = Field(sa_column=Column(String(32), nullable=False))
     # 支持设备：0=PC+Mobile 1=PC 2=Mobile
     device: int = Field(default=0, sa_column=Column(SmallInteger, server_default=text("0"), nullable=False))
+    # 图标 URL：内置图标库路径（如 /icons/pay/wxpay.svg）或自定义外链；空=不显示
     icon: Optional[str] = Field(default=None, sa_column=Column(String(255)))
     status: int = Field(default=1, sa_column=Column(SmallInteger, server_default=text("1"), nullable=False))
     sort: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))

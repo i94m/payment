@@ -6,10 +6,13 @@ export type FormFieldType =
   | "input" | "textarea" | "number" | "password"
   | "select"
   | "switch"
+  | "checkbox"
   | "switch-group"
+  | "checkbox-group"
   | "date"
   | "editor"
   | "uploader" | "video"
+  | "icon-picker"
 
 export interface SelectOption {
   label: string
@@ -31,8 +34,10 @@ export interface FormFieldConfig {
   placeholder?: string
   span?: "full" | "half"
   options?: SelectOption[]
-  /** type=switch-group 时的开关项（一行展示，值为 boolean） */
+  /** type=switch-group / checkbox-group 时的选项（一行展示，值为 boolean） */
   items?: SwitchGroupItem[]
+  /** type=checkbox-group 时把校验错误显示在整组下方（取该字段的错误信息） */
+  errorField?: string
   props?: Record<string, unknown>
   dependsOn?: {
     field: string

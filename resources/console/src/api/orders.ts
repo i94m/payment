@@ -12,6 +12,8 @@ export interface OrderData {
   type: string
   /** 支付方式显示名称（后端按 payment_types 解析；缺失时用 type 调用值兜底） */
   type_name?: string
+  /** 支付方式图标 URL（后台配置；为空时前端按 type 取内置图标库兜底） */
+  type_icon?: string
   channel_id?: number
   plugin_name?: string
   subject: string

@@ -18,23 +18,30 @@ import {
 } from "@/components/data-list/"
 import type { ActionItem } from "@/components/data-list/"
 import { IconPlus, IconEdit, IconTrash, IconList } from "@tabler/icons-react"
+import { PayIcon } from "@/components/pay-icon"
+import { DEFAULT_PAY_ICON, PAY_ICON_LIBRARY } from "@/lib/pay-icons"
 import { z } from "zod"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 
-// 支持设备：0=PC+Mobile 1=PC 2=Mobile
-const deviceOptions = [
-  { label: "PC+Mobile", value: 0 },
-  { label: "PC", value: 1 },
-  { label: "Mobile", value: 2 },
-]
-const deviceLabel = (v: number) => deviceOptions.find((o) => o.value === v)?.label ?? "PC+Mobile"
+// 支持设备（库里 0=PC+Mobile 1=PC 2=Mobile）：表单拆成两个开关，可同时勾选
+const deviceLabel = (v: number) => (v === 1 ? "PC" : v === 2 ? "Mobile" : "PC+Mobile")
+
+/** 表单两个开关 → 存储值 */
+const deviceValue = (pc: boolean, mobile: boolean) => (pc && mobile ? 0 : pc ? 1 : 2)
 
 const typeSchema = z.object({
   // 调用值仅限英文数字，与支付文档一致（^[a-zA-Z0-9]+$）
   code: z.string().min(1).regex(/^[a-zA-Z0-9]+$/, "调用值仅限英文与数字"),
   name: z.string().min(1),
-  device: z.coerce.number(),
+  // 是否支持 PC / Mobile：至少选一个（保存时折算回 device）
+  device_pc: z.boolean(),
+  device_mobile: z.boolean(),
+  // 图标：从内置图标库选择，留空表示列表/收银台只显示文字
+  icon: z.string().optional().default(""),
+}).refine((v) => v.device_pc || v.device_mobile, {
+  message: "请至少选择一种支持设备",
+  path: ["device_pc"],
 })
 
 export function PayTypesPage() {
@@ -101,19 +108,11 @@ export function PayTypesPage() {
       {
         accessorKey: "name",
         enableSorting: false,
-        // 「名称」列：图标来自接口 icon 字段；未配置时不渲染（旧实现固定拼
-        // /assets/icon/{调用值}.ico，资源不存在时每次加载 4 个 404）
+        // 「名称」列：图标来自接口 icon 字段（未配置时按调用值取内置图标库）
         header: () => "名称",
         cell: ({ row }) => (
           <span className="flex items-center gap-1.5 text-sm font-medium">
-            {row.original.icon && (
-              <img
-                src={row.original.icon}
-                alt=""
-                className="h-[18px] w-[18px]"
-                onError={(e) => { e.currentTarget.style.display = "none" }}
-              />
-            )}
+            <PayIcon code={row.original.code} icon={row.original.icon} />
             {row.original.name}
           </span>
         ),
@@ -190,24 +189,51 @@ export function PayTypesPage() {
         onOpenChange={setFormOpen}
         editingId={editingId}
         schema={typeSchema}
-        // 表单字段：调用值/显示名称/支持设备
+        // 弹框更窄：两列表单，图标库在下方整行铺开
+        width="sm:max-w-md max-h-[90vh] overflow-y-auto"
+        // 表单字段：调用值/显示名称/支持设备（PC、Mobile 两个复选框同组）/图标
         fields={[
           { type: "input", name: "code", label: "调用值", placeholder: "仅限英文，要与支付文档一致", span: "half", required: true },
           { type: "input", name: "name", label: "显示名称", placeholder: "仅显示使用", span: "half", required: true },
           {
-            type: "select", name: "device", label: "支持设备", span: "half",
-            options: deviceOptions,
+            // 支持设备：PC / Mobile 两个复选框放在同一行，可同时勾选
+            type: "checkbox-group", name: "device", label: "支持设备", span: "full",
+            items: [
+              { name: "device_pc", label: "PC" },
+              { name: "device_mobile", label: "Mobile" },
+            ],
+            // 「至少选一个」的校验错误显示在整组下方
+            errorField: "device_pc",
+          },
+          {
+            type: "icon-picker", name: "icon", label: "图标", span: "full",
+            // 内置图标库（与 db init 的支付方式种子一一对应），第一项（支付宝）为新增默认值
+            options: PAY_ICON_LIBRARY.map((it) => ({ label: it.label, value: it.src })),
           },
         ]}
-        defaultValues={() => ({ code: "", name: "", device: 0 })}
+        defaultValues={() => ({
+          code: "", name: "",
+          device_pc: true, device_mobile: true,
+          icon: DEFAULT_PAY_ICON,
+        })}
         fetchDetail={(id) =>
           payApi.payTypes().then((list) => {
             const item = list.find((x) => x.id === id)
-            return (item ?? {}) as unknown as Record<string, unknown>
+            if (!item) return {}
+            // device 0=PC+Mobile 1=PC 2=Mobile → 两个开关
+            return {
+              ...item,
+              device_pc: item.device !== 2,
+              device_mobile: item.device !== 1,
+            } as unknown as Record<string, unknown>
           })
         }
         onSubmit={async (id, values) => {
-          const payload = { code: values.code, name: values.name, device: Number(values.device) }
+          const payload = {
+            code: String(values.code), name: String(values.name),
+            device: deviceValue(!!values.device_pc, !!values.device_mobile),
+            icon: String(values.icon ?? ""),
+          }
           if (id) await payApi.updatePayType(id, payload)
           else await payApi.createPayType(payload)
           refresh()

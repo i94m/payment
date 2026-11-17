@@ -17,6 +17,7 @@ import { Separator } from "@/components/ui/separator"
 import { ConfirmDialog } from "@/components/data-list/confirm-dialog"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
+import { PayIcon } from "@/components/pay-icon"
 import {
   useDataList,
   ListError,
@@ -200,7 +201,10 @@ export function OrdersPage() {
         enableSorting: false,
         header: () => "支付方式",
         cell: ({ row }) => (
-          <span className="text-sm">{row.original.type_name || row.original.type}</span>
+          <span className="flex items-center gap-1.5 text-sm">
+            <PayIcon code={row.original.type} icon={row.original.type_icon} />
+            {row.original.type_name || row.original.type}
+          </span>
         ),
         meta: { headClassName: "w-[80px]" },
       },
@@ -398,7 +402,12 @@ export function OrdersPage() {
               </div>
               <Separator />
               <Row label={"商品名称"} value={detailOrder.subject || detailOrder.name} wrap />
-              <Row label={"支付方式"} value={detailOrder.type_name || detailOrder.type} />
+              <Row label={"支付方式"} value={(
+                <span className="inline-flex items-center gap-1.5">
+                  <PayIcon code={detailOrder.type} icon={detailOrder.type_icon} />
+                  {detailOrder.type_name || detailOrder.type}
+                </span>
+              )} />
               <Row label={"金额"} value={`¥${detailOrder.money}`} />
               <Row label={"实付金额"} value={detailOrder.realmoney ? `¥${detailOrder.realmoney}` : "—"} />
               <Row label={"商户到账"} value={detailOrder.merchant_income ? `¥${detailOrder.merchant_income}` : "—"} />

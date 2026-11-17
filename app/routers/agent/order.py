@@ -15,18 +15,20 @@ from app.core.deps import SessionDep
 from app.core.security import AgentUser
 from app.models import Order
 from app.responses import paginate, suc
-from app.services.order import payment_type_name_map
+from app.services.order import payment_type_icon_map, payment_type_name_map
 
 router = APIRouter()
 
 
-def _dump(o: Order, type_names: dict[str, str] | None = None) -> dict:
+def _dump(o: Order, type_names: dict[str, str] | None = None,
+          type_icons: dict[str, str] | None = None) -> dict:
     deducted = bool(o.is_deducted)
     type_code = o.payment_type_code or ""
     return {
         "trade_no": o.trade_no,
         "type": type_code,
         "type_name": (type_names or {}).get(type_code, type_code),
+        "type_icon": (type_icons or {}).get(type_code, ""),
         "money": str(o.money),
         "realmoney": "" if deducted else (str(o.realmoney) if o.realmoney is not None else ""),
         "subject": o.subject,
@@ -66,6 +68,7 @@ async def order_list(session: SessionDep, auth: AgentUser,
         q.offset((page - 1) * per_page).limit(per_page)
     )).all()
     type_names = await payment_type_name_map(session)
-    return suc(paginate(items=[_dump(o, type_names) for o in items], total=total,
+    type_icons = await payment_type_icon_map(session)
+    return suc(paginate(items=[_dump(o, type_names, type_icons) for o in items], total=total,
                         page=page, per_page=per_page,
                         has_more_pages=page * per_page < total, has_pages=total > per_page))

@@ -885,6 +885,15 @@ async def payment_type_name_map(session: AsyncSession) -> dict[str, str]:
     return {str(r[0]): str(r[1]) for r in rows}
 
 
+async def payment_type_icon_map(session: AsyncSession) -> dict[str, str]:
+    """支付方式 code → 图标 URL（道具同 payment_type_name_map）。
+
+    图标可能为后台自选的内置图标库路径或自定义外链，为空时由前端按内置图标兜底。
+    """
+    rows = (await session.exec(select(PaymentType.code, PaymentType.icon))).all()
+    return {str(r[0]): str(r[1] or "") for r in rows}
+
+
 async def order_query_payload(order: Order, session: AsyncSession | None = None) -> dict:
     """开放 API 查单响应 data（GET /orders/{trade_no}）。
 

@@ -75,6 +75,11 @@ export default defineConfig({
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
       },
+      // 内置图标库（支付方式图标 /icons/pay/*.svg 由后端 static/icons 挂载）
+      "/icons": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+      },
     },
   },
 })

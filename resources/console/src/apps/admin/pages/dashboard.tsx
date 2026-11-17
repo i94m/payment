@@ -9,11 +9,11 @@ import { dashboardApi } from "@/api"
 import type { AdminOverview, DayStat, HomeConfig, RatelimitStats } from "@/api/dashboard"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ListError } from "@/components/data-list/list-error"
+import { PayIcon } from "@/components/pay-icon"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
@@ -36,6 +36,15 @@ const trendChartConfig = {
 
 const RATELIMIT_LS_KEY = "ratelimit_last_channel"
 
+/** 金额路由表单值（enable 由 channel>0 推导，不单独维护） */
+interface RouteForm {
+  min: string
+  max: string
+  channel: number
+}
+
+const EMPTY_ROUTE: RouteForm = { min: "", max: "", channel: 0 }
+
 
 function fmtMoney(v: number | string): string {
   return Number(v ?? 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -43,16 +52,6 @@ function fmtMoney(v: number | string): string {
 
 function fmtNum(v: number | string): string {
   return Number(v ?? 0).toLocaleString("zh-CN")
-}
-
-/** 统计行：标签 + 值（行间分割线由官方 Separator 组件渲染） */
-function StatRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm">
-      <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className="font-medium tabular-nums">{children}</span>
-    </div>
-  )
 }
 
 /** 分组小标题（今日统计内部），下划线使用官方 Separator 组件 */
@@ -66,9 +65,11 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 /** 今日统计表（支付方式收入 / 通道收入 / 支付方式利润 三张共用），仅今日一行 */
-function TodayTable({ dayToday, nameMap, kind }: {
+function TodayTable({ dayToday, nameMap, iconMap, kind }: {
   dayToday: DayStat
   nameMap: Record<string, string>
+  /** 支付方式 id → 图标 URL（仅支付方式两种统计传入） */
+  iconMap?: Record<string, string>
   kind: "paytype" | "channel" | "profit"
 }) {
   const ids = Object.keys(nameMap)
@@ -79,7 +80,15 @@ function TodayTable({ dayToday, nameMap, kind }: {
       <TableHeader>
         <TableRow>
           <TableHead className="h-8">{"日期"}</TableHead>
-          {ids.map((id) => <TableHead key={id} className="h-8">{nameMap[id]}</TableHead>)}
+          {ids.map((id) => (
+            <TableHead key={id} className="h-8">
+              <span className="flex items-center gap-1">
+                {/* 支付方式两种统计带图标；通道统计的 key 是通道 ID，不显示图标 */}
+                {kind !== "channel" && <PayIcon icon={iconMap?.[id]} />}
+                {nameMap[id]}
+              </span>
+            </TableHead>
+          ))}
           <TableHead className="h-8">{"总计"}</TableHead>
         </TableRow>
       </TableHeader>
@@ -106,15 +115,45 @@ function TodayTableSkeleton() {
   )
 }
 
+/** 数字滚动动画：挂载/数值变化时从 0 递增到目标值；prefers-reduced-motion 时直接显示 */
+function AnimatedNumber({ value, format }: { value: number; format: (v: number) => string }) {
+  const [display, setDisplay] = React.useState(0)
+
+  React.useEffect(() => {
+    const reduce = typeof window !== "undefined"
+      && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    const target = Number.isFinite(value) ? value : 0
+    const duration = reduce || target === 0 ? 0 : 600
+    const start = performance.now()
+    let raf = requestAnimationFrame(function tick(now) {
+      const p = duration === 0 ? 1 : Math.min(1, (now - start) / duration)
+      setDisplay(target * (1 - (1 - p) ** 3))
+      if (p < 1) raf = requestAnimationFrame(tick)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [value])
+
+  return <>{format(display)}</>
+}
+
+function fmtRate(v: number): string {
+  return `${Math.round(v * 100) / 100}%`
+}
+
+function fmtCount(v: number): string {
+  return fmtNum(Math.round(v))
+}
+
 export function DashboardPage() {
 
   const [loading, setLoading] = React.useState(true)
   const [overview, setOverview] = React.useState<AdminOverview | null>(null)
   const [config, setConfig] = React.useState<HomeConfig | null>(null)
 
-  // 金额路由表单：type_id -> 表单值
-  const [routeForms, setRouteForms] = React.useState<Record<number, { enable: boolean; min: string; max: string; channel: number }>>({})
-  const [routeSaving, setRouteSaving] = React.useState<number | null>(null)
+  // 金额路由表单：type_id -> {金额区间, 固定通道}（是否启用由 channel 是否选择推导）
+  const [routeForms, setRouteForms] = React.useState<Record<number, RouteForm>>({})
+  const [routeSaved, setRouteSaved] = React.useState<Record<number, RouteForm>>({})
+  const [routeSaving, setRouteSaving] = React.useState(false)
 
   // 通道限速面板
   const [rlChannel, setRlChannel] = React.useState<string>("")
@@ -124,15 +163,18 @@ export function DashboardPage() {
 
   const applyConfig = React.useCallback((cfg: HomeConfig) => {
     setConfig(cfg)
-    setRouteForms(Object.fromEntries(cfg.pay_types.map((pt) => {
+    const forms: Record<number, RouteForm> = Object.fromEntries(cfg.pay_types.map((pt) => {
       const saved = cfg.payroute[String(pt.id)]
+      // 0.00 视为未配置，输入框留空用 placeholder 提示，避免满屏「0.00」
+      const amount = (v?: string) => (Number(v ?? 0) > 0 ? String(v) : "")
       return [pt.id, {
-        enable: saved?.enable === 1,
-        min: saved?.min ?? "",
-        max: saved?.max ?? "",
+        min: amount(saved?.min),
+        max: amount(saved?.max),
         channel: saved?.channel ?? 0,
       }]
-    })))
+    }))
+    setRouteForms(forms)
+    setRouteSaved(forms)
 
     // 通道限速：恢复最后选中通道，优先 localStorage，缺失时回退数据库
     let last = ""
@@ -219,16 +261,6 @@ export function DashboardPage() {
       note: "昨日全天汇总",
     },
     {
-      key: "count1", label: "订单总数", icon: IconChartBar,
-      value: fmtNum(overview?.count1 ?? 0), to: "/trade/orders",
-      note: "累计支付成功订单",
-    },
-    {
-      key: "count2", label: "商户数量", icon: IconUsers,
-      value: fmtNum(overview?.count2 ?? 0), to: "/merchants",
-      note: "入驻商户总数",
-    },
-    {
       key: "usermoney", label: "总计余额", icon: IconCoin,
       value: fmtMoney(overview?.usermoney ?? 0), to: "",
       note: "商户余额合计",
@@ -236,25 +268,70 @@ export function DashboardPage() {
     {
       key: "settlemoney", label: "结算总额", icon: IconGauge,
       value: fmtMoney(overview?.settlemoney ?? 0), to: "/settle",
-      note: "累计已结算金额",
+      note: "已结算总金额",
+    },
+    {
+      key: "count1", label: "订单总数", icon: IconChartBar,
+      value: fmtNum(overview?.count1 ?? 0), to: "/trade/orders",
+      note: "已支付总单数",
+    },
+    {
+      key: "count2", label: "商户数量", icon: IconUsers,
+      value: fmtNum(overview?.count2 ?? 0), to: "/merchants",
+      note: "入驻商户总数",
     },
   ]
 
-  // ---- 金额路由保存 ----
-  const savePayroute = async (typeId: number) => {
-    const form = routeForms[typeId]
-    if (!form) return
-    setRouteSaving(typeId)
+  // ---- 金额路由：整卡片一次保存（只提交有变更的支付方式） ----
+  const routeDirty = React.useMemo(() => Object.keys(routeForms).some((id) => {
+    const cur = routeForms[Number(id)]
+    const saved = routeSaved[Number(id)]
+    return !saved || cur.min !== saved.min || cur.max !== saved.max || cur.channel !== saved.channel
+  }), [routeForms, routeSaved])
+
+  const savePayroute = async () => {
+    const changed = (config?.pay_types ?? []).filter((pt) => {
+      const cur = routeForms[pt.id]
+      const saved = routeSaved[pt.id]
+      return cur && (!saved || cur.min !== saved.min || cur.max !== saved.max || cur.channel !== saved.channel)
+    })
+    if (!changed.length) return
+
+    // 本地先校验：启用（选了通道）时必须填写完整且合法的区间，否则存下去也不会生效
+    for (const pt of changed) {
+      const form = routeForms[pt.id]
+      if (form.channel === 0) continue
+      const min = Number(form.min)
+      const max = Number(form.max)
+      if (!form.min.trim() || !form.max.trim() || !Number.isFinite(min) || !Number.isFinite(max)) {
+        toast.error(`${pt.name}：请填写最小/最大金额`)
+        return
+      }
+      if (min <= 0 || max <= 0) {
+        toast.error(`${pt.name}：最小/最大金额都须大于 0`)
+        return
+      }
+      if (max < min) {
+        toast.error(`${pt.name}：最大金额不能小于最小金额`)
+        return
+      }
+    }
+
+    setRouteSaving(true)
     try {
-      await dashboardApi.savePayroute({
-        type_id: typeId, enable: form.enable,
-        min: form.min || "0", max: form.max || "0", channel: Number(form.channel) || 0,
-      })
+      await dashboardApi.savePayrouteBatch(changed.map((pt) => {
+        const form = routeForms[pt.id]
+        return {
+          type_id: pt.id, enable: form.channel > 0,
+          min: form.min.trim() || "0", max: form.max.trim() || "0", channel: form.channel,
+        }
+      }))
       toast.success("金额路由已保存")
+      applyConfig(await dashboardApi.homeConfig())
     } catch (e) {
       toast.error(getErrorMessage(e, "操作失败"))
     } finally {
-      setRouteSaving(null)
+      setRouteSaving(false)
     }
   }
 
@@ -314,6 +391,7 @@ export function DashboardPage() {
   }
 
   const paytypeMap = overview?.paytype ?? {}
+  const paytypeIconMap = overview?.paytype_icon ?? {}
   const channelMap = overview?.channel ?? {}
   const orderToday = overview?.order_today ?? { all: 0, profit_all: 0, paytype: {}, channel: {}, profit_paytype: {} }
 
@@ -350,73 +428,59 @@ export function DashboardPage() {
             })}
           </div>
 
-          {/* 交易统计（含通道限速） + 金额路由 */}
-          <div className="grid grid-cols-1 gap-4 px-4 lg:grid-cols-[2fr_1fr] lg:px-6">
+          {/* 交易统计 / 金额路由 / 通道限速 */}
+          <div className="grid grid-cols-1 items-start gap-4 px-4 lg:px-6 xl:grid-cols-[2fr_1fr_1fr]">
             <Card>
               <CardHeader>
                 <CardTitle>{"交易统计"}</CardTitle>
                 <CardDescription>{"近期成功率与已支付笔数实时汇总"}</CardDescription>
               </CardHeader>
-              <CardContent className="flex flex-col py-1">
-                <StatRow label={`${"近期订单成功率"}：`}>
-                  {loading ? <Skeleton className="h-4 w-40" /> : (
-                    <>
-                      <span className="text-muted-foreground font-normal">今日：</span><b>{overview?.success_rate ?? 0} %</b>，<span className="text-muted-foreground font-normal">30分钟</span> <b>{overview?.success_rate_30m ?? 0} %</b>，<span className="text-muted-foreground font-normal">10分钟</span> <b>{overview?.success_rate_10m ?? 0} %</b>，<span className="text-muted-foreground font-normal">1分钟</span> <b>{overview?.success_rate_1m ?? 0} %</b>
-                    </>
-                  )}
-                </StatRow>
-                <Separator />
-                <StatRow label={`${"已支付成功笔数"}：`}>
-                  {loading ? <Skeleton className="h-4 w-40" /> : (
-                    <>
-                      <span className="text-muted-foreground font-normal">30分钟</span> <b>{fmtNum(overview?.sucnum_30m ?? 0)}</b> 笔，<span className="text-muted-foreground font-normal">10分钟</span> <b>{fmtNum(overview?.sucnum_10m ?? 0)}</b> 笔，<span className="text-muted-foreground font-normal">1分钟</span> <b>{fmtNum(overview?.sucnum_1m ?? 0)}</b> 笔
-                    </>
-                  )}
-                </StatRow>
-                <Separator />
-                {/* 通道限速（并入交易统计卡片） */}
-                <div className="mt-3 flex flex-col gap-1.5 py-2">
-                  <div className="text-sm font-medium">
-                    {"通道限速"}
-                    {(config?.ratelimit[rlChannel] ?? 0) > 0 && (
-                      <span className="text-muted-foreground font-normal">（1分钟 × {config?.ratelimit[rlChannel]}）</span>
-                    )}
-                  </div>
-                  <p className="text-muted-foreground text-xs">{"限制通道每分钟拉单次数，选择「关闭」一键全部解除"}</p>
-                  {loading ? (
-                    <Skeleton className="h-8 w-full" />
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      {/* Radix Select 不支持空字符串 value，用 "off" 哨兵值代表「关闭」，回调时映射回 "" */}
-                      <Select
-                        value={rlChannel || "off"}
-                        onValueChange={(v) => onRatelimitChannelChange(v === "off" ? "" : v)}
-                      >
-                        <SelectTrigger size="sm" className="w-50 shrink-0">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="off">{"关闭"}</SelectItem>
-                          {(config?.channels ?? []).map((c) => (
-                            <SelectItem key={c.id} value={String(c.id)}>{c.name} (ID:{c.id})</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {/* 选「关闭」时无目标通道，次/分钟无意义，禁用（保存仍可用：一键解除全部限速） */}
-                      <Input className="h-8 w-24 shrink-0" placeholder={"次/分钟"} disabled={!rlChannel}
-                        value={rlValue} onChange={(e) => setRlValue(e.target.value)} />
-                      <Button size="sm" className="h-8 shrink-0" disabled={rlSaving} onClick={saveRatelimit}>
-                        {rlSaving ? <Spinner className="size-3.5" /> : "保存"}
-                      </Button>
+              <CardContent className="flex flex-col gap-4 pt-1">
+                <div className="@container/stats">
+                  <div className="grid grid-cols-1 gap-3 @lg/stats:grid-cols-2">
+                    <div className="rounded-lg border bg-muted/30 p-3">
+                      <div className="text-muted-foreground text-xs">{"订单成功率"}</div>
+                      <div className="mt-3 grid grid-cols-4 gap-2">
+                        {[
+                          { label: "今日", value: overview?.success_rate },
+                          { label: "30分钟", value: overview?.success_rate_30m },
+                          { label: "10分钟", value: overview?.success_rate_10m },
+                          { label: "1分钟", value: overview?.success_rate_1m },
+                        ].map((it, i) => (
+                          <div key={it.label} className="flex flex-col items-center gap-1 text-center">
+                            {loading ? <Skeleton className="h-6 w-10" /> : (
+                              <span style={{ animationDelay: `${i * 60}ms` }}
+                                className="animate-in text-xl leading-none font-semibold tabular-nums fade-in-0 slide-in-from-bottom-1 fill-mode-both duration-500">
+                                <AnimatedNumber value={it.value ?? 0} format={fmtRate} />
+                              </span>
+                            )}
+                            <span className="text-muted-foreground text-xs">{it.label}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                  {rlStats?.show === 1 ? (
-                    <p className="text-muted-foreground text-xs">
-                      {`总单 ${rlStats.allnum ?? 0}，成功 ${rlStats.success ?? 0}，成功率 ${rlStats.rate ?? 0}%`}
-                    </p>
-                  ) : (!loading && rlChannel && !rlStats) ? (
-                    <Skeleton className="h-3.5 w-44" />
-                  ) : null}
+                    <div className="rounded-lg border bg-muted/30 p-3">
+                      <div className="text-muted-foreground text-xs">{"已支付笔数"}</div>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        {[
+                          { label: "30分钟", value: overview?.sucnum_30m },
+                          { label: "10分钟", value: overview?.sucnum_10m },
+                          { label: "1分钟", value: overview?.sucnum_1m },
+                        ].map((it, i) => (
+                          <div key={it.label} className="flex flex-col items-center gap-1 text-center">
+                            {loading ? <Skeleton className="h-6 w-10" /> : (
+                              <span style={{ animationDelay: `${i * 60}ms` }}
+                                className="animate-in text-xl leading-none font-semibold tabular-nums fade-in-0 slide-in-from-bottom-1 fill-mode-both duration-500">
+                                <AnimatedNumber value={it.value ?? 0} format={fmtCount} />
+                                <span className="text-muted-foreground ml-0.5 text-xs font-normal">笔</span>
+                              </span>
+                            )}
+                            <span className="text-muted-foreground text-xs">{it.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -424,62 +488,111 @@ export function DashboardPage() {
             <Card>
               <CardHeader>
                 <CardTitle>{"金额路由"}</CardTitle>
-                <CardDescription>{"按支付方式设置金额区间与固定支付通道"}</CardDescription>
+                <CardDescription>{"区间固定走通道"}</CardDescription>
+                <CardAction>
+                  <Button size="sm" className="h-8" variant={routeDirty ? "default" : "outline"}
+                    disabled={loading || routeSaving || !routeDirty} onClick={savePayroute}>
+                    {routeSaving ? <Spinner className="size-3.5" /> : routeDirty ? "保存" : "已保存"}
+                  </Button>
+                </CardAction>
               </CardHeader>
-              <CardContent className="flex flex-col gap-6 pt-2">
+              <CardContent className="flex flex-col pt-1 @container/route">
                 {loading ? (
-                  Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="flex flex-col gap-1.5">
-                      <Skeleton className="h-4 w-20" />
-                      <Skeleton className="h-8 w-full" />
-                      <Skeleton className="h-8 w-full" />
-                    </div>
-                  ))
+                  <div className="flex flex-col gap-2 py-1">
+                    {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+                  </div>
                 ) : (config?.pay_types ?? []).map((pt) => {
-                  const form = routeForms[pt.id] ?? { enable: false, min: "", max: "", channel: 0 }
+                  const form = routeForms[pt.id] ?? EMPTY_ROUTE
                   const channels = (config?.channels ?? []).filter((c) => c.payment_type_id === pt.id)
-                  const setForm = (patch: Partial<typeof form>) =>
+                  const setForm = (patch: Partial<RouteForm>) =>
                     setRouteForms((s) => ({ ...s, [pt.id]: { ...form, ...patch } }))
                   return (
-                    <div key={pt.id} className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium">{pt.name}</span>
-                        <Switch checked={form.enable} onCheckedChange={(v) => setForm({ enable: v })} aria-label={`${"状态"} - ${pt.name}`} />
-                      </div>
-                      <Separator />
-                      <div className="flex items-center gap-2">
-                        <Select
-                          value={String(form.channel)}
-                          onValueChange={(v) => setForm({ channel: Number(v) })}
-                        >
-                          <SelectTrigger size="sm" className="min-w-0 flex-1">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="0">{"请选择通道"}</SelectItem>
-                            {channels.map((c) => (
-                              <SelectItem key={c.id} value={String(c.id)}>{c.name} (ID:{c.id})</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button variant="outline" size="sm" className="h-8 shrink-0"
-                          disabled={routeSaving === pt.id}
-                          onClick={() => savePayroute(pt.id)}>
-                          {routeSaving === pt.id ? <Spinner className="size-3.5" /> : "保存"}
-                        </Button>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Input className="h-8 min-w-0 flex-1" placeholder={"最小"} value={form.min}
+                    <div key={pt.id}
+                      className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1.5 border-b py-2 last:border-b-0 @sm/route:grid-cols-[5rem_1fr_auto]">
+                      <span className="flex min-w-20 items-center gap-1.5 truncate text-sm font-medium @sm/route:w-20 @sm/route:min-w-0"
+                        title={pt.name}>
+                        <PayIcon code={pt.code} icon={pt.icon} />
+                        {pt.name}
+                      </span>
+                      {/* Radix Select 不支持空字符串 value，用 "off" 哨兵值代表「不启用」 */}
+                      <Select
+                        value={form.channel ? String(form.channel) : "off"}
+                        onValueChange={(v) => setForm({ channel: v === "off" ? 0 : Number(v) })}
+                      >
+                        <SelectTrigger size="sm" className="w-full min-w-0">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="off">{"不启用"}</SelectItem>
+                          {channels.map((c) => (
+                            <SelectItem key={c.id} value={String(c.id)}>{c.name} (ID:{c.id})</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <div className="col-span-2 flex items-center gap-1 @sm/route:col-span-1">
+                        <Input className="h-8 w-full min-w-0 flex-1 @sm/route:w-20 @sm/route:flex-none" placeholder={"最小"} inputMode="decimal" value={form.min}
                           disabled={form.channel === 0}
                           onChange={(e) => setForm({ min: e.target.value })} />
                         <span className="text-muted-foreground shrink-0">-</span>
-                        <Input className="h-8 min-w-0 flex-1" placeholder={"最大"} value={form.max}
+                        <Input className="h-8 w-full min-w-0 flex-1 @sm/route:w-20 @sm/route:flex-none" placeholder={"最大"} inputMode="decimal" value={form.max}
                           disabled={form.channel === 0}
                           onChange={(e) => setForm({ max: e.target.value })} />
                       </div>
                     </div>
                   )
                 })}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>{"通道限速"}</CardTitle>
+                <CardDescription>{"限制通道每分钟拉单次数"}</CardDescription>
+                <CardAction>
+                  {!loading && (config?.ratelimit[rlChannel] ?? 0) > 0 && (
+                    <Badge variant="secondary">1 分钟 × {config?.ratelimit[rlChannel]}</Badge>
+                  )}
+                </CardAction>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2 pt-1">
+                {loading ? (
+                  <>
+                    <Skeleton className="h-8 w-full" />
+                    <Skeleton className="h-8 w-full" />
+                  </>
+                ) : (
+                  <>
+                    {/* Radix Select 不支持空字符串 value，用 "off" 哨兵值代表「关闭」，回调时映射回 "" */}
+                    <Select
+                      value={rlChannel || "off"}
+                      onValueChange={(v) => onRatelimitChannelChange(v === "off" ? "" : v)}
+                    >
+                      <SelectTrigger size="sm" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="off">{"关闭（解除全部限速）"}</SelectItem>
+                        {(config?.channels ?? []).map((c) => (
+                          <SelectItem key={c.id} value={String(c.id)}>{c.name} (ID:{c.id})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex items-center gap-2">
+                      {/* 选「关闭」时无目标通道，次/分钟无意义，禁用（保存仍可用：一键解除全部限速） */}
+                      <Input className="h-8 min-w-0 flex-1" placeholder={"次/分钟"} disabled={!rlChannel}
+                        value={rlValue} onChange={(e) => setRlValue(e.target.value)} />
+                      <Button size="sm" className="h-8 shrink-0" disabled={rlSaving} onClick={saveRatelimit}>
+                        {rlSaving ? <Spinner className="size-3.5" /> : "保存"}
+                      </Button>
+                    </div>
+                  </>
+                )}
+                {rlStats?.show === 1 && (
+                  <p className="text-muted-foreground text-xs">
+                    {`总单 ${rlStats.allnum ?? 0} · 成功 ${rlStats.success ?? 0} · 成功率 ${rlStats.rate ?? 0}%`}
+                  </p>
+                )}
+                {!loading && rlChannel && !rlStats && <Skeleton className="h-3.5 w-44" />}
               </CardContent>
             </Card>
           </div>
@@ -534,7 +647,7 @@ export function DashboardPage() {
               <CardContent className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <SectionTitle>{"支付方式收入统计"}</SectionTitle>
-                  {loading ? <TodayTableSkeleton /> : <TodayTable dayToday={orderToday} nameMap={paytypeMap} kind="paytype" />}
+                  {loading ? <TodayTableSkeleton /> : <TodayTable dayToday={orderToday} nameMap={paytypeMap} iconMap={paytypeIconMap} kind="paytype" />}
                 </div>
                 <div className="flex flex-col gap-2">
                   <SectionTitle>{"支付通道收入统计"}</SectionTitle>
@@ -542,7 +655,7 @@ export function DashboardPage() {
                 </div>
                 <div className="flex flex-col gap-2">
                   <SectionTitle>{"支付方式手续费利润（已扣除通道成本）"}</SectionTitle>
-                  {loading ? <TodayTableSkeleton /> : <TodayTable dayToday={orderToday} nameMap={paytypeMap} kind="profit" />}
+                  {loading ? <TodayTableSkeleton /> : <TodayTable dayToday={orderToday} nameMap={paytypeMap} iconMap={paytypeIconMap} kind="profit" />}
                 </div>
               </CardContent>
             </Card>

@@ -88,6 +88,8 @@ COPY static/docs/ ./static/docs/
 # 宣传首页（/ 由 frontend.py 直接返回该文件，settings landing_enable 关闭时 / 跳商户登录页；
 # 镜像内缺失时会兜底成商户中心 SPA 跳登录）
 COPY static/index.html ./static/index.html
+# 内置图标库（支付方式图标等，frontend.py 挂载在 /icons）
+COPY static/icons/ ./static/icons/
 
 # 创建 storage 目录结构
 RUN mkdir -p storage/logs storage/public storage/exports storage/private

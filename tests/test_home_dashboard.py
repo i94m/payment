@@ -262,3 +262,45 @@ async def test_dashboard_payroute_and_ratelimit_api(client, session, two_channel
     # 未配置限速的通道 → show=0
     r = await client.get(f"/admin-api/dashboard/ratelimit-stats?cid={ch1_id}", headers=headers)
     assert r.json()["data"]["show"] == 0
+
+
+@pytest.mark.asyncio
+async def test_dashboard_payroute_batch_api(client, session, two_channels):
+    """批量保存金额路由：一次写入多条；启用时区间必须完整合法。"""
+    seeded = two_channels
+    tid = seeded["pay_type"].id
+    ch1_id, ch2_id = seeded["channel"].id, seeded["channel2"].id
+    headers = await _admin_headers(session)
+
+    r = await client.post("/admin-api/dashboard/payroute/batch", json={"items": [
+        {"type_id": tid, "enable": True, "min": "1", "max": "100", "channel": ch1_id},
+        {"type_id": tid, "enable": True, "min": "1", "max": "100", "channel": ch2_id},
+    ]}, headers=headers)
+    assert r.json()["code"] != 0  # 同一支付方式重复
+
+    # 启用却没有完整区间 → 拒绝（money_ok 对 0 区间判不生效，存下去也是死配置）
+    r = await client.post("/admin-api/dashboard/payroute/batch", json={"items": [
+        {"type_id": tid, "enable": True, "min": "0", "max": "100", "channel": ch2_id},
+    ]}, headers=headers)
+    assert r.json()["code"] != 0
+
+    r = await client.post("/admin-api/dashboard/payroute/batch", json={"items": [
+        {"type_id": tid, "enable": True, "min": "100", "max": "50", "channel": ch2_id},
+    ]}, headers=headers)
+    assert r.json()["code"] != 0  # 最大 < 最小
+
+    # 通道不属于该支付方式 → 拒绝
+    r = await client.post("/admin-api/dashboard/payroute/batch", json={"items": [
+        {"type_id": tid + 999, "enable": True, "min": "1", "max": "100", "channel": ch2_id},
+    ]}, headers=headers)
+    assert r.json()["code"] != 0
+
+    r = await client.post("/admin-api/dashboard/payroute/batch", json={"items": [
+        {"type_id": tid, "enable": True, "min": "10", "max": "500", "channel": ch2_id},
+    ]}, headers=headers)
+    assert r.json()["code"] == 0
+
+    await session.rollback()
+    row = (await session.exec(select(Setting).where(Setting.key == KEY_PAYROUTE))).first()
+    assert row.value[str(tid)]["channel"] == ch2_id
+    assert row.value[str(tid)]["min"] == "10.00"

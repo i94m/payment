@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge"
 import { numStr } from "@/lib/form-schema"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
+import { PayIcon, PayTypeLabel } from "@/components/pay-icon"
 import {
   useDataList,
   ConfirmDialog,
@@ -169,7 +170,8 @@ export function ChannelsPage() {
     fetchStats()
   }, [fetchStats])
 
-  const typeName = (id: number) => payTypes.find((p) => p.id === id)?.name ?? String(id)
+  const typeItem = (id: number) => payTypes.find((p) => p.id === id)
+  const typeName = (id: number) => typeItem(id)?.name ?? String(id)
 
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
@@ -500,7 +502,11 @@ export function ChannelsPage() {
         accessorKey: "payment_type_id",
         enableSorting: false,
         header: () => "支付方式",
-        cell: ({ row }) => <span className="text-sm">{typeName(row.original.payment_type_id)}</span>,
+        cell: ({ row }) => {
+          const pt = typeItem(row.original.payment_type_id)
+          return <PayTypeLabel code={pt?.code} icon={pt?.icon} name={typeName(row.original.payment_type_id)}
+                               className="text-sm" />
+        },
         meta: { headClassName: "w-[90px]" },
       },
       {
@@ -577,7 +583,12 @@ export function ChannelsPage() {
               <SelectContent>
                 <SelectItem value="_all">{"全部支付方式"}</SelectItem>
                 {payTypes.map((pt) => (
-                  <SelectItem key={pt.id} value={String(pt.id)}>{pt.name}</SelectItem>
+                  <SelectItem key={pt.id} value={String(pt.id)}>
+                    <span className="flex items-center gap-1.5">
+                      <PayIcon code={pt.code} icon={pt.icon} />
+                      {pt.name}
+                    </span>
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -676,7 +687,12 @@ export function ChannelsPage() {
                       <SelectTrigger id={field.name} className="w-full" aria-invalid={fieldState.invalid || undefined}><SelectValue placeholder={"选择支付方式"} /></SelectTrigger>
                       <SelectContent>
                         {payTypes.map((pt) => (
-                          <SelectItem key={pt.id} value={String(pt.id)}>{pt.name}（{pt.code}）</SelectItem>
+                          <SelectItem key={pt.id} value={String(pt.id)}>
+                            <span className="flex items-center gap-1.5">
+                              <PayIcon code={pt.code} icon={pt.icon} />
+                              {pt.name}（{pt.code}）
+                            </span>
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

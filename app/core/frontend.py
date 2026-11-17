@@ -14,7 +14,7 @@ from app.core.modules import MODULES
 # 管理后台页面路径前缀保留字：页面路径改跑这些前缀会撞路由/静态挂载/文档
 _RESERVED_PREFIXES = {
     "admin", "merchant", "agent", "docs", "api", "storage", "static",
-    "assets", "images", "css", "audio", "paypage", "cashier",
+    "assets", "images", "icons", "css", "audio", "paypage", "cashier",
     "orders", "callbacks", "upload", "health", "openapi",
     "admin-api", "merchant-api", "agent-api",
 }
@@ -101,6 +101,12 @@ def register_frontend(app: FastAPI) -> None:
     landing_path = os.path.join(base_dir, "static", "index.html")
     # 管理后台页面路径前缀（ADMIN_PATH_PREFIX 可配，默认 admin；调用期读取便于测试）
     admin_prefix = _admin_prefix()
+
+    # 内置图标库（static/icons，如支付方式图标 /icons/pay/wxpay.svg）：源码入库，
+    # 不依赖前端构建产物，故在 console 产物存在性判断之前挂载（dev/未构建也能访问）
+    icons_dir = os.path.join(base_dir, "static", "icons")
+    if os.path.exists(icons_dir):
+        app.mount("/icons", StaticFiles(directory=icons_dir), name="icons")
 
     if not os.path.exists(frontend_dir):
         return

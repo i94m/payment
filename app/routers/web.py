@@ -251,6 +251,7 @@ _CASHIER_PAGE = """<!DOCTYPE html>
 .type-item:active{background:#f2f3f5}
 .type-item.active{border-color:#165dff;background:#f0f6ff}
 .type-item .icon{width:36px;height:36px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;margin-right:12px;color:#fff;font-weight:700;font-size:14px}
+.type-item .icon-img{width:28px;height:28px;border-radius:6px;margin-right:12px;object-fit:contain;flex:none}
 .type-item .left{display:flex;align-items:center}
 .types-loading,.types-empty{color:#86909c;font-size:14px;text-align:center;padding:24px 0}
 .pay-err{color:#f53f3f;background:#fff1f0;border:1px solid #ffccc7;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.6;margin-bottom:12px;word-break:break-all}
@@ -377,9 +378,19 @@ async function loadInfo(){
       $('pay-btn').disabled = true;
       return;
     }
-    var colors = {alipay:'#1677ff', wxpay:'#00c250', qqpay:'#12b7f5', bank:'#f5a623'};
+    // 图标优先级：后台配置的 icon > 内置图标库（与 static/icons/pay 一致）> 彩色首字兜底
+    var colors = {alipay:'#1677ff', wxpay:'#00c250', qqpay:'#12b7f5', bank:'#f5a623', jdpay:'#e1251b', paypal:'#003087'};
+    var ICON_LIB = {alipay:'/icons/pay/alipay.svg', wxpay:'/icons/pay/wxpay.svg', qqpay:'/icons/pay/qqpay.svg', bank:'/icons/pay/bank.svg', jdpay:'/icons/pay/jdpay.svg', paypal:'/icons/pay/paypal.svg'};
+    function esc(v){return String(v == null ? '' : v).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+    function iconOf(t){
+      var src = String(t.icon || ICON_LIB[t.code] || '');
+      if(!(src.indexOf('/') === 0 || src.indexOf('https://') === 0 || src.indexOf('http://') === 0)) return '';
+      return '<img class="icon-img" src="'+esc(src)+'" alt="" onerror="this.remove()">';
+    }
     box.innerHTML = types.map(function(t,i){
-      return '<div class="type-item" role="button" tabindex="0" data-i="'+i+'"><span class="left"><span class="icon" style="background:'+(colors[t.code]||'#86909c')+'">'+((t.name||t.code)+'').slice(0,1)+'</span>'+((t.name||t.code)+'')+'</span><span>›</span></div>';
+      var name = esc((t.name||t.code)+'');
+      var icon = iconOf(t) || '<span class="icon" style="background:'+(colors[t.code]||'#86909c')+'">'+esc(((t.name||t.code)+'').slice(0,1))+'</span>';
+      return '<div class="type-item" role="button" tabindex="0" data-i="'+i+'"><span class="left">'+icon+name+'</span><span>›</span></div>';
     }).join('');
     var items = box.querySelectorAll('.type-item');
     function choose(el){
