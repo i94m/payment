@@ -51,7 +51,8 @@ async def index(session: SessionDep, auth: MerchantUser, cache: CacheDep = None,
         select(func.count()).select_from(Order).where(
             *paid_cond, Order.created_at >= week_ago)
     )).one())
-    success_rate = round(paid_week / all_count * 100, 2) if all_count else 100.00
+    # 近 7 日一单都没有时返回 null（前端显示 —），不能显示成 100% 误导
+    success_rate = round(paid_week / all_count * 100, 2) if all_count else None
 
     # 近 N 日趋势：单条 GROUP BY 日期（避免逐日两条 SQL 的 N+1）
     start_day = today_start - timedelta(days=days - 1)

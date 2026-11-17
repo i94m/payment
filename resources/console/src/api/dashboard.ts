@@ -49,7 +49,8 @@ export interface MerchantOverview {
   today: { count: number; money: number }
   yesterday: { count: number; money: number }
   total: { count: number; money: number }
-  success_rate: number
+  /** 近 7 日成功率；一单都没有时为 null（前端显示 —） */
+  success_rate: number | null
   rate: string
   trend: TrendPoint[]
   announcements: { id: number; content: string; created_at: string }[]

@@ -32,6 +32,7 @@ import { toast } from "sonner"
 const orderStatusOptions: StatusBadgeOption[] = [
   { label: "待支付", value: 0, variant: "secondary" },
   { label: "已支付", value: 1, variant: "default" },
+  { label: "已退款", value: 2, variant: "destructive" },
   { label: "已过期", value: 3, variant: "outline" },
 ]
 
@@ -99,7 +100,9 @@ export function OrdersPage() {
         accessorKey: "type",
         enableSorting: false,
         header: () => "支付方式",
-        cell: ({ getValue }) => <span className="text-sm">{getValue() as string}</span>,
+        cell: ({ row }) => (
+          <span className="text-sm">{row.original.type_name || row.original.type}</span>
+        ),
         meta: { headClassName: "w-[80px]" },
       },
       {
@@ -278,6 +281,9 @@ export function OrdersPage() {
               <span>{"笔数"}: <b className="tabular-nums">{String(summary.count ?? 0)}</b></span>
               <span>{"金额"}: <b className="tabular-nums">¥{String(summary.money ?? "0.00")}</b></span>
               <span>{"商户到账"}: <b className="tabular-nums">¥{String(summary.income ?? "0.00")}</b></span>
+              <span className="text-muted-foreground/70">
+                {statusFilter === "" ? "（仅统计已支付订单）" : "（按所选状态统计）"}
+              </span>
             </div>
           )}
         </FilterCard>
@@ -304,13 +310,28 @@ export function OrdersPage() {
               </div>
               <Separator />
               <Row label={"商品名称"} value={detailOrder.subject} />
-              <Row label={"支付方式"} value={detailOrder.type} />
+              <Row label={"支付方式"} value={detailOrder.type_name || detailOrder.type} />
               <Row label={"金额"} value={`¥${detailOrder.money}`} />
               <Row label={"实付金额"} value={detailOrder.realmoney ? `¥${detailOrder.realmoney}` : "—"} />
               <Row label={"商户到账"} value={detailOrder.merchant_income ? `¥${detailOrder.merchant_income}` : "—"} />
+              {detailOrder.refund_status && detailOrder.refund_status !== "NONE" && (
+                <>
+                  <Row
+                    label={"退款状态"}
+                    value={
+                      detailOrder.refund_status === "FULL" ? "已全额退款"
+                        : detailOrder.refund_status === "PARTIAL" ? "部分退款" : "—"
+                    }
+                  />
+                  <Row
+                    label={"退款金额"}
+                    value={detailOrder.refunded_amount ? `¥${detailOrder.refunded_amount}` : "—"}
+                  />
+                </>
+              )}
               <Row label={"商户订单号"} value={detailOrder.out_trade_no} mono />
               <Row label={"扩展参数"} value={detailOrder.param} mono wrap />
-              <Row label={"创建时间"} value={detailOrder.created_at} />
+              <Row label={"创建时间"} value={detailOrder.created_at || "—"} />
               <Row label={"支付时间"} value={detailOrder.paid_at || "—"} />
             </div>
           )}

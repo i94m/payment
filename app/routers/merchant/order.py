@@ -4,7 +4,7 @@
 扣量单（is_deducted）对商户侧一律显示为未支付：状态遮蔽、无完成时间、不计入统计
 （商户面板口径）。
 """
-from typing import Optional
+from decimal import Decimal
 
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
@@ -16,18 +16,27 @@ from app.core.security import MerchantUser
 from app.lib.export import export_csv
 from app.models import Order
 from app.responses import err, paginate, suc
-from app.services.order import get_order_by_trade_no, order_query_payload
+from app.services.order import (
+    ORDER_PAID,
+    ORDER_REFUNDED,
+    fmt_money,
+    get_order_by_trade_no,
+    payment_type_name_map,
+    refundable_base,
+)
 from app.worker import enqueue
 
 router = APIRouter()
 
 
-def _dump_order(o: Order) -> dict:
+def _dump_order(o: Order, type_names: dict[str, str] | None = None) -> dict:
     deducted = bool(o.is_deducted)
+    type_code = o.payment_type_code or ""
     return {
         "trade_no": o.trade_no,
         "out_trade_no": o.out_trade_no,
-        "type": o.payment_type_code,
+        "type": type_code,
+        "type_name": (type_names or {}).get(type_code, type_code),
         "subject": o.subject,
         "money": str(o.money),
         "realmoney": "" if deducted else str(o.realmoney or ""),
@@ -98,14 +107,19 @@ async def order_list(session: SessionDep, auth: MerchantUser,
 
     # 按当前筛选条件的统计汇总（不含扣量单）
     conditions = _build_conditions(auth, body, for_summary=True)
+    # 汇总口径：默认只统计已支付收款单（未支付不计收入，已退款余额已冲回）；
+    # 显式按状态筛选时按所选状态统计，便于对账。
+    if body.get("status") in (None, ""):
+        conditions.append(col(Order.status) == ORDER_PAID)
     count_q = select(
         func.count(), func.coalesce(func.sum(Order.money), 0),
         func.coalesce(func.sum(Order.merchant_income), 0),
     ).select_from(Order).where(*conditions)
     count, money_sum, income_sum = (await session.exec(count_q)).one()
 
+    type_names = await payment_type_name_map(session)
     return suc(paginate(
-        items=[_dump_order(o) for o in items], total=total,
+        items=[_dump_order(o, type_names) for o in items], total=total,
         page=page, per_page=per_page,
         has_more_pages=page * per_page < total, has_pages=total > per_page,
         summary={"count": int(count), "money": str(money_sum), "income": str(income_sum)},
@@ -118,14 +132,23 @@ async def order_export(session: SessionDep, auth: MerchantUser, body: dict | Non
     body = body or {}
     query = _build_query(auth, body).limit(10000)
     items = (await session.exec(query)).all()
+    type_names = await payment_type_name_map(session)
+    status_text = {0: "待支付", 1: "已支付", 2: "已退款", 3: "已过期"}
+    rows = []
+    for o in items:
+        row = _dump_order(o, type_names)
+        # CSV 里支付方式/状态给人类可读文案，避免导出 alipay / 2 这类裸 code
+        row["type"] = row["type_name"]
+        row["status"] = status_text.get(row["status"], str(row["status"]))
+        rows.append(row)
     return export_csv(
-        items=[_dump_order(o) for o in items],
+        items=rows,
         filename=f"orders-{auth.user.pid}.csv",
         columns=[
             ("trade_no", "平台订单号"), ("out_trade_no", "商户订单号"),
             ("type", "支付方式"), ("subject", "商品名称"),
             ("money", "金额"), ("realmoney", "实付金额"), ("merchant_income", "到账金额"),
-            ("status", "状态(0未支付/1已支付/3过期)"),
+            ("status", "状态"),
             ("notify_status", "通知状态(-1失败/0成功/1+重试中)"),
             ("agent_id", "代理ID"), ("param", "业务扩展参数"),
             ("created_at", "创建时间"), ("paid_at", "支付时间"),
@@ -135,16 +158,32 @@ async def order_export(session: SessionDep, auth: MerchantUser, body: dict | Non
 
 @router.get("/{trade_no}")
 async def order_detail(trade_no: str, session: SessionDep, auth: MerchantUser):
+    """商户面板订单详情：字段与列表行同形（subject/created_at/paid_at/status），
+    另补退款状态与累计退款金额，供详情弹窗展示。
+
+    不复用开放 API 的 order_query_payload（那是 name/addtime/endtime 的对外契约，
+    且状态对商户下游只区分已付/未付），避免面板与接口口径互相牵连。
+    """
     order = await get_order_by_trade_no(session, trade_no)
     if not order or order.merchant_id != auth.user.id:
         return err(404, "订单不存在")
-    payload = await order_query_payload(order, session)
-    payload.update({
-        "realmoney": str(order.realmoney or ""),
-        "merchant_income": str(order.merchant_income or ""),
-        "notify_status": order.notify_status,
-        "param": order.param or "",
-    })
+    payload = _dump_order(order, await payment_type_name_map(session))
+    payload["api_trade_no"] = order.api_trade_no or ""
+    payload["channel_id"] = order.channel_id
+
+    paid = order.status in (ORDER_PAID, ORDER_REFUNDED) and not order.is_deducted
+    refunded = Decimal("0.00")
+    if paid:
+        from app.services.refund import refunded_amount
+        refunded = await refunded_amount(session, order.trade_no)
+    if not paid or refunded <= 0:
+        refund_status, refunded_str = "NONE", "0.00"
+    elif order.status == ORDER_REFUNDED or refunded >= refundable_base(order):
+        refund_status, refunded_str = "FULL", fmt_money(refunded)
+    else:
+        refund_status, refunded_str = "PARTIAL", fmt_money(refunded)
+    payload["refund_status"] = refund_status
+    payload["refunded_amount"] = refunded_str
     return suc(payload)
 
 
