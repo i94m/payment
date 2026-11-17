@@ -102,16 +102,19 @@ export function PayTypesPage() {
       {
         accessorKey: "name",
         enableSorting: false,
-        // 「名称」列：/assets/icon/{调用值}.ico 图标 + 显示名称，图标缺失时隐藏
+        // 「名称」列：图标来自接口 icon 字段；未配置时不渲染（旧实现固定拼
+        // /assets/icon/{调用值}.ico，资源不存在时每次加载 4 个 404）
         header: () => "名称",
         cell: ({ row }) => (
           <span className="flex items-center gap-1.5 text-sm font-medium">
-            <img
-              src={`/assets/icon/${row.original.code}.ico`}
-              alt=""
-              className="h-[18px] w-[18px]"
-              onError={(e) => { e.currentTarget.style.display = "none" }}
-            />
+            {row.original.icon && (
+              <img
+                src={row.original.icon}
+                alt=""
+                className="h-[18px] w-[18px]"
+                onError={(e) => { e.currentTarget.style.display = "none" }}
+              />
+            )}
             {row.original.name}
           </span>
         ),

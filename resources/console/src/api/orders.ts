@@ -10,6 +10,8 @@ export interface OrderData {
   merchant_id?: number
   merchant_username?: string
   type: string
+  /** 支付方式显示名称（后端按 payment_type.code 映射；缺失时用 type 调用值兜底） */
+  type_name?: string
   channel_id?: number
   plugin_name?: string
   subject: string

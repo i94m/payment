@@ -34,6 +34,8 @@ export interface PaymentTypeData {
   /** 支持设备：0=PC+Mobile 1=PC 2=Mobile */
   device: number
   status: number
+  /** 图标 URL（可选，未配置时前端不渲染，避免拼不存在的静态路径） */
+  icon?: string
 }
 
 export interface PaymentTypePayload {
