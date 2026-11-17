@@ -10,7 +10,7 @@ export interface OrderData {
   merchant_id?: number
   merchant_username?: string
   type: string
-  /** 支付方式显示名称（后端按 payment_type.code 映射；缺失时用 type 调用值兜底） */
+  /** 支付方式显示名称（后端按 payment_types 解析；缺失时用 type 调用值兜底） */
   type_name?: string
   channel_id?: number
   plugin_name?: string
@@ -24,6 +24,10 @@ export interface OrderData {
   return_url?: string
   param?: string
   status: number
+  /** 退款状态：NONE 未退 / PARTIAL 部分退 / FULL 全额退（仅详情接口返回） */
+  refund_status?: string
+  /** 累计已退金额（仅详情接口返回） */
+  refunded_amount?: string
   notify_status?: number
   notify_count?: number
   next_notify_at?: string

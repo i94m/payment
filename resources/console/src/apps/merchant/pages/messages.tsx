@@ -126,7 +126,7 @@ export function MessagesPage() {
                   {!m.is_read && <span className="size-2 shrink-0 rounded-full bg-primary" />}
                   <span className={`truncate text-sm ${m.is_read ? "" : "font-medium"}`}>{m.title || "（无标题）"}</span>
                   <Badge variant="outline" className={`shrink-0 ${bizCls[m.biz_type] ?? ""}`}>
-                    {BIZ_LABELS[m.biz_type] ?? m.biz_type}
+                    {m.biz_type_name || BIZ_LABELS[m.biz_type] || m.biz_type}
                   </Badge>
                 </div>
                 <span className="whitespace-nowrap text-xs text-muted-foreground">{m.created_at}</span>

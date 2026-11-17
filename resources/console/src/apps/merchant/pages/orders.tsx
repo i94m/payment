@@ -203,7 +203,9 @@ export function OrdersPage() {
         accessorKey: "type",
         enableSorting: false,
         header: () => "支付方式",
-        cell: ({ getValue }) => <span className="text-sm">{getValue() as string}</span>,
+        cell: ({ row }) => (
+          <span className="text-sm">{row.original.type_name || row.original.type}</span>
+        ),
         meta: { headClassName: "w-[80px]" },
       },
       {
@@ -355,6 +357,9 @@ export function OrdersPage() {
               <span>{"笔数"}: <b className="tabular-nums">{String(summary.count ?? 0)}</b></span>
               <span>{"金额"}: <b className="tabular-nums">¥{String(summary.money ?? "0.00")}</b></span>
               <span>{"商户到账"}: <b className="tabular-nums">¥{String(summary.income ?? "0.00")}</b></span>
+              <span className="text-muted-foreground/70">
+                {statusFilter === "" ? "（仅统计已支付订单）" : "（按所选状态统计）"}
+              </span>
             </div>
           )}
         </FilterCard>
@@ -397,7 +402,7 @@ export function OrdersPage() {
               </div>
               <Separator />
               <Row label={"商品名称"} value={detailOrder.subject || detailOrder.name} wrap />
-              <Row label={"支付方式"} value={detailOrder.type} />
+              <Row label={"支付方式"} value={detailOrder.type_name || detailOrder.type} />
               <Row label={"金额"} value={`¥${detailOrder.money}`} />
               <Row label={"实付金额"} value={detailOrder.realmoney ? `¥${detailOrder.realmoney}` : "—"} />
               <Row label={"商户到账"} value={detailOrder.merchant_income ? `¥${detailOrder.merchant_income}` : "—"} />

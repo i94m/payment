@@ -29,9 +29,9 @@ export function RecordsPage() {
         accessorKey: "biz_type",
         enableSorting: false,
         header: () => "业务类型",
-        cell: ({ getValue }) => {
-          const raw = String(getValue() ?? "")
-          return secondaryCell(BIZ_TYPE_LABELS[raw] || raw || "—")
+        cell: ({ row }) => {
+          const raw = String(row.original.biz_type ?? "")
+          return secondaryCell(row.original.biz_type_name || BIZ_TYPE_LABELS[raw] || raw || "—")
         },
       },
       {

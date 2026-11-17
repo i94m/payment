@@ -880,6 +880,16 @@ def refundable_base(order: Order) -> Decimal:
     return dmoney(order.merchant_income if order.merchant_income is not None else order.money)
 
 
+async def payment_type_name_map(session: AsyncSession) -> dict[str, str]:
+    """支付方式 code → 展示名（payment_types 表口径，管理端可改名）。
+
+    订单只存 payment_type_code（alipay/wxpay…），面板展示中文名统一走这里，
+    避免前端硬编码映射与后台「支付方式」配置脱节。
+    """
+    rows = (await session.exec(select(PaymentType.code, PaymentType.name))).all()
+    return {str(r[0]): str(r[1]) for r in rows}
+
+
 async def order_query_payload(order: Order, session: AsyncSession | None = None) -> dict:
     """开放 API 查单响应 data（GET /orders/{trade_no}）。
 

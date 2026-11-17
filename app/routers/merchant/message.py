@@ -13,6 +13,16 @@ from app.responses import err, paginate, suc
 
 router = APIRouter()
 
+# 站内消息业务类型中文名（services/message.send_merchant_message 的 biz_type 取值）
+MESSAGE_BIZ_TYPES = {
+    "system": "系统通知",
+    "settle": "结算",
+    "recharge": "充值",
+    "order": "订单",
+    "refund": "退款",
+    "agent": "代理",
+}
+
 
 def _dump(m: MerchantMessage) -> dict:
     return {
@@ -20,6 +30,7 @@ def _dump(m: MerchantMessage) -> dict:
         "title": m.title,
         "content": m.content,
         "biz_type": m.biz_type,
+        "biz_type_name": MESSAGE_BIZ_TYPES.get(m.biz_type, m.biz_type),
         "is_read": m.read_at is not None,
         "created_at": m.created_at.strftime("%Y-%m-%d %H:%M:%S") if m.created_at else "",
     }
