@@ -53,7 +53,7 @@ async def plugin_list(session: SessionDep):
     } for p in rows]
 
     # 盘上已装好、库里还没有的插件（手工拷目录后没点同步，或别的副本刚上传）
-    # 也一并返回：后台「已安装插件」点一次刷新即可看到并落库，无需重启
+    # 也一并返回：后台「刷新插件」点一次即可看到并落库，无需重启
     known = {p.name for p in rows}
     for item in PluginRegistry.list_plugins():
         if item["name"] in known:
@@ -66,7 +66,7 @@ async def plugin_list(session: SessionDep):
             "is_enabled": True,
             "version": item["version"] or "",
             "source": item["source"] or "third",
-            # 尚未同步进 plugins 表（点「已安装插件」刷新即落库）
+            # 尚未同步进 plugins 表（点「刷新插件」即落库）
             "pending": True,
         })
     data.sort(key=lambda x: x["name"])
@@ -182,7 +182,7 @@ async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
     inputs = meta.inputs
     version = (str(meta.version or ""))[:16] or None
 
-    # 同步 Plugin 表，让「已安装插件」列表立即可见（plugin_sync 同款最小集）
+    # 同步 Plugin 表，让后台插件列表立即可见（plugin_sync 同款最小集）
     row = await session.get(Plugin, name)
     if row:
         row.showname = showname

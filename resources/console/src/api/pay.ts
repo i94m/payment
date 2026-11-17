@@ -21,7 +21,7 @@ export interface PluginData {
   version: string
   /** 插件来源：builtin=镜像内置，third=三方（storage/plugins），unknown=已失效 */
   source: string
-  /** 盘上已加载但还没同步进插件表（点「已安装插件」刷新即落库） */
+  /** 盘上已加载但还没同步进插件表（点「刷新插件」即落库） */
   pending?: boolean
 }
 

@@ -113,7 +113,7 @@ async def _init_async():
         await _seed_pay_types(session)
         await _seed_settings(session)
 
-    # 3. 同步插件表（全新安装「已安装插件」不再为 0，新增通道下拉可用）
+    # 3. 同步插件表（全新安装插件计数不再为 0，新增通道下拉可用）
     typer.secho("[插件] 开始同步...", fg=typer.colors.CYAN)
     async with session_maker() as session:
         result = await _sync_plugins(session)
