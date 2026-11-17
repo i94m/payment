@@ -293,7 +293,10 @@ async def _get_current_user_by_guard(
 
     jti = payload.get("jti")
     if jti and await is_token_revoked(jti, cache):
-        raise HTTPException(status_code=401, detail={"code": 401, "message": "Token已被撤销"})
+        raise HTTPException(
+            status_code=401,
+            detail={"code": 401, "message": "登录已过期，请重新登录"},
+        )
 
     try:
         user_id = int(payload["sub"].split(":")[1])

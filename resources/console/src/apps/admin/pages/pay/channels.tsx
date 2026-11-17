@@ -89,9 +89,8 @@ const testPaySchema = z.object({
   amount: numStr("订单金额", { min: 0.01, max: 1000 }),
 })
 
-// 插件展示名 + 来源标记：内置（随镜像）/ 三方（storage/plugins，上传或目录拷入）
-const pluginLabel = (p: PluginData) =>
-  `${p.showname}（${p.source === "third" ? "三方" : p.source === "builtin" ? "内置" : "未知"}）`
+// 插件展示名：内置与三方一视同仁，不额外标注来源
+const pluginLabel = (p: PluginData) => p.showname
 
 export function ChannelsPage() {
 
