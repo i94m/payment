@@ -10,7 +10,7 @@ from sqlmodel import col, func, select
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import AdminUser, PermissionChecker
 from app.lib.export import export_csv
-from app.models import Merchant, Order, PaymentType
+from app.models import Merchant, Order
 from app.responses import err, paginated_query_async, suc
 from app.routers.common.params import parse_int
 from app.services.notify import requeue_notify
@@ -18,22 +18,12 @@ from app.services.order import (
     get_order_by_trade_no,
     ORDER_PENDING,
     fmt_money,
+    payment_type_name_map,
     process_paid_order,
 )
 from app.worker import enqueue
 
 router = APIRouter()
-
-
-async def _pay_type_names(session, codes: set[str]) -> dict[str, str]:
-    """payment_type.code → 显示名称（订单列表/详情把 alipay 渲染成「支付宝」）。"""
-    codes = {c for c in codes if c}
-    if not codes:
-        return {}
-    rows = (await session.exec(
-        select(PaymentType).where(col(PaymentType.code).in_(codes))
-    )).all()
-    return {t.code: t.name for t in rows}
 
 
 def _dump_order(order: Order, merchant_username: str = "", type_name: str = "") -> dict:
@@ -109,8 +99,8 @@ async def order_list(session: SessionDep, page: int = Query(1, ge=1),
     query = _build_query(body)
     data = await paginated_query_async(session, query, page, per_page,
                                        dump_fn=lambda o: _dump_order(o))
-    # 补支付方式显示名
-    type_names = await _pay_type_names(session, {it["type"] for it in data["items"]})
+    # 补支付方式显示名（与商户端/代理端共用 services.order.payment_type_name_map，避免各写一份）
+    type_names = await payment_type_name_map(session)
     for it in data["items"]:
         it["type_name"] = type_names.get(it["type"], "")
     # 补商户名
@@ -174,7 +164,7 @@ async def order_detail(trade_no: str, session: SessionDep):
     if not order:
         return err(404, "订单不存在")
     merchant = await session.get(Merchant, order.merchant_id)
-    type_names = await _pay_type_names(session, {order.payment_type_code})
+    type_names = await payment_type_name_map(session)
     return suc(_dump_order(order, merchant.username if merchant else "",
                            type_names.get(order.payment_type_code, "")))
 
