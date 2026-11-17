@@ -1,7 +1,7 @@
 import {
   IconGauge, IconListDetails, IconBuildingStore, IconHistory,
   IconReceipt, IconSpeakerphone, IconRoute,
-  IconAdjustments, IconPlugConnected, IconBell,
+  IconAdjustments, IconPlugConnected, IconBell, IconCreditCard, IconShieldLock,
 } from "@tabler/icons-react"
 import type { MenuSection } from "@/apps/merchant/sidebar"
 import { FEATURE_NOTIFICATION_CENTER } from "@/lib/features"
@@ -46,7 +46,10 @@ export function getAdminMenu(): MenuSection[] {
       label: "系统配置",
       items: [
         { title: "支付通道", url: "/pay/channels", icon: IconRoute, permission: "channel.view" },
+        { title: "支付方式", url: "/pay/types", icon: IconCreditCard, permission: "payment_type.view" },
         { title: "站点配置", url: "/setting/pay", icon: IconAdjustments, permission: "pay_setting.view" },
+        // 管理员账号（RBAC）与后端 MENU_TREE 对齐；超管与有 system.admin 的子账号可见
+        { title: "管理员账号", url: "/system/accounts", icon: IconShieldLock, permission: "system.admin" },
       ],
     },
   ]

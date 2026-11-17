@@ -219,6 +219,8 @@ async def type_list(session: SessionDep):
     return suc([{
         "id": t.id, "code": t.code, "name": t.name,
         "device": t.device, "status": t.status,
+        # 图标 URL（为空则不渲染，避免前端拼不存在的 /assets/icon/{code}.ico 产生 404）
+        "icon": t.icon or "",
     } for t in rows])
 
 

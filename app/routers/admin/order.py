@@ -10,7 +10,7 @@ from sqlmodel import col, func, select
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import AdminUser, PermissionChecker
 from app.lib.export import export_csv
-from app.models import Merchant, Order
+from app.models import Merchant, Order, PaymentType
 from app.responses import err, paginated_query_async, suc
 from app.services.notify import requeue_notify
 from app.services.order import (
@@ -24,7 +24,18 @@ from app.worker import enqueue
 router = APIRouter()
 
 
-def _dump_order(order: Order, merchant_username: str = "") -> dict:
+async def _pay_type_names(session, codes: set[str]) -> dict[str, str]:
+    """payment_type.code → 显示名称（订单列表/详情把 alipay 渲染成「支付宝」）。"""
+    codes = {c for c in codes if c}
+    if not codes:
+        return {}
+    rows = (await session.exec(
+        select(PaymentType).where(col(PaymentType.code).in_(codes))
+    )).all()
+    return {t.code: t.name for t in rows}
+
+
+def _dump_order(order: Order, merchant_username: str = "", type_name: str = "") -> dict:
     return {
         "id": order.id,
         "trade_no": order.trade_no,
@@ -33,6 +44,7 @@ def _dump_order(order: Order, merchant_username: str = "") -> dict:
         "merchant_id": order.merchant_id,
         "merchant_username": merchant_username,
         "type": order.payment_type_code,
+        "type_name": type_name,
         "channel_id": order.channel_id,
         "plugin_name": order.plugin_name or "",
         "subject": order.subject,
@@ -100,6 +112,10 @@ async def order_list(session: SessionDep, page: int = Query(1, ge=1),
     query = _build_query(body)
     data = await paginated_query_async(session, query, page, per_page,
                                        dump_fn=lambda o: _dump_order(o))
+    # 补支付方式显示名
+    type_names = await _pay_type_names(session, {it["type"] for it in data["items"]})
+    for it in data["items"]:
+        it["type_name"] = type_names.get(it["type"], "")
     # 补商户名
     merchant_ids = {it["merchant_id"] for it in data["items"]}
     if merchant_ids:
@@ -132,7 +148,7 @@ async def order_export(session: SessionDep, request: Request):
         )).all()
         name_map = {m.id: m.username for m in merchants}
 
-    status_text = {0: "待支付", 1: "已支付", 3: "已过期"}
+    status_text = {0: "待支付", 1: "已支付", 2: "已退款", 3: "已过期"}
     rows = []
     for o in orders:
         rows.append({
@@ -161,7 +177,9 @@ async def order_detail(trade_no: str, session: SessionDep):
     if not order:
         return err(404, "订单不存在")
     merchant = await session.get(Merchant, order.merchant_id)
-    return suc(_dump_order(order, merchant.username if merchant else ""))
+    type_names = await _pay_type_names(session, {order.payment_type_code})
+    return suc(_dump_order(order, merchant.username if merchant else "",
+                           type_names.get(order.payment_type_code, "")))
 
 
 @router.post("/refill", dependencies=[Depends(PermissionChecker("order.refill"))])
