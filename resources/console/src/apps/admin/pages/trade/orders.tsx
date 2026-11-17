@@ -34,6 +34,7 @@ import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 import { digitsOnly, toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
+import { usePermission } from "@/hooks/use-permission"
 import { useSearchParams } from "react-router-dom"
 
 const orderStatusOptions: StatusBadgeOption[] = [
@@ -67,6 +68,11 @@ export function OrdersPage() {
   // 支持从商户列表快捷跳转：/trade/orders?merchant_id=xx；通道列表：?channel_id=xx；支付方式列表：?type=xx；
   // 资金明细关联订单号：?trade_no=xx
   const [searchParams] = useSearchParams()
+  // 动作按钮按细粒度权限显隐（接口侧 PermissionChecker 仍会兜底 403）
+  const hasPermission = usePermission()
+  const canExport = hasPermission("order.export")
+  const canRefill = hasPermission("order.refill")
+  const canNotify = hasPermission("order.notify")
 
   const [tradeNo, setTradeNo] = React.useState(searchParams.get("trade_no") || "")
   const [outTradeNo, setOutTradeNo] = React.useState("")
@@ -155,7 +161,8 @@ export function OrdersPage() {
         accessorKey: "type",
         enableSorting: false,
         header: () => "支付方式",
-        cell: ({ getValue }) => <span className="text-sm">{getValue() as string}</span>,
+        // 后端同时返回 type_name（支付方式的显示名称），缺失时退回调用值
+        cell: ({ row }) => <span className="text-sm">{row.original.type_name || row.original.type}</span>,
         meta: { headClassName: "w-[80px]" },
       },
       {
@@ -212,16 +219,16 @@ export function OrdersPage() {
             }
           },
         },
-        {
+        ...(canRefill ? [{
           label: "补单",
           icon: <IconRefreshDot className="size-4" />,
-          onClick: (item) => { setActionType("refill"); setActionTradeNo(item.trade_no) },
-        },
-        {
+          onClick: (item: OrderData) => { setActionType("refill"); setActionTradeNo(item.trade_no) },
+        }] : []),
+        ...(canNotify ? [{
           label: "重发通知",
           icon: <IconBell className="size-4" />,
-          onClick: (item) => { setActionType("notify"); setActionTradeNo(item.trade_no) },
-        },
+          onClick: (item: OrderData) => { setActionType("notify"); setActionTradeNo(item.trade_no) },
+        }] : []),
       ] as ActionItem<OrderData>[], { width: 320 }),
     ],
     perPage: 20,
@@ -340,10 +347,12 @@ export function OrdersPage() {
                 <IconRefresh className="size-4" />
                 {"重置"}
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExport}>
-                <IconDownload className="size-4" />
-                {"导出 CSV"}
-              </Button>
+              {canExport && (
+                <Button variant="outline" size="sm" onClick={handleExport}>
+                  <IconDownload className="size-4" />
+                  {"导出 CSV"}
+                </Button>
+              )}
             </div>
             {summaryMoney !== "" && (
               <div className="text-sm text-muted-foreground">
@@ -384,7 +393,7 @@ export function OrdersPage() {
               <DetailRow label={"实付金额"} value={detailOrder.realmoney ? `¥${detailOrder.realmoney}` : "—"} />
               <DetailRow label={"商户到账"} value={detailOrder.merchant_income ? `¥${detailOrder.merchant_income}` : "—"} />
               <DetailRow label={"平台利润"} value={detailOrder.profit ? `¥${detailOrder.profit}` : "—"} />
-              <DetailRow label={"支付方式"} value={detailOrder.type} />
+              <DetailRow label={"支付方式"} value={detailOrder.type_name || detailOrder.type} />
               <DetailRow label={"通道插件"} value={detailOrder.plugin_name} />
               <DetailRow label={"上游订单号"} value={detailOrder.api_trade_no} mono />
               <DetailRow label={"商户订单号"} value={detailOrder.out_trade_no} mono />
