@@ -163,5 +163,5 @@ esac
 # ---- 6. 汇总 ----
 dc ps --format 'table {{.Name}}\t{{.Status}}'
 log "完成 ✔  入口：宿主 nginx 反代 127.0.0.1:8000-8002（nginx-conf.conf，宝塔可直接粘贴站点配置）；"
-log "      管理后台 /admin（首次部署默认 admin/123456，登录后立即改密）；"
+log "      管理后台 /admin（首次部署默认 superadmin/123456，登录后立即改密）；"
 log "      日志：docker compose -f $COMPOSE_FILE logs -f app worker"
