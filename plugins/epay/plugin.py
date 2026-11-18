@@ -59,11 +59,11 @@ class EpayPayment(BasePayment):
         types=["alipay", "wxpay"],
         inputs=[
             {"name": "appurl", "title": "接口地址", "type": "input",
-             "placeholder": "https://pay.example.com/", "required": True},
+             "placeholder": "接口完整地址", "required": True},
             {"name": "appid", "title": "商户ID", "type": "input",
-             "placeholder": "商户 PID，如 1001", "required": True},
+             "placeholder": "商户 PID", "required": True},
             {"name": "appkey", "title": "商户密钥", "type": "input",
-             "placeholder": "商户后台密钥", "required": True},
+             "placeholder": "32位MD5密钥", "required": True},
         ],
         version="1.0.0",
     )

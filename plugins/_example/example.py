@@ -71,17 +71,20 @@ class ExamplePayment(BasePayment):
         showname="示例支付",
         types=["alipay", "wxpay"],           # 只能取系统支付方式 code
         inputs=[
-            # ★ 硬性规则：每个 input 型字段必须带 placeholder，
-            #   且是"可直接照抄的真实格式示例"，不是"请输入xxx"空话
+            # ★ 硬性规则一：只放核心参数（参与签名/请求的网关、商户号、密钥、编码），
+            #   回调 IP、白名单、备注之类一律不进 inputs，写进模块 docstring 即可
+            # ★ 硬性规则二：每个 input/textarea 字段都要 placeholder，且是**提示词**（≤12 字）——
+            #   说明该填什么（如「下单接口完整地址」「商户号」），不要贴真实 URL/商户号/密钥示例值，
+            #   也不写解释性长句、不出现"上游/商户后台"等词
             {"name": "appurl", "title": "网关地址", "type": "input",
-             "placeholder": "https://pay.example.com/gateway/api", "required": True},
+             "placeholder": "下单接口完整地址", "required": True},
             {"name": "appid", "title": "商户号", "type": "input",
-             "placeholder": "如 10001（上游商户后台的数字ID）", "required": True},
+             "placeholder": "商户号", "required": True},
             {"name": "appkey", "title": "商户密钥", "type": "input",
-             "placeholder": "上游商户后台分配的32位密钥，用于MD5签名", "required": True},
+             "placeholder": "32位MD5密钥", "required": True},
             # textarea 型用于公钥/私钥这类需要整段粘贴的长凭证（多行 PEM 也能直接贴）
             {"name": "appsecret", "title": "平台公钥", "type": "textarea",
-             "placeholder": "粘贴平台公钥 PEM（多行可含 BEGIN/END 头尾）"},
+             "placeholder": "粘贴 PEM 公钥"},
             # select 型用 options，不需要 placeholder
             {"name": "paymode", "title": "支付模式", "type": "select",
              "options": {"1": "跳转", "2": "扫码"}},

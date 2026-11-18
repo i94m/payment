@@ -109,14 +109,26 @@ plugins/
   - `input`：单行短凭证（网关地址、商户号、MD5 密钥）
   - `textarea`：需要整段粘贴的长凭证（平台公钥、商户私钥等 PEM/base64 密钥）——多行 PEM 可含 `BEGIN/END` 头尾，签名前由 `app/lib/sign.py` 的 `normalize_key()` 统一清洗空白/换行
   - `select`：枚举值，用 `options` 提供候选项
-- **placeholder 是硬性要求**：
-  - 每个支付账号/密钥类字段（商户号、AppID、密钥、网关地址、编码/编号等一切 `type: "input"` 或 `"textarea"` 的字段）**必须带 `placeholder`**，缺一个都算不合规
-  - placeholder 要写成**可直接照抄的真实格式示例**，说明取值来源与格式约束，而不是"请输入xxx"这类空话：
-    - 网关地址 → 完整默认地址，如 `http://137.220.128.173/gateway/pay/api`
-    - 商户号/AppID → 上游账号的样例形态，如 `1127`、`2021001234567890`
-    - 密钥 → 形态说明，如 `商户后台分配的32位密钥，用于MD5签名`
-    - 公钥/私钥（textarea）→ `粘贴 PEM 公钥（多行可含 BEGIN/END 头尾）`
-    - 特殊编码（如支付方式编号）→ 格式 + 含义，如 `数字编码如 123，不同支付方式不同，需向平台确认`
+- **只配核心参数（硬性要求）**：
+  - `inputs` 里**只放真正参与签名 / 请求 / 回调校验的字段**：网关地址、商户号/AppID、密钥/私钥、通道编码或支付方式编号、必要的版本号/模式枚举
+  - **不要**把回调 IP、来源 IP、白名单、备注、联系人、邮箱、后台登录地址/账号密码等塞进 `inputs`
+    —— 这些既不进签名也不进请求，插件根本不读，只会把表单撑长、让运维误以为必须填
+  - 文档里给的这些非请求信息（如回调 IP）写进模块 docstring 备查即可
+- **placeholder 是硬性要求：写「提示词」，不写「示例值」**：
+  - 每个 `type: "input"` / `"textarea"` 字段**必须带 `placeholder`**，缺一个都算不合规
+  - 内容是一句**简短的中文提示**（一般 ≤ 12 字），说明这一项该填什么/什么格式，一眼看懂即可：
+    - 网关地址 → `下单接口完整地址`
+    - 商户号/AppID → `商户号`、`商户 PID`
+    - 密钥 → `32位MD5密钥`
+    - 通道编码/支付方式编号 → `平台开通的通道编码`
+    - 公钥/私钥（textarea）→ `粘贴 PEM 公钥`、`粘贴 PEM 私钥`
+  - **不要直接贴真实示例值**（网关 URL、商户号、密钥、通道编码都不要写具体值）：
+    - ❌ `https://pay.xxx.com/pay/create`
+    - ❌ `10001`
+    - ❌ `如 ABC123`
+    - ✅ `下单接口完整地址`、`商户号`、`通道编码`
+  - 必须强调的格式约束写进括号，别写成句子：`商户号（数字ID）`、`通道编码（大小写不敏感）`
+  - **禁止**解释性长句，**禁止出现"上游""商户后台""对方平台""平台分配"这类词**，也不要"请输入xxx"这类空话
   - `type: "select"` 用 `options` 提供候选项，不需要 placeholder
 - 凭证读取统一走 `self.channel`（已解密 dict），空值兜底用 `str(self.channel.get("k", "") or "").strip()`，且**必须与 inputs 里的 `name` 逐一对应**
 
@@ -130,7 +142,8 @@ cd <仓库根目录>
 2. **注册成功**：`PluginRegistry.reload()` 后 `get_payment_class("<name>")` 非 None（写临时脚本或用 `python -c` 验证）
 3. **签名有文档向量的必须离线比对**，用 `python -c` 算一遍
 4. **meta 表单字段与实际读取的 channel 键一一对应**（input name ↔ `self.channel.get(...)`）
-5. **每个 `type: "input"` / `"textarea"` 的 inputs 字段都有 placeholder**，且是可照抄的真实格式示例（见 §7）
+5. **inputs 只含核心参数**（无回调 IP / 白名单 / 备注之类），且每个 `type: "input"` / `"textarea"` 字段都带**简短提示词** placeholder
+   （说明该填什么，不贴真实示例值，不出现"上游""商户后台""平台分配"等解释性词语，见 §7）
 6. **`meta.version` 必填**：新插件一律 `1.0.0`，迭代按语义化递增（见 §7）
 7. **notify 分支齐全**：无 sign / 验签失败 / 非成功状态 / 成功 / 金额解析失败，五条路径都有明确返回
 8. 不确定上游查单响应结构时，`query` 按防御式解析（`code`/`data` 判空），失败一律 `unknown`
@@ -147,6 +160,8 @@ cd <仓库根目录>
 - 同步/返回代码里用同步 requests/httpx → 阻塞事件循环
 - `meta.name` 与目录名不一致 → 注册键错位，admin 建通道后回调 404
 - inputs 缺 placeholder 或写空话 → 运维建通道时不知道账号/密钥该填什么格式，填错后排查成本高
+- inputs 里塞回调 IP / 白名单 / 备注，或 placeholder 写成"上游分配的…"长句 → 表单噪音；插件不读这些字段，纯属误导
+- placeholder 直接贴真实网关 URL / 商户号 / 密钥 → 看起来像已经填好的默认值，运维容易误以为不用改
 - inputs 写成 dict → 渲染异常，**必须 list[dict]**
 - 老 PHP 插件的 `/tmp/*.log` 文件日志、`global $siteurl` 全局变量、`daddslashes` 转义在新架构里都没有对应物，从 PHP 插件改写时不要照搬
 
@@ -171,20 +186,40 @@ scripts/build_plugin.sh <插件名>        # 需要 docker（与生产镜像同�
 产物（`dist/` 已在 `.gitignore` 中，**不会入库**，仅用于私下分发）：
 
 ```
-dist/plugins/<插件名>/             解压后的插件目录（见下方「目录映射」）
-dist/plugin_packages/<插件名>.zip  后台上传包（仅 .so，无源码 / 无 info.json）
+dist/plugins/<插件名>/             解压后的插件目录（含 signature.json，见下方「目录映射」）
+dist/plugin_packages/<插件名>.zip  后台上传包（.so + signature.json，无源码 / 无 info.json）
 ```
 
 **两种投放方式（都不需要重建镜像）：**
 
-- **目录映射（推荐自用/托管部署）**：把 `dist/plugins/<插件名>/` 整个目录拷到服务器的 `storage/plugins/<插件名>/`，点一次后台「刷新插件」即全进程生效（无需重启/重建镜像；同名覆盖内置插件）
-- **后台上传（推荐发给客户）**：把 `dist/plugin_packages/<插件名>.zip` 发给客户，客户在后台「上传插件」安装
+- **目录映射（推荐自用/托管部署）**：把 `dist/plugins/<插件名>/` 整个目录（**含 `signature.json`**）拷到服务器的 `storage/plugins/<插件名>/`，点一次后台「刷新插件」即全进程生效（无需重启/重建镜像；同名覆盖内置插件）
+- **后台上传（推荐发给客户）**：把 `dist/plugin_packages/<插件名>.zip` 发给客户，客户在后台「上传插件」安装（**仅超级管理员**可见该按钮）
 
 zip 内结构（后台上传接口要求的目录层级）：
 
 ```
 <插件名>/plugin.cpython-312-x86_64-linux-gnu.so
+<插件名>/signature.json          ← Ed25519 签名（必需）
 ```
+
+### 签名（编译镜像强制）
+
+安装插件 = 在应用进程里执行 `.so`，等价于任意代码执行。所有分发形态都必须由作者私钥签名：
+
+- 签名内容：`PLUGIN1:` + `base64url({"name","sha256","version","iat"})`，`sha256` 是包内 `plugin*.so` 的摘要
+- 私钥：`license_private.pem`（与授权码同一把，只在作者本机，已 gitignore）
+- 公钥：内置在 `app/core/plugin_signing.py` 的 `PLUGIN_PUBLIC_KEY_B64`（随镜像编译，无配置覆盖；换钥 = 改常量 + 重建镜像 + 旧包重签）
+- `scripts/build_plugin.sh` 打包时**自动签名**（找不到私钥会显式警告）；手动补签/自检：
+
+```bash
+uv run python scripts/plugin_sign.py sign   dist/plugin_packages/<名>.zip --version 1.0.0
+uv run python scripts/plugin_sign.py verify dist/plugin_packages/<名>.zip
+uv run python scripts/plugin_sign.py pubkey     # 与镜像内置公钥比对
+```
+
+> 编译镜像会**双向校验**：上传接口验签不过直接拒绝；`storage/plugins/` 里的插件加载前也会验签，
+> 验不过只记 warning 并跳过（所以「绕过接口直接拷 .so」同样失效）。源码运行 / pytest 默认跳过校验
+> （本地开发不必签包），需要时用 `PLUGIN_SIGN_REQUIRED=1` 打开。
 
 > 上传接口只接受编译后的 `.so`，包内含 `.py` 会被拒绝；`info.json` 已废除，残留文件会被忽略、不落盘。
 > 版本号来自插件类 `meta.version`，发版前记得递增；客户上传后可点后台「刷新插件」

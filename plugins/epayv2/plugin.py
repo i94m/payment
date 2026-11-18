@@ -48,13 +48,13 @@ class EpayV2Payment(BasePayment):
         types=["alipay", "wxpay"],
         inputs=[
             {"name": "appurl", "title": "接口地址", "type": "input",
-             "placeholder": "https://pay.example.com/", "required": True},
+             "placeholder": "接口完整地址", "required": True},
             {"name": "appid", "title": "商户ID", "type": "input",
-             "placeholder": "商户 PID，如 1001", "required": True},
+             "placeholder": "商户 PID", "required": True},
             {"name": "appkey", "title": "平台公钥", "type": "textarea",
-             "placeholder": "粘贴平台公钥 PEM（多行可含 BEGIN/END 头尾，自动去换行）", "required": True},
+             "placeholder": "粘贴 PEM 公钥", "required": True},
             {"name": "appsecret", "title": "商户私钥", "type": "textarea",
-             "placeholder": "粘贴商户私钥 PEM（多行可含 BEGIN/END 头尾，自动去换行）", "required": True},
+             "placeholder": "粘贴 PEM 私钥", "required": True},
         ],
         version="1.0.0",
     )
