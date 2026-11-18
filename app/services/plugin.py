@@ -6,9 +6,10 @@
 - 支付插件分两档：builtin=镜像内置（`plugins/`，随镜像编译），
   third=三方（`storage/plugins/`，后台上传或部署方直接拷入 .so 目录），
   同名时三方覆盖内置，无需重建镜像即可上线新插件
-- 三方插件在编译镜像里强制验签（`app/core/plugin_signing.py`）：上传接口与
-  加载扫描都会校验包内 `signature.json`，未签名/被改动的插件直接拒绝或跳过；
-  源码运行跳过校验，方便本地开发
+- 三方插件的包签名只在「后台上传安装」环节校验（`app/core/plugin_signing.py`，
+  编译镜像强制、未签名/被改动直接拒绝）；部署方手工拷进 `storage/plugins/` 的插件
+  默认信任、加载时不再验签（能操作服务器文件即最高权限）
+
 - 跨进程刷新：多 worker/多副本部署下注册表是进程内内存态，单进程 reload()
   只影响自己。因此 reload() 会写一个「刷新戳」文件（三方目录内），
   其他进程在热点路径上按指纹（戳内容 + 目录 mtime）发现变化后自动重扫，
@@ -27,7 +28,6 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from app.core import plugin_signing
 from app.services.plugin_interfaces import (
     BasePayment,
     BaseSms,
@@ -65,6 +65,8 @@ class PluginRegistry:
     # 上次扫描时的「插件目录指纹」与检查时间（跨进程刷新用）
     _sig: Optional[str] = None
     _checked_at: float = 0.0
+    # 最近一次扫描中加载失败的插件：目录名 → 原因（排障用：上传报错/后台列表展示）
+    _load_errors: dict[str, str] = {}
 
     # (注册表属性, 基类, 包名)：扫描目录 = 包名转路径，import 模块串 = 包名派生
     TYPE_MAP = {
@@ -151,6 +153,7 @@ class PluginRegistry:
         cls._payment_source.clear()
         cls._sms.clear()
         cls._mail.clear()
+        cls._load_errors.clear()
         cls._checked_at = time.monotonic()
         for plugin_type, (attr, base_cls, pkg) in cls.TYPE_MAP.items():
             registry = getattr(cls, attr)
@@ -187,24 +190,22 @@ class PluginRegistry:
                 try:
                     mod = importlib.import_module(f"{pkg}.{d.name}.plugin")
                 except Exception as e:
-                    _log.warning(f"加载插件失败 {d.name}: {e}")
+                    _log.warning(f"加载插件失败 {d.name}: {e}", exc_info=True)
+                    cls._remember_error(d.name, e)
                     continue
             else:
                 # 三方目录只允许编译后的 .so（安全限制：不接受 .py 源码）
                 so_path = cls._find_plugin_module(d)
                 if so_path is None:
                     continue
-                # 编译镜像强制验签：挡住绕过上传接口、直接把 .so 拷进 storage/plugins 的情况
-                if plugin_signing.is_enforced():
-                    try:
-                        plugin_signing.verify_plugin_dir(d, so_path, expect_name=d.name)
-                    except plugin_signing.PackageSignatureError as e:
-                        _log.warning(f"三方插件签名校验失败，已跳过 {d.name}: {e}")
-                        continue
+                # 说明：签名校验只在「后台上传安装」那一步（见 admin/channel.py 的
+                # plugin_upload）。部署方手工拷进 storage/plugins/ 的插件默认信任 ——
+                # 能操作服务器文件本身就是最高权限，不在加载时再拦。
                 try:
                     mod = cls._import_upload(d.name, so_path)
                 except Exception as e:
-                    _log.warning(f"加载插件失败 {d.name}: {e}")
+                    _log.warning(f"加载插件失败 {d.name}: {e}", exc_info=True)
+                    cls._remember_error(d.name, e)
                     continue
             for name in dir(mod):
                 obj = getattr(mod, name)
@@ -213,6 +214,7 @@ class PluginRegistry:
                     # 源码目录内不一致的按目录名注册（后台 meta 展示以类属性为准）
                     plugin_id = d.name
                     registry[plugin_id] = obj
+                    cls._load_errors.pop(plugin_id, None)
                     if registry is cls._payment:
                         cls._payment_source[plugin_id] = source
                         meta = getattr(obj, "meta", None)
@@ -223,6 +225,30 @@ class PluginRegistry:
                                 f"插件目录名与 meta.name 不一致：目录 {plugin_id} / "
                                 f"meta.name {meta.name}（按目录名注册）")
                     break
+            else:
+                # 模块导入成功但没有 BasePayment/Sms/Mail 子类：多半是编译时基类不对
+                if d.name not in registry and d.name not in cls._load_errors:
+                    cls._remember_error(d.name, None)
+
+    @classmethod
+    def _remember_error(cls, plugin_id: str, exc: Optional[BaseException]) -> None:
+        """记录加载失败原因（给后台展示 / 上传接口回显，便于排障）。"""
+        if exc is None:
+            cls._load_errors[plugin_id] = (
+                "模块已加载但没有 BasePayment 子类：请确认插件类继承自 "
+                "app.services.plugin_interfaces.BasePayment 且编译进了同一个模块")
+        else:
+            cls._load_errors[plugin_id] = f"{type(exc).__name__}: {exc}"
+
+    @classmethod
+    def plugin_load_error(cls, plugin_name: str) -> Optional[str]:
+        """某插件最近一次加载失败的原因（None=无错误/已成功加载）。"""
+        return cls._load_errors.get(plugin_name)
+
+    @classmethod
+    def load_errors(cls) -> dict[str, str]:
+        """最近一次扫描里所有加载失败的插件（目录名 → 原因）。"""
+        return dict(cls._load_errors)
 
     @classmethod
     def _find_plugin_module(cls, d: Path) -> Optional[Path]:

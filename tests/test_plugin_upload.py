@@ -254,6 +254,42 @@ async def test_upload_meta_name_mismatch_rolls_back(client, upload_root, admin_h
     assert "myplug" not in PluginRegistry.payment_names()
 
 
+async def test_upload_failure_message_is_abstract(client, upload_root, admin_headers, monkeypatch):
+    """导入失败对外只给抽象提示；内部异常文本只落服务端（不回显给前端）。"""
+
+    def _boom(cls, name, so_path):
+        raise ImportError("dlopen: invalid ELF header (架构/ABI 不符)")
+
+    monkeypatch.setattr(PluginRegistry, "_import_upload", classmethod(_boom))
+
+    r = await client.post("/admin-api/pay/plugins/upload",
+                          files={"file": ("myplug.zip", _so_zip("myplug"), "application/zip")},
+                          headers=admin_headers)
+    body = r.json()
+    assert body["code"] != 0
+    assert body["message"].startswith("插件导入失败")
+    assert "invalid ELF header" not in body["message"]   # 不泄露内部异常
+    assert not (upload_root / "myplug").exists()
+
+
+async def test_upload_failure_no_subclass_recorded(client, upload_root, admin_headers, monkeypatch):
+    """模块能导入但没有 BasePayment 子类：报同一句抽象提示，原因记在服务端。"""
+    import types as _types
+
+    def _empty(cls, name, so_path):
+        return _types.ModuleType(f"plugins_upload.{name}.plugin")
+
+    monkeypatch.setattr(PluginRegistry, "_import_upload", classmethod(_empty))
+
+    r = await client.post("/admin-api/pay/plugins/upload",
+                          files={"file": ("myplug.zip", _so_zip("myplug"), "application/zip")},
+                          headers=admin_headers)
+    body = r.json()
+    assert body["code"] != 0
+    assert body["message"].startswith("插件导入失败")
+    assert not (upload_root / "myplug").exists()
+
+
 async def test_upload_bad_so_rolls_back(client, upload_root, admin_headers, monkeypatch):
     """导入失败（坏 .so）返回错误且不保留半成品目录。"""
     r = await client.post("/admin-api/pay/plugins/upload",
@@ -295,7 +331,8 @@ async def test_dropped_dir_visible_and_synced_without_restart(
     r = await client.post("/admin-api/pay/plugins/sync", headers=admin_headers)
     body = r.json()
     assert body["code"] == 0, body
-    assert "已同步" in body["data"]["message"]
+    assert body["data"]["added"] >= 1
+    assert body["data"]["message"].startswith("新增 ")
     assert body["data"]["synced"] >= 1
 
     resp = await client.get("/admin-api/pay/plugins", headers=admin_headers)
@@ -411,3 +448,23 @@ async def test_upload_forbidden_without_channel_update(client, upload_root, sess
                           headers=headers)
     assert r.status_code == 403, r.text
     assert r.json()["code"] == 403
+
+
+async def test_sync_reports_load_errors(client, upload_root, admin_headers, monkeypatch):
+    """「刷新插件」返回加载失败清单（目录名 → 原因），后台据此弹提示。"""
+    d = upload_root / "brokenplug"
+    d.mkdir(parents=True)
+    (d / SO_NAME).write_bytes(b"\x7fELF-broken")
+
+    def _boom(cls, name, so_path):
+        raise OSError("cannot open shared object file")
+
+    monkeypatch.setattr(PluginRegistry, "_find_plugin_module",
+                        classmethod(lambda cls, p: d / SO_NAME))
+    monkeypatch.setattr(PluginRegistry, "_import_upload", classmethod(_boom))
+
+    resp = await client.post("/admin-api/pay/plugins/sync", headers=admin_headers)
+    body = resp.json()["data"]
+    # 同步结果带插件名（前端只提示数量+名字），具体原因在服务端注册表里
+    assert "brokenplug" in body.get("errors", {})
+    assert "cannot open shared object file" in body["errors"]["brokenplug"]

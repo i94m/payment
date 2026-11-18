@@ -13,7 +13,7 @@
 #   后台「支付通道 → 上传插件」选择该 zip → 建通道填凭证 → 测试 → 启用
 #   上传后写跨进程刷新戳，多 worker/多副本随后自动加载，无需重启容器
 #
-#   包内自带 signature.json（Ed25519 签名，编译镜像强制校验），未签名会被拒绝
+#   包内自带 signature.json（Ed25519 签名，后台上传时强制校验），手动拷目录不校验
 #
 # 自用/托管部署（目录映射，无需重建镜像）:
 #   把 dist/plugins/<插件名>/ 整个目录（含 signature.json）拷到服务器的
@@ -67,7 +67,8 @@ else
   echo "需要 python3 或 zip 命令来生成上传包"; exit 1
 fi
 
-# 签名：编译镜像会强制校验包内 signature.json，未签名的包上传被拒、加载被跳过。
+# 签名：后台上传安装会强制校验包内 signature.json（未签名上传被拒）；
+# 手工拷目录进 storage/plugins/ 不校验。
 # 私钥 license_private.pem 只在作者本机；没有私钥时跳过（源码自用部署不强制，可直拷目录）。
 VERSION="$(grep -oE 'version="[^"]*"' "$ROOT/plugins/$PLUGIN/plugin.py" 2>/dev/null | head -1 | cut -d'"' -f2)"
 if [ -f "$ROOT/license_private.pem" ]; then

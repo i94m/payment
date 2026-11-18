@@ -244,10 +244,11 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
   换个 worker 看到的也一定是最新。手工拷入的目录同样会被自动发现，列表先以「未同步」出现，点刷新落库）。
   与后台上传安装是同一目录，同名时覆盖镜像内置插件，后台来源标记为「三方」。
   `deploy.sh` 会自动预创建该目录（部署用户属主，便于 scp 投放）。
-- **插件包必须签名**：编译镜像对三方插件**双向验签**（上传接口 + 加载扫描），
-  包内缺 `signature.json` 或摘要/插件名不符一律拒绝/跳过。签名由 `scripts/build_plugin.sh`
-  自动完成（私钥 `license_private.pem` 只在作者本机），公钥内置在镜像
-  （`app/core/plugin_signing.py`，无环境变量可关）。后台「上传插件」按钮需「支付通道-更新」权限（与「刷新插件」同口径）。
+- **后台上传的插件包必须签名**：编译镜像只对「上传安装」验签，包内缺 `signature.json`
+  或摘要/插件名不符一律拒绝。签名由 `scripts/build_plugin.sh` 自动完成（私钥
+  `license_private.pem` 只在作者本机），公钥内置在镜像（`app/core/plugin_signing.py`，
+  无环境变量可关）。后台「上传插件」按钮需「支付通道-更新」权限（与「刷新插件」同口径）。
+  **手工拷入 `storage/plugins/` 的插件不验签**（默认信任，能操作服务器文件即最高权限）。
 - `.env`：`DB_POOL_SIZE / DB_MAX_OVERFLOW` 按“连接数预算”收敛；`WORKER_CONCURRENCY` 按 CPU 调
 - 页面未暴露的运行期配置（`api_order_rate_limit`、`merchant_reg_open` / `merchant_reg_review`、
   `site_name`、`settle_d1_enable` 等）：站点配置页仅展示扣量 + 结算组（自动结算 / D+1 除外），

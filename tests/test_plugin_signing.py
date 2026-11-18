@@ -1,7 +1,8 @@
 """插件包签名（Ed25519）：签名/验签、摘要与插件名校验、强制开关。
 
-编译镜像强制校验包内 signature.json（app/core/plugin_signing.py）；这里用测试自带的
-密钥对覆盖校验逻辑（线上用内置 PLUGIN_PUBLIC_KEY_B64），不依赖作者私钥。
+校验只发生在「后台上传安装」这一步（编译镜像强制）；手工拷进 storage/plugins/ 的
+插件不校验。这里用测试自带的密钥对覆盖校验逻辑（线上用内置 PLUGIN_PUBLIC_KEY_B64），
+不依赖作者私钥。
 """
 import base64
 import hashlib
@@ -12,6 +13,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from app.core import plugin_signing as ps
+from app.services.plugin_interfaces import PluginMeta
 
 
 @pytest.fixture()
@@ -118,3 +120,41 @@ def test_enforced_flag_source_run_default_off(monkeypatch):
 
     monkeypatch.setenv("PLUGIN_SIGN_REQUIRED", "1")
     assert ps.is_enforced() is True
+
+
+def test_loader_registers_unsigned_hand_copied_plugin(tmp_path, monkeypatch):
+    """手工拷进 storage/plugins 的插件不验签：没有 signature.json 也照常注册。
+
+    签名校验只在上传安装时执行（admin/channel.py::plugin_upload）；服务器文件权限
+    本身就是最高权限，加载阶段默认信任 —— 即使把强制开关打开也不拦。
+    """
+    import types
+
+    from app.services.plugin import PluginRegistry
+    from app.services.plugin_interfaces import BasePayment, PaymentContext, PaymentResult
+
+    d = tmp_path / "handplug"
+    d.mkdir()
+    so = d / "plugin.cpython-312-x86_64-linux-gnu.so"
+    so.write_bytes(b"not-a-real-so")      # 导入被 monkeypatch，不会真的 dlopen
+    assert not (d / "signature.json").exists()
+
+    monkeypatch.setenv("PLUGIN_SIGN_REQUIRED", "1")
+
+    class _Hand(BasePayment):
+        meta = PluginMeta(name="handplug", showname="手拷插件", types=["alipay"], version="1.0.0")
+
+        async def submit(self, ctx: PaymentContext) -> PaymentResult:
+            return PaymentResult(kind="error", msg="stub")
+
+    mod = types.ModuleType("plugins_upload.handplug.plugin")
+    mod.Hand = _Hand
+
+    monkeypatch.setattr(PluginRegistry, "_find_plugin_module",
+                        classmethod(lambda cls, p: so))
+    monkeypatch.setattr(PluginRegistry, "_import_upload",
+                        classmethod(lambda cls, name, path: mod))
+
+    registry: dict = {}
+    PluginRegistry._scan_type_dir(tmp_path, BasePayment, "", False, registry, source="third")
+    assert "handplug" in registry

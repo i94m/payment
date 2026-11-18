@@ -132,12 +132,17 @@ async def test_b05_sync_plugins_seeds_plugins_table(session):
     epay = next(r for r in rows if r.name == "epay")
     assert epay.showname
     assert epay.supported_types
-    assert first["message"].startswith("已同步")
+    # 首次同步应有「新增」提示（面向运维：有没有新装到东西）
+    assert first["added"] == len(rows) >= 1
+    assert first["message"].startswith("新增 ")
 
     # 幂等：再同步不产生重复行，也不改动既有插件
     second = await sync_plugins(session)
     assert len((await session.exec(select(Plugin))).all()) == len(rows)
     assert second["removed"] == [] and second["referenced"] == []
+    # 没有新插件时提示「未发现新插件」
+    assert second["added"] == 0
+    assert second["message"].startswith("未发现新插件")
 
 
 @pytest.mark.asyncio

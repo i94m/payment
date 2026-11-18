@@ -217,9 +217,9 @@ uv run python scripts/plugin_sign.py verify dist/plugin_packages/<名>.zip
 uv run python scripts/plugin_sign.py pubkey     # 与镜像内置公钥比对
 ```
 
-> 编译镜像会**双向校验**：上传接口验签不过直接拒绝；`storage/plugins/` 里的插件加载前也会验签，
-> 验不过只记 warning 并跳过（所以「绕过接口直接拷 .so」同样失效）。源码运行 / pytest 默认跳过校验
-> （本地开发不必签包），需要时用 `PLUGIN_SIGN_REQUIRED=1` 打开。
+> 签名校验只发生在**后台上传安装**这一步（编译镜像强制，验不过直接拒绝）。部署方把编译好的
+> 插件目录手工拷进 `storage/plugins/` 时**不校验**——能操作服务器文件即最高权限，默认信任。
+> 源码运行 / pytest 默认跳过校验（本地开发不必签包），需要时用 `PLUGIN_SIGN_REQUIRED=1` 打开。
 
 > 上传接口只接受编译后的 `.so`，包内含 `.py` 会被拒绝；`info.json` 已废除，残留文件会被忽略、不落盘。
 > 版本号来自插件类 `meta.version`，发版前记得递增；客户上传后可点后台「刷新插件」

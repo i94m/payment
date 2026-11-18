@@ -22,13 +22,15 @@ from app.services.plugin import PluginRegistry
 async def sync_plugins(session: AsyncSession) -> dict:
     """扫描插件目录并同步 plugins 表，返回同步结果摘要。
 
-    返回 {synced, removed, referenced, message}：
-    synced=注册表插件数，removed=清理的失效插件名，referenced=仍被通道引用而未删除的插件名。
+    返回 {synced, added, removed, referenced, errors, message}：
+    synced=注册表插件数，added=本次新增入库的插件数，removed=清理的失效插件名，
+    referenced=仍被通道引用而未删除的插件名。
     """
     PluginRegistry.reload()
     metas = PluginRegistry.list_plugins()
     names = {m["name"] for m in metas}
 
+    added = 0
     for meta in metas:
         row = await session.get(Plugin, meta["name"])
         inputs = meta.get("inputs", [])
@@ -39,6 +41,7 @@ async def sync_plugins(session: AsyncSession) -> dict:
             row.inputs_schema = inputs
             row.version = version
         else:
+            added += 1
             session.add(Plugin(
                 name=meta["name"],
                 showname=meta["showname"],
@@ -63,15 +66,22 @@ async def sync_plugins(session: AsyncSession) -> dict:
         removed.append(row.name)
     await session.commit()
 
-    message = f"已同步 {len(metas)} 个插件"
+    # 提示语面向运维：突出「有没有新装到东西」，而不是总数
+    message = f"新增 {added} 个插件" if added else "未发现新插件"
     if removed:
         message += f"，清理失效插件 {len(removed)} 个"
     if referenced:
         message += f"；{len(referenced)} 个插件仍被通道引用未删除：{','.join(referenced)}"
 
+    # 加载失败的插件目录（导入报错 / 没有可用子类）：一并在结果里返回，
+    # 后台「刷新插件」据此提示，避免「插件明明拷进去了却不出现」只能翻日志
+    errors = PluginRegistry.load_errors()
+
     return {
         "synced": len(metas),
+        "added": added,
         "removed": removed,
         "referenced": referenced,
+        "errors": errors,
         "message": message,
     }

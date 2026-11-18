@@ -25,7 +25,11 @@ from app.services.crypto import decrypt_config, encrypt_config
 from app.services.plugin import PluginRegistry
 from app.services.plugin_interfaces import PluginMeta
 from app.services.plugin_sync import sync_plugins
+import logging
+
 from app.core import plugin_signing
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -197,9 +201,12 @@ async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
     # 立即刷新注册表；导入失败（ABI 不符/坏包）不保留半成品
     PluginRegistry.reload()
     if PluginRegistry.get_payment_class(name) is None:
+        # 对外只给一句抽象提示（不回显内部异常文本，避免把堆栈/路径暴露给前端）；
+        # 具体原因记一条日志（注册表扫描时还有完整 traceback），供运维排障
+        _log.warning("插件导入失败 name=%s reason=%s", name, PluginRegistry.plugin_load_error(name))
         shutil.rmtree(upload_root / name, ignore_errors=True)
         PluginRegistry.reload()
-        return err(-1, "插件导入失败：.so 与运行环境不兼容或缺少 BasePayment 子类")
+        return err(-1, "插件导入失败：请确认插件包与当前系统环境匹配（详见服务端日志）")
 
     # 元信息必须来自插件类 meta，且 meta.name 与 zip 目录名一致（防注册键错位）
     meta = PluginRegistry.plugin_meta(name)
