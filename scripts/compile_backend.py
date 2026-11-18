@@ -143,8 +143,10 @@ def inject_map(init_file: Path, plan: dict[str, tuple[str, bool, Path]], key: by
 def apply_obfuscation(sources: list[Path],
                       originals: dict[Path, str]) -> dict[str, tuple[str, bool, Path]]:
     """字符串混淆 + 生成/注入文件名映射；返回重命名计划（空=不改名）。"""
-    key = obf.build_key()
+    random_key = os.environ.get("OBFUSCATE_RANDOM_KEY") == "1"
+    key = obf.build_key(random_key=random_key)
     if STRING_OBFUSCATE:
+        print(f"[混淆] 密钥：{'随机（每次构建不同，ccache 全失效）' if random_key else '确定性（同源码同产物，ccache 可命中）'}")
         changed = obf.obfuscate_tree(ROOT, key, sources, module_name)
         print(f"[混淆] 字符串加密完成：{changed} 个模块")
     plan: dict[str, tuple[str, bool, Path]] = {}

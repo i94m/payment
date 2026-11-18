@@ -22,6 +22,7 @@ from __future__ import annotations
 import ast
 import base64
 import hashlib
+import os
 import secrets
 from pathlib import Path
 
@@ -32,9 +33,24 @@ _OBF_SELF = "app/core/_obf.py"
 _BOOT_STRAP = "app/__init__.py"
 
 
-def build_key() -> bytes:
-    """每次构建一把随机密钥（16 字节）。"""
-    return secrets.token_bytes(16)
+# 确定性密钥种子：同一份源码两次构建产出完全相同的密文/文件名，
+# 这样 gcc 侧 ccache 才能命中（随机密钥会让 121 个模块每次全量重编，构建从 6s 涨到 230s）。
+# 混淆只提高逆向门槛，密钥最终存在于 .so 里，随机与否对安全性没有实质差别。
+KEY_SEED_ENV = "OBFUSCATE_KEY_SEED"
+DEFAULT_KEY_SEED = "payment-obfuscate-v1"
+
+
+def build_key(random_key: bool = False) -> bytes:
+    """构建密钥（16 字节）。
+
+    默认确定性派生（sha256(seed)[:16]）：源码不变 → 密文不变 → ccache 命中。
+    需要彻底重洗（让所有密文一次性变样）时：random_key=True 或用
+    OBFUSCATE_KEY_SEED 换一个种子重建。
+    """
+    if random_key:
+        return secrets.token_bytes(16)
+    seed = os.getenv(KEY_SEED_ENV) or DEFAULT_KEY_SEED
+    return hashlib.sha256(seed.encode("utf-8")).digest()[:16]
 
 
 def encode(value: str, key: bytes) -> str:

@@ -156,6 +156,32 @@ def test_should_skip_bootstrap_modules():
     assert not so.should_skip("app/core/license.py")
 
 
+def test_build_key_is_deterministic(monkeypatch):
+    """默认密钥必须确定性（否则每次构建源码都变，ccache 全失效）。"""
+    monkeypatch.delenv(so.KEY_SEED_ENV, raising=False)
+    k1 = so.build_key()
+    assert k1 == so.build_key()
+    assert len(k1) == 16
+
+    # 换种子 = 一次性重洗（所有密文/文件名都变），但同种子仍然稳定
+    monkeypatch.setenv(so.KEY_SEED_ENV, "another-seed")
+    k2 = so.build_key()
+    assert k2 != k1
+    assert k2 == so.build_key()
+
+    monkeypatch.delenv(so.KEY_SEED_ENV)
+    assert so.build_key() == k1
+
+    # 随机模式：每次不同（给「就是要重洗」的场景）
+    assert so.build_key(random_key=True) != so.build_key(random_key=True)
+
+
+def test_opaque_stem_is_stable_for_same_key():
+    """同密钥下文件名稳定 → 构建产物字节一致（ccache 依赖这一点）。"""
+    assert so.opaque_stem("app.core.license", KEY) == so.opaque_stem("app.core.license", KEY)
+    assert so.opaque_stem("app.core.license", so.build_key()) == so.opaque_stem("app.core.license", so.build_key())
+
+
 def test_opaque_stem_hides_module_name():
     stem = so.opaque_stem("app.core.license", KEY)
     assert stem.startswith("_") and len(stem) == 11

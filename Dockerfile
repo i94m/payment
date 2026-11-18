@@ -53,6 +53,8 @@ COPY .ci-ccache/ /opt/ccache/
 #      STRING_OBFUSCATE=1  字符串字面量加密（f-string 字面段/match 模式除外）
 #      MODULE_OBFUSCATE=1  app/ 下 .so 改为不透明文件名（_a1b2c3d4e5.cpython-*.so），
 #                          真实模块名只存在 app/__init__.so 的加密映射表里
+#      密钥/文件名默认确定性派生（同源码同产物 → ccache 命中，构建 ~10s 内）；
+#      要整体重洗一次：OBFUSCATE_RANDOM_KEY=1 或换 OBFUSCATE_KEY_SEED
 #    两者都可在重建时去掉环境变量关闭（导出的源码、插件目录名、artisan 命令名不受影响）
 RUN SO_COMPILE=1 STRING_OBFUSCATE=1 MODULE_OBFUSCATE=1 /opt/cybuild/bin/python compile_backend.py
 
