@@ -24,6 +24,8 @@ RUN uv venv /opt/cybuild \
 
 # 3) 源码 + 编译脚本（前端/文档产物在编译之后再 COPY：产物变更不触发 Cython 重编）
 COPY scripts/compile_backend.py ./compile_backend.py
+# 构建期混淆的字符串处理脚本：compile_backend 运行时从 ./scripts 导入
+COPY scripts/string_obfuscate.py ./scripts/string_obfuscate.py
 COPY app/ ./app/
 COPY main.py ./artisan.py ./
 COPY plugins/ ./plugins/
