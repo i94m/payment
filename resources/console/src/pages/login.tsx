@@ -91,7 +91,7 @@ export function LoginPage() {
               : "管理后台 · 输入您的账户信息以继续"}
         </p>
 
-        <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 space-y-4">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="mt-6 space-y-4" autoComplete="on">
           <Controller
             name="username"
             control={form.control}
@@ -108,7 +108,7 @@ export function LoginPage() {
                     disabled={loading}
                     aria-invalid={fieldState.invalid}
                     onBlur={field.onBlur}
-                    autoComplete="new-password"
+                    autoComplete="username"
                   />
                 </div>
                 {fieldState.invalid && (
@@ -134,7 +134,7 @@ export function LoginPage() {
                     className="h-10 pl-9"
                     disabled={loading}
                     aria-invalid={fieldState.invalid}
-                    autoComplete="new-password"
+                    autoComplete="current-password"
                   />
                 </div>
                 {fieldState.invalid && (

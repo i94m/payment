@@ -294,7 +294,7 @@ export function AccountsPage() {
                   render={({ field, fieldState }) => (
                     <Field data-invalid={fieldState.invalid}>
                       <FieldLabel htmlFor={field.name}>{"用户名"}<RequiredMark /></FieldLabel>
-                      <Input id={field.name} value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value)} disabled={!!editingId} placeholder={"请输入登录账号"} aria-invalid={fieldState.invalid || undefined} />
+                      <Input id={field.name} value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value)} disabled={!!editingId} placeholder={"请输入登录账号"} autoComplete="off" aria-invalid={fieldState.invalid || undefined} />
                       {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
                     </Field>
                   )}
@@ -317,10 +317,12 @@ export function AccountsPage() {
                       <FieldLabel htmlFor={field.name}>{"密码"}{!editingId && <RequiredMark />}</FieldLabel>
                       <Input
                         id={field.name}
-                        type="password"
+                        type="text"
                         value={field.value ?? ""}
                         onChange={(e) => field.onChange(e.target.value)}
                         placeholder={editingId ? "创建时必填；编辑时留空表示不修改" : "请输入密码"}
+                        autoComplete="new-password"
+                        spellCheck={false}
                         aria-invalid={fieldState.invalid || undefined}
                       />
                       {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}

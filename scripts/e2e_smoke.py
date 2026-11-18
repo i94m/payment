@@ -3,7 +3,7 @@
 前置：
 - 平台 http://127.0.0.1:8000（APP_ENV=local，万能验证码 0000）
 - 模拟上游 http://127.0.0.1:9000
-- 种子：admin/123456，demo/demo123456（pid=1001），epay 通道
+- 种子：superadmin/123456，demo/demo123456（pid=1001），epay 通道
 - 前端产物 static/console 已构建（现场构建，不入库）；/docs 为独立 VitePress 构建，
   未构建时登录后访问接入文档会 404，故本套件不对其内容做断言
 
@@ -110,8 +110,8 @@ def main():
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
 
-        check("admin 登录（验证码 0000）",
-              lambda: ui_login(page, "/admin", "admin", "123456"))
+        check("超管登录（验证码 0000）",
+              lambda: ui_login(page, "/admin", "superadmin", "123456"))
 
         def admin_dashboard():
             expect(page.locator("text=今日订单").first).to_be_visible(timeout=10000)

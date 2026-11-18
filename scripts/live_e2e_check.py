@@ -144,7 +144,7 @@ def db_exec(sql: str, params: tuple = ()):
 
 def admin_login() -> dict:
     st, body, _ = req("POST", "/admin-api/auth/login",
-                      {"username": "admin", "password": "123456",
+                      {"username": "superadmin", "password": "123456",
                        "captcha_code": "0000", "captcha_key": "local"})
     assert body["code"] == 0, body
     return {"Authorization": f"Bearer {body['data']['access_token']}"}

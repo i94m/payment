@@ -137,25 +137,24 @@ async def _sync_plugins(session: AsyncSession):
 
 
 async def _adminer(session: AsyncSession):
-    """初始化超管账号"""
-    import os
-    password = os.getenv("ADMIN_PASSWORD", "123456")
+    """初始化超管账号（账号固定 superadmin / 123456，不再读取环境变量）"""
+    username, password = "superadmin", "123456"
 
     user = (await session.exec(
-        select(SystemAdmin).where(SystemAdmin.username == "admin")
+        select(SystemAdmin).where(SystemAdmin.username == username)
     )).first()
     if not user:
         row = SystemAdmin(
             name="超级管理员",
-            username="admin",
+            username=username,
             password=hash_password(password),
             is_super_admin=True,
         )
         session.add(row)
         await session.commit()
-        typer.secho(f"[超管账号] 创建完成: admin / {password}", fg=typer.colors.GREEN, bold=True)
+        typer.secho(f"[超管账号] 创建完成: {username} / {password}", fg=typer.colors.GREEN, bold=True)
     else:
-        typer.secho("[超管账号] 已存在，跳过", fg=typer.colors.GREEN)
+        typer.secho(f"[超管账号] {username} 已存在，跳过", fg=typer.colors.GREEN)
 
 
 async def _seed_pay_types(session: AsyncSession):

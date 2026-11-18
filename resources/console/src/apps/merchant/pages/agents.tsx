@@ -264,7 +264,7 @@ export function AgentsPage() {
                     onChange={(e) => field.onChange(e.target.value)}
                     maxLength={64}
                     placeholder={"代理登录账号"}
-                    autoComplete="new-password"
+                    autoComplete="off"
                     aria-invalid={fieldState.invalid || undefined}
                   />
                   {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
@@ -282,11 +282,12 @@ export function AgentsPage() {
                   </FieldLabel>
                   <Input
                     id="agent-password"
-                    type="password"
+                    type="text"
                     value={field.value ?? ""}
                     onChange={(e) => field.onChange(e.target.value)}
-                    placeholder={editing ? "至少 6 位" : "至少 6 位"}
+                    placeholder={"至少 6 位"}
                     autoComplete="new-password"
+                    spellCheck={false}
                     aria-invalid={fieldState.invalid || undefined}
                   />
                   {editing && !fieldState.error && (

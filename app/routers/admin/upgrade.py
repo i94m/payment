@@ -5,13 +5,16 @@
 （compose profile ``upgrade``，app/upgrader.py）轮询执行拉镜像/迁移/逐台重建。
 
 未启用 upgrader 时仍可「检查更新」，页面会给出 ``deploy.sh upgrade`` 命令行
-升级指引；启用了则一键完成。权限沿用 system.admin（整机级操作，超管专属）。
+升级指引；启用了则一键完成。整机级操作（upgrader 持 docker.sock），与
+账号管理一致仅超管可调（require_super_admin，子账号拿到权限键也进不来）。
 """
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.core.config import config
-from app.core.security import PermissionChecker
+from app.core.security import require_super_admin
+
+_SUPER = [Depends(require_super_admin)]
 from app.responses import err, suc
 from app.services.upgrade import (
     UpgradeError,
@@ -26,7 +29,7 @@ from app.services.upgrade import (
 router = APIRouter()
 
 
-@router.get("/check", dependencies=[Depends(PermissionChecker("system.admin"))])
+@router.get("/check", dependencies=_SUPER)
 async def upgrade_check():
     """当前版本 vs 镜像仓库最新版；顺带返回升级执行器与进行中状态。"""
     current = config.APP_VERSION
@@ -52,7 +55,7 @@ class UpgradeRunRequest(BaseModel):
     version: str = ""  # 空 = 升到最新；回滚可指定更低的已发布版本
 
 
-@router.post("/run", dependencies=[Depends(PermissionChecker("system.admin"))])
+@router.post("/run", dependencies=_SUPER)
 async def upgrade_run(body: UpgradeRunRequest):
     state = read_upgrade_state()
     # running = 执行器正在处理该请求，拒绝并发；queued 允许覆盖提交
@@ -77,7 +80,7 @@ async def upgrade_run(body: UpgradeRunRequest):
     return suc({"id": req["id"], "version": target, "image": image})
 
 
-@router.get("/status", dependencies=[Depends(PermissionChecker("system.admin"))])
+@router.get("/status", dependencies=_SUPER)
 async def upgrade_status():
     """升级任务状态（面板轮询）：queued → running → success/failed。"""
     return suc({

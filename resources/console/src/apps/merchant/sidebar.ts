@@ -19,6 +19,8 @@ export interface NavItem {
   feature?: keyof SiteFeatures
   /** 静态隐藏：不出现在侧边栏，页面与路由保留（页面元信息仍按全量菜单推导） */
   hidden?: boolean
+  /** 仅超级管理员可见（后端对应接口全部要求超管） */
+  superOnly?: boolean
   /** url 取自站点设置（如 QQ群/APP下载外链），值为空时隐藏 */
   urlFeature?: keyof SiteFeatures
 }

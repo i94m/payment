@@ -72,4 +72,4 @@ Local demo: `scripts/seed_demo.py` (demo/demo123456, pid=1001), `scripts/mock_up
 - `app/logic/api_verify.py` + `app/lib/sign.py` — downstream merchant signature verification (MD5/RSA, 300s replay window).
 - `plugins/epay/` — 易支付 V1 outbound adapter (MD5, `submit.php`/`mapi.php`/`api.php`), the default upstream channel; `plugins/epayv2/` — 易支付 V2 adapter (RSA2, `api/pay/*`), a separate protocol, not a drop-in replacement.
 
-Default local seeds: admin `admin`/`123456`, local captcha `0000` (only when `APP_ENV=local`), demo merchant `demo`/`demo123456` (pid 1001).
+Default local seeds: super admin `superadmin`/`123456` (fixed, no env var), local captcha `0000` (only when `APP_ENV=local`), demo merchant `demo`/`demo123456` (pid 1001).
