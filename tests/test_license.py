@@ -28,6 +28,10 @@ def _patch_key(monkeypatch):
     monkeypatch.setattr(lic, "PUBLIC_KEY_B64", TEST_PUB_B64)
     monkeypatch.setattr(lic, "current", None)
     monkeypatch.setattr(lic, "startup_error", None)
+    # 时钟回拨防护的模块级缓存：用例间清零，避免「见过的最晚时间」串扰
+    monkeypatch.setattr(lic, "_max_seen", 0.0)
+    monkeypatch.setattr(lic, "_last_persist", 0.0)
+    monkeypatch.setattr(lic, "_clock_loaded", True)
 
 
 def _seg(data: bytes) -> str:

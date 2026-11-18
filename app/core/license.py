@@ -8,8 +8,10 @@
 - 在 config 导入期执行，此刻日志系统尚未初始化，失败信息直接写 stderr
 - 授权码为空/无效不退出进程：记录 startup_error，进入「未授权软锁」——
   浏览器页面请求返回 503 纯文本「Invalid License Code」，业务请求由 main.py
-  中间件一律 503，/health 豁免供容器监控（页面可访问、业务全断，比启动失败
-  更好排障）
+  中间件一律 503，后台任务（app/worker）同样暂停执行；/health 豁免供容器监控，
+  并在响应里带 licensed 字段便于监控在软锁期间告警
+- 过期判断取 max(系统时间, 见过的最晚时间)（storage/private/.license_clock），
+  防止把主机时钟回拨/冻结绕过有效期
 - 授权码格式：<b64url(payload_json)>.<b64url(ed25519签名)>（两段），
   payload 形如 {"exp":<unix秒>,"iat":<unix秒>,"sub":"<客户备注>"}，
   签名覆盖 payload 段的原始 ASCII 字节；旧版码前的 "PAY1." 前缀兼容可验
@@ -20,6 +22,7 @@
 """
 import base64
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -41,6 +44,24 @@ current: dict | None = None
 # 启动校验失败原因（仅编译镜像且码为空/无效时置位；None=授权有效或源码运行）。
 # 置位后进程不退出，main.py 软锁中间件据 lock_reason() 逐请求拦截。
 startup_error: str | None = None
+
+
+# ============================================================
+# 防时钟回拨：记录「见过的最晚时间」
+#
+# 只比 time.time() 的话，把主机时钟回拨/冻结就能让授权永不过期。
+# 这里把见过的最晚时间记住（编译镜像落盘到 storage/private/.license_clock，
+# 源码运行/测试纯内存），过期判断取 max(系统时间, 历史最晚时间)。
+# 落盘节流 PERSIST_INTERVAL 秒，避免每个请求都写文件；IO 失败静默降级（仅内存生效）。
+# ============================================================
+
+CLOCK_FILE_ENV = "LICENSE_CLOCK_FILE"
+_DEFAULT_CLOCK_FILE = "storage/private/.license_clock"
+_PERSIST_INTERVAL = 60.0
+
+_max_seen: float = 0.0
+_last_persist: float = 0.0
+_clock_loaded = False
 
 
 class LicenseError(Exception):
@@ -66,6 +87,59 @@ class LicenseKeyError(LicenseError):
 def _is_compiled() -> bool:
     """是否以编译形态运行（.so）：只有 .py（源码）跳过校验，其余一律强制。"""
     return Path(__file__).suffix != ".py"
+
+
+def _clock_path() -> Path | None:
+    """最晚时间落盘位置；源码运行不落盘（开发/测试不写文件）。"""
+    if not _is_compiled():
+        return None
+    return Path(os.getenv(CLOCK_FILE_ENV) or _DEFAULT_CLOCK_FILE)
+
+
+def _load_max_seen() -> None:
+    global _clock_loaded, _max_seen
+    if _clock_loaded:
+        return
+    _clock_loaded = True
+    path = _clock_path()
+    if path is None:
+        return
+    try:
+        _max_seen = float(path.read_text(encoding="utf-8").strip() or 0)
+    except (OSError, ValueError):
+        _max_seen = 0.0
+
+
+def _persist_max_seen(now: float) -> None:
+    global _last_persist
+    if now - _last_persist < _PERSIST_INTERVAL:
+        return
+    path = _clock_path()
+    if path is None:
+        return
+    _last_persist = now
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        # repr 保证浮点精确往返（过期判断按秒级，精度只为测试与自洽）
+        tmp.write_text(repr(float(now)), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass  # 落盘失败只降级为「仅内存生效」，不影响业务
+
+
+def effective_now() -> float:
+    """参与过期判断的「现在」：max(系统时间, 见过的最晚时间)。
+
+    防「把主机时钟回拨/冻结」绕过有效期：曾在 T 校验过，之后时间早于 T 也按 T 算。
+    """
+    global _max_seen
+    _load_max_seen()
+    now = time.time()
+    if now > _max_seen:
+        _max_seen = now
+        _persist_max_seen(now)
+    return max(now, _max_seen)
 
 
 def _b64url_decode(seg: str) -> bytes:
@@ -162,7 +236,7 @@ def enforce(code: str) -> None:
             "==========================================================\n"
             "License verification failed; the service will start unlicensed (process stays up)\n"
             f"Reason: {e}\n"
-            f"Current AUTH_CODE: {(code or '').strip()[:12] or '(empty)'}\n"
+            "Current AUTH_CODE: " + ("(empty)" if not (code or "").strip() else "(set, but invalid)") + "\n"
             "Fix: obtain a valid license code, set AUTH_CODE= in .env, then restart\n"
             "     the container (docker compose up -d). Verification is fully offline\n"
             "     and never accesses the network\n"
@@ -183,9 +257,14 @@ def lock_reason() -> str | None:
     if startup_error:
         return startup_error
     exp = (current or {}).get("exp")
-    if isinstance(exp, int) and not isinstance(exp, bool) and exp <= time.time():
+    if isinstance(exp, int) and not isinstance(exp, bool) and exp <= effective_now():
         return f"License expired at {time.strftime('%Y-%m-%d %H:%M', time.localtime(exp))}, please renew it with the author and restart the service"
     return None
+
+
+def licensed() -> bool:
+    """当前授权是否有效（/health 暴露，便于监控在软锁期间告警）。"""
+    return lock_reason() is None
 
 
 def describe() -> str:

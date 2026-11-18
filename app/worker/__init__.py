@@ -10,6 +10,10 @@ SAQ Worker 设置
 3. 定时任务在 settings.py 的 cron_jobs 列表中添加 CronJob
 """
 
+import dataclasses
+import functools
+import time
+
 from saq import Queue
 
 from app.core.config import config
@@ -21,7 +25,49 @@ from app.services.plugin import PluginRegistry
 # 任务函数注册 — 新增任务后在这里导入并加入列表
 # ============================================================
 
-from app.worker.jobs import functions, cron_jobs  # noqa: F401
+from app.worker.jobs import cron_jobs as _raw_cron_jobs
+from app.worker.jobs import functions as _raw_functions
+
+# ============================================================
+# 授权门禁 — 未授权/过期时暂停后台任务
+#
+# 光靠 HTTP 中间件只锁了「界面」，通知重试、查单补单、过期置位、自动结算等
+# 定时任务仍会继续跑（等于业务没停）。这里给每个任务函数套一层门禁，
+# 同时重建 cron 列表，保证 cron 走同一入口。
+# ============================================================
+
+_LOCK_LOG_INTERVAL = 300.0
+_lock_logged_at = 0.0
+
+
+def _log_lock_once(lock: str) -> None:
+    global _lock_logged_at
+    now = time.monotonic()
+    if now - _lock_logged_at < _LOCK_LOG_INTERVAL:
+        return
+    _lock_logged_at = now
+    logger.warning(f"License not active ({lock}): 后台任务已暂停（含定时任务），续期后重启容器恢复")
+
+
+def license_guard(fn):
+    """未授权/过期时直接丢弃任务（不抛异常，避免调用方把错误落到商户通知上）。"""
+    @functools.wraps(fn)
+    async def guarded(ctx, *args, **kwargs):
+        lock = lock_reason()
+        if lock:
+            _log_lock_once(lock)
+            return None
+        return await fn(ctx, *args, **kwargs)
+
+    return guarded
+
+
+_guarded_functions = {fn.__name__: license_guard(fn) for fn in _raw_functions}
+functions = [_guarded_functions[fn.__name__] for fn in _raw_functions]
+cron_jobs = [
+    dataclasses.replace(job, function=_guarded_functions[job.function.__name__])
+    for job in _raw_cron_jobs
+]
 
 # ============================================================
 # Queue 配置
@@ -63,6 +109,10 @@ async def enqueue(job_name: str, **kwargs) -> str:
         job = await enqueue("export_excel", user_id=1)
         # job 是任务 ID 字符串
     """
+    lock = lock_reason()
+    if lock:
+        _log_lock_once(lock)
+        return ""
     return await queue.enqueue(job_name, **kwargs)
 
 
@@ -73,7 +123,7 @@ async def _startup(ctx: dict) -> None:
     # 授权信息展示（强制校验在 config 导入期已完成；失败不退出，进未授权软锁）
     lock = lock_reason()
     if lock:
-        logger.warning(f"License not active ({lock}): business APIs are soft-locked, page requests get plain text \"Invalid License Code\"")
+        logger.warning(f"License not active ({lock}): business APIs are soft-locked, 后台任务已暂停，页面请求返回纯文本 \"Invalid License Code\"")
     else:
         logger.info(f"授权信息: {describe()}")
 

@@ -261,7 +261,9 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 
 编译镜像启动时校验 `.env` 中的 `AUTH_CODE`（校验完全离线，不访问网络；本地源码运行不校验）。
 缺失或无效时容器**不退出**，以未授权模式运行：Web 页面请求直接返回纯文本「Invalid License Code」（不区分原因、不返回 HTML 页面），
-业务接口（后台 API / 下单 / 回调）一律 503，`/health` 保持 200 供容器监控；
+业务接口（后台 API / 下单 / 回调）一律 503，后台任务（通知重试/查单补单/过期置位/自动结算）同时暂停；
+`/health` 保持 200 供容器监控，但响应里 `licensed` 为 `false` —— 建议监控盯这个字段做告警。
+过期判断取 `max(系统时间, 历史最晚时间)`（后者落盘 `storage/private/.license_clock`），**回拨主机时钟不能续命**；
 `/license/expire` 公开输出授权到期日期（纯文本 `YYYY-MM-DD`，未授权时输出「未授权」）；
 具体原因见 `docker logs`，常见对照：
 

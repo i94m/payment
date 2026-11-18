@@ -17,7 +17,7 @@ from starlette.staticfiles import StaticFiles
 
 from app.core.config import config
 from app.core.frontend import register_docs, register_frontend
-from app.core.license import describe, expire_date, lock_reason as license_lock_reason
+from app.core.license import describe, expire_date, licensed as license_licensed, lock_reason as license_lock_reason
 from app.core.logger import logger, request_id_var
 from app.responses import err
 from app.routers import routers
@@ -162,6 +162,8 @@ async def health():
         "version": config.APP_VERSION,
         "revision": config.APP_REVISION,
         "build_date": config.APP_BUILD_DATE,
+        # 授权状态：软锁期间仍返回 200（供容器健康检查），监控据此字段告警
+        "licensed": license_licensed(),
     })
 
 
