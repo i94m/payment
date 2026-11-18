@@ -5,7 +5,6 @@ import {
   IconCreditCard, IconShieldLock,
 } from "@tabler/icons-react"
 import type { MenuSection } from "@/apps/merchant/sidebar"
-import { FEATURE_NOTIFICATION_CENTER } from "@/lib/features"
 
 // 与商户端一致的平铺分组菜单（分组标题常驻、无折叠子菜单），
 // permission 与后端 PERMISSION_TREE / MENU_TREE 的 key 对齐
@@ -13,13 +12,9 @@ export function getAdminMenu(): MenuSection[] {
   return [
     {
       items: [
-        { title: "数据统计", url: "/", icon: IconGauge },
-        // 通知中心入口由 FEATURE_NOTIFICATION_CENTER 控制：关闭时仅隐藏入口，
-        // 页面 / 路由 / 接口代码保留（hidden 不影响 page-meta 推导页面标题）
-        {
-          title: "通知中心", url: "/system/notifications", icon: IconBell,
-          hidden: !FEATURE_NOTIFICATION_CENTER,
-        },
+        { title: "数据统计", url: "/", icon: IconGauge, permission: "dashboard.view" },
+        // 通知中心：按 message.view 权限显隐（后端 message/* 接口同口径）
+        { title: "通知中心", url: "/system/notifications", icon: IconBell, permission: "message.view" },
       ],
     },
     {

@@ -1,7 +1,5 @@
 import { lazy } from "react"
 import type { RouteObject } from "react-router-dom"
-// 通知中心入口隐藏开关（见 lib/features）：关闭时仅移除入口与直链可达性，页面代码保留
-import { FEATURE_NOTIFICATION_CENTER } from "@/lib/features"
 import { FeatureGate } from "@/components/auth/feature-gate"
 import { RouteErrorBoundary } from "@/components/route-error-boundary"
 
@@ -35,10 +33,10 @@ export type PermissionRouteObject = RouteObject & {
 
 // permission 与后端 PERMISSION_TREE 的 key 对齐
 const pageRoutes: PermissionRouteObject[] = [
-  { path: "/", element: <DashboardPage /> },
+  { path: "/", element: <DashboardPage />, permission: "dashboard.view" },
   { path: "/user-center", element: <UserCenterPage /> },
-  // 通知中心：入口隐藏后直链落到 404（页面组件保留在 AdminNotificationsPage）
-  { path: "/system/notifications", element: FEATURE_NOTIFICATION_CENTER ? <AdminNotificationsPage /> : <Error404 /> },
+  // 通知中心：按 message.view 权限放行（后端 message/* 接口同口径）
+  { path: "/system/notifications", element: <AdminNotificationsPage />, permission: "message.view" },
   { path: "/trade/orders", element: <OrdersPage />, permission: "order.view" },
   { path: "/trade/notifylogs", element: <NotifyLogsPage />, permission: "notify_log.view" },
   { path: "/merchants", element: <MerchantsPage />, permission: "merchant.view" },

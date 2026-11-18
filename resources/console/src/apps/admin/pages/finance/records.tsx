@@ -24,9 +24,9 @@ import { IconSearch, IconRefresh, IconDownload } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 import { downloadBlob } from "@/lib/export"
-import { FEATURE_ADMIN_EXPORT_EXCEL } from "@/lib/features"
 import { digitsOnly, toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
+import { usePermission } from "@/hooks/use-permission"
 
 /** 搜索字段（search_field 参数） */
 const searchFieldOptions = [
@@ -52,6 +52,7 @@ const bizTypeOptions = [
 
 export function AdminRecordsPage() {
   const navigate = useNavigate()
+  const hasPermission = usePermission()
   // 支持从商户列表快捷跳转：/records?merchant_id=xx（默认选中该商户）
   const [searchParams] = useSearchParams()
 
@@ -271,7 +272,7 @@ export function AdminRecordsPage() {
                 <IconRefresh className="size-4" />
                 {"重置"}
               </Button>
-              {FEATURE_ADMIN_EXPORT_EXCEL && (
+              {hasPermission("merchant.export") && (
                 <Button variant="outline" size="sm" onClick={handleExport}>
                   <IconDownload className="size-4" />
                   {"导出 Excel"}

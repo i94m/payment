@@ -39,10 +39,10 @@ import {
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 import { downloadBlob } from "@/lib/export"
-import { FEATURE_ADMIN_EXPORT_EXCEL } from "@/lib/features"
 import { toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { CopyButton } from "@/components/ui/copy-button"
+import { usePermission } from "@/hooks/use-permission"
 
 /** 综合状态筛选（dstatus 参数） */
 const dstatusOptions = [
@@ -118,6 +118,7 @@ const editSchema = z.object({
 
 export function MerchantsPage() {
   const navigate = useNavigate()
+  const hasPermission = usePermission()
 
   // ---- 筛选 ----
   const [keyword2, setKeyword2] = React.useState("")
@@ -649,7 +650,7 @@ export function MerchantsPage() {
                 <IconAdjustments className="size-4" />
                 {"高级搜索"}
               </Button>
-              {FEATURE_ADMIN_EXPORT_EXCEL && (
+              {hasPermission("merchant.export") && (
                 <Button variant="outline" size="sm" onClick={handleExport}>
                   <IconDownload className="size-4" />
                   {"导出 Excel"}

@@ -34,7 +34,6 @@ import {
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 import { downloadBlob } from "@/lib/export"
-import { FEATURE_ADMIN_EXPORT_EXCEL } from "@/lib/features"
 import { digitsOnly, toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { usePermission } from "@/hooks/use-permission"
@@ -349,7 +348,7 @@ export function OrdersPage() {
                 <IconRefresh className="size-4" />
                 {"重置"}
               </Button>
-              {FEATURE_ADMIN_EXPORT_EXCEL && canExport && (
+              {canExport && (
                 <Button variant="outline" size="sm" onClick={handleExport}>
                   <IconDownload className="size-4" />
                   {"导出 Excel"}

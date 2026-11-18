@@ -5,10 +5,11 @@ import { IconArrowsMaximize, IconArrowsMinimize } from "@tabler/icons-react"
 import { APP_MODULE } from "@/lib/config"
 import { NotificationBell } from "@/components/layout/notification-bell"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
-import { FEATURE_NOTIFICATION_CENTER } from "@/lib/features"
+import { usePermission } from "@/hooks/use-permission"
 
 /** 头部右侧动作：通知中心 + 明暗模式 + 全屏，侧栏头部与顶栏共用 */
 export function HeaderActions() {
+  const hasPermission = usePermission()
   const [isFullscreen, setIsFullscreen] = React.useState(false)
 
   const toggleFullscreen = React.useCallback(() => {
@@ -27,8 +28,8 @@ export function HeaderActions() {
 
   return (
     <div className="flex items-center gap-0.5 sm:gap-1">
-      {/* 通知中心铃铛：入口由 FEATURE_NOTIFICATION_CENTER 控制，组件代码保留 */}
-      {FEATURE_NOTIFICATION_CENTER && APP_MODULE === "admin" && <NotificationBell />}
+      {/* 通知中心铃铛：后台按 message.view 权限显隐。无权限时不轮询，避免 403 跳转 */}
+      {APP_MODULE === "admin" && hasPermission("message.view") && <NotificationBell />}
       <ThemeToggle />
       <Tooltip>
         <TooltipTrigger asChild>
