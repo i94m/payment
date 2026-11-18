@@ -83,6 +83,29 @@ async def admin_headers(session):
     return {"Authorization": f"Bearer {token_obj.access_token}"}
 
 
+async def _headers_with(session, username: str, permission_keys: list[str]) -> dict:
+    """建一个普通管理员并授予指定权限（用于验证上传的权限口径）。"""
+    from app.models import SystemAdminPermission, SystemPermission
+
+    admin = SystemAdmin(name=username, username=username,
+                        password=hash_password("admin123"), is_super_admin=False)
+    session.add(admin)
+    await session.commit()
+    admin = (await session.exec(
+        select(SystemAdmin).where(SystemAdmin.username == username))).first()
+    for key in permission_keys:
+        perm = (await session.exec(
+            select(SystemPermission).where(SystemPermission.key == key))).first()
+        if perm is None:
+            perm = SystemPermission(name=key, key=key)
+            session.add(perm)
+            await session.commit()
+        session.add(SystemAdminPermission(admin_id=admin.id, permission_id=perm.id))
+    await session.commit()
+    token_obj = await issue_token(guard="admin", user_id=admin.id, session=session)
+    return {"Authorization": f"Bearer {token_obj.access_token}"}
+
+
 async def test_upload_rejects_py_source(client, upload_root, admin_headers):
     """含 .py 源码的包一律拒绝（与镜像源码保护口径一致）。"""
     data = _make_zip({"myplug/plugin.py": b"class Plugin: pass"})
@@ -355,3 +378,36 @@ def test_page_refresh_forces_fingerprint_check(upload_root, monkeypatch):
     cls_after = PluginRegistry.get_payment_class("pageplug")
     PluginRegistry.discover(force=True)
     assert PluginRegistry.get_payment_class("pageplug") is cls_after
+
+
+# ============================================================
+# 权限口径：channel.update 即可上传，不再要求超管
+# ============================================================
+
+async def test_upload_allowed_with_channel_update(client, upload_root, session, monkeypatch):
+    """持有「支付通道-更新」的普通管理员可以上传安装（包本身仍要签名）。"""
+    headers = await _headers_with(session, "plugeditor", ["channel.update"])
+
+    def _fake_import(cls, name, so_path):
+        mod = types.ModuleType(f"plugins_upload.{name}.plugin")
+        mod.Plugin = _FakePlugin
+        return mod
+
+    monkeypatch.setattr(PluginRegistry, "_import_upload", classmethod(_fake_import))
+
+    r = await client.post("/admin-api/pay/plugins/upload",
+                          files={"file": ("myplug.zip", _so_zip("myplug"), "application/zip")},
+                          headers=headers)
+    body = r.json()
+    assert body["code"] == 0, body
+    assert body["data"]["name"] == "myplug"
+
+
+async def test_upload_forbidden_without_channel_update(client, upload_root, session):
+    """没有 channel.update 的账号仍然 403（保持最小权限）。"""
+    headers = await _headers_with(session, "plugviewer", ["channel.view"])
+    r = await client.post("/admin-api/pay/plugins/upload",
+                          files={"file": ("myplug.zip", _so_zip("myplug"), "application/zip")},
+                          headers=headers)
+    assert r.status_code == 403, r.text
+    assert r.json()["code"] == 403

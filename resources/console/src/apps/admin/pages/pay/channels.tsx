@@ -126,6 +126,8 @@ export function ChannelsPage() {
   const user = useAuthStore((s) => s.user)
   const permissions = useAuthStore((s) => s.permissions)
   const canRevealConfig = !!user?.is_super_admin || permissions.includes("*") || permissions.includes("channel.update")
+  // 上传插件与「刷新插件」同口径：持有「支付通道-更新」即可（包本身另有签名校验）
+  const canUploadPlugin = canRevealConfig
 
   // schema 依赖 editingId/currentInputs，useForm 每次渲染都会读取最新 resolver。
   // 表单输入用 z.input（允许字段缺省，schema 里有 default），提交拿到 z.output（全是字符串）
@@ -155,7 +157,7 @@ export function ChannelsPage() {
   // 插件刷新（插件目录扫描，刷新后同步插件下拉与通道列表）
   const [syncing, setSyncing] = React.useState(false)
   // 上传安装编译后的插件包（zip：build_plugin.sh 产物，仅 .so + signature.json）；
-  // 后端仅超管可用（装插件 = 进程内执行 .so），前端也按超管显隐
+  // 后端要「支付通道-更新」权限（装插件 = 进程内执行 .so，包另需 Ed25519 签名），前端同口径显隐
   const [uploading, setUploading] = React.useState(false)
   const uploadRef = React.useRef<HTMLInputElement>(null)
 
@@ -704,12 +706,12 @@ export function ChannelsPage() {
                 </Badge>
                 {"刷新插件"}
               </Button>
-              {/* 上传插件：仅超管（与后端 require_super_admin 一致），仅接受已签名的 .so 包 */}
-              {user?.is_super_admin && (
+              {/* 上传插件：需「支付通道-更新」权限（与后端 PermissionChecker 一致），仅接受已签名的 .so 包 */}
+              {canUploadPlugin && (
                 <>
                   <Button size="sm" variant="outline" onClick={() => uploadRef.current?.click()}
                           disabled={uploading}
-                          title="上传已签名的插件包（zip：scripts/build_plugin.sh 产物，仅超管）">
+                          title="上传已签名的插件包（zip：scripts/build_plugin.sh 产物，需支付通道更新权限）">
                     <IconUpload className={`size-4 ${uploading ? "animate-pulse" : ""}`} />
                     {uploading ? "上传中…" : "上传插件"}
                   </Button>

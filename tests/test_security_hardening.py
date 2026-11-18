@@ -448,11 +448,12 @@ async def test_reset_code_has_attempt_limit(session, seeded):
 
 
 # ------------------------------------------------------------
-# P1-8 插件安装仅超管
+# P1-8 插件安装权限：channel.update 即可（不再要求超管），无权限仍 403
 # ------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_plugin_upload_requires_super_admin(session, client, seeded):
+async def test_plugin_upload_requires_channel_update(session, client, seeded):
+    # 有 channel.update：通过权限校验，落到包校验（非 zip → 400）
     headers, _ = await _make_admin(session, "secplugin", super_admin=False,
                                    perms=("channel.update",))
     r = await client.post(
@@ -460,8 +461,20 @@ async def test_plugin_upload_requires_super_admin(session, client, seeded):
         files={"file": ("pkg.zip", b"not-a-zip", "application/zip")},
         headers=headers,
     )
+    assert r.status_code == 400
+    assert r.json()["message"] == "无效的 zip 文件"
+
+    # 只有 channel.view（只能看）：403，最小权限不变
+    viewer_headers, _ = await _make_admin(session, "secplugin_viewer", super_admin=False,
+                                          perms=("channel.view",))
+    r = await client.post(
+        "/admin-api/pay/plugins/upload",
+        files={"file": ("pkg.zip", b"not-a-zip", "application/zip")},
+        headers=viewer_headers,
+    )
     assert r.status_code == 403
 
+    # 超管当然可以（同样落到包校验）
     super_headers, _ = await _make_admin(session, "secplugin2")
     r = await client.post(
         "/admin-api/pay/plugins/upload",

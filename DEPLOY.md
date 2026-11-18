@@ -247,7 +247,7 @@ SHOW STATUS LIKE 'Max_used_connections';   -- 历史峰值，扩容后盯这个
 - **插件包必须签名**：编译镜像对三方插件**双向验签**（上传接口 + 加载扫描），
   包内缺 `signature.json` 或摘要/插件名不符一律拒绝/跳过。签名由 `scripts/build_plugin.sh`
   自动完成（私钥 `license_private.pem` 只在作者本机），公钥内置在镜像
-  （`app/core/plugin_signing.py`，无环境变量可关）。后台「上传插件」按钮仅超级管理员可见。
+  （`app/core/plugin_signing.py`，无环境变量可关）。后台「上传插件」按钮需「支付通道-更新」权限（与「刷新插件」同口径）。
 - `.env`：`DB_POOL_SIZE / DB_MAX_OVERFLOW` 按“连接数预算”收敛；`WORKER_CONCURRENCY` 按 CPU 调
 - 页面未暴露的运行期配置（`api_order_rate_limit`、`merchant_reg_open` / `merchant_reg_review`、
   `site_name`、`settle_d1_enable` 等）：站点配置页仅展示扣量 + 结算组（自动结算 / D+1 除外），

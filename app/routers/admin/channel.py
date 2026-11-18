@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlmodel import col, func, select
 
 from app.core.deps import CacheDep, SessionDep
-from app.core.security import AdminUser, PermissionChecker, check_permission, require_super_admin
+from app.core.security import AdminUser, PermissionChecker, check_permission
 from app.models import Channel, Order, PaymentType, Plugin
 from app.responses import err, paginate, suc
 from app.services.balance import dmoney
@@ -111,10 +111,13 @@ async def plugin_sync(session: SessionDep):
 _UPLOAD_MAX_SIZE = 10 * 1024 * 1024
 
 
-@router.post("/plugins/upload", dependencies=[Depends(require_super_admin)])
+@router.post("/plugins/upload", dependencies=[Depends(PermissionChecker("channel.update"))])
 async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
                         auth: AdminUser):
-    """上传安装编译后的插件包（zip）。**仅超管**：装插件 = 进程内执行 .so。
+    """上传安装编译后的插件包（zip）。需要「支付通道-更新」权限。
+
+    装插件 = 进程内执行 .so，所以编译镜像对包做 Ed25519 验签（signature.json），
+    没有作者私钥签名的包一律拒绝；权限侧与「刷新插件」一致（channel.update）。
 
     包结构 = scripts/build_plugin.sh 产物目录直接压缩（通常只有主模块一个文件）：
       <插件名>/plugin.cpython-312-x86_64-linux-gnu.so
