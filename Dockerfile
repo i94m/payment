@@ -16,9 +16,11 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 # 2) 独立编译 venv：cython + setuptools（不污染运行时 .venv，也不进 pyproject/uv.lock；
-#    cython 钉到实测过的次版本保证构建可复现 —— .so 运行时不依赖 cython）
+#    cython 钉到实测过的次版本保证构建可复现 —— .so 运行时不依赖 cython。
+#    下限 3.3.1：3.3.0 有类型推断崩溃（字典推导 + 条件表达式 + 调用），会让「字符串混淆」
+#    后的个别模块编不过（compile_backend 有回退，但会降低混淆覆盖率））
 RUN uv venv /opt/cybuild \
-    && uv pip install --python /opt/cybuild/bin/python "cython==3.3.*" setuptools
+    && uv pip install --python /opt/cybuild/bin/python "cython>=3.3.1,<3.4" setuptools
 
 # 3) 源码 + 编译脚本（前端/文档产物在编译之后再 COPY：产物变更不触发 Cython 重编）
 COPY scripts/compile_backend.py ./compile_backend.py
@@ -45,7 +47,12 @@ COPY .ci-ccache/ /opt/ccache/
 
 # 4) Cython 编译 app/ + plugins/ → .so，并删除 .py（脚本内含自检：失败不删源码；
 #    SO_COMPILE=1 是脚本安全守卫 —— 仅容器构建编译，本地开发永远直接跑源码）
-RUN SO_COMPILE=1 /opt/cybuild/bin/python compile_backend.py
+#    构建期混淆（提高逆向门槛，不改变任何行为）：
+#      STRING_OBFUSCATE=1  字符串字面量加密（f-string 字面段/match 模式除外）
+#      MODULE_OBFUSCATE=1  app/ 下 .so 改为不透明文件名（_a1b2c3d4e5.cpython-*.so），
+#                          真实模块名只存在 app/__init__.so 的加密映射表里
+#    两者都可在重建时去掉环境变量关闭（导出的源码、插件目录名、artisan 命令名不受影响）
+RUN SO_COMPILE=1 STRING_OBFUSCATE=1 MODULE_OBFUSCATE=1 /opt/cybuild/bin/python compile_backend.py
 
 # 5) 编译后构建期冒烟（坏镜像出不了 builder）：
 #    先真实 import app.core.license —— 校验授权门禁 .so 本身可加载、公钥已内置
