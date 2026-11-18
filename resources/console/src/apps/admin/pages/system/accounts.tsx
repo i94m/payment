@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { permissionApi } from "@/api"
-import type { AdminAccountData, PermissionNode } from "@/api"
+import type { AdminAccountData, PermissionNode, PermissionSyncPreview } from "@/api"
+import { useAuthStore } from "@/stores/auth-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -29,7 +30,7 @@ import {
   dateCell,
 } from "@/components/data-list/"
 import type { ActionItem } from "@/components/data-list/"
-import { IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash } from "@tabler/icons-react"
+import { IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconReload } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 
@@ -63,6 +64,57 @@ export function AccountsPage() {
       .then(setTree)
       .catch((err) => toast.error(getErrorMessage(err, "权限树加载失败，保存前请刷新重试")))
   }, [])
+
+  const isSuperAdmin = !!useAuthStore((s) => s.user)?.is_super_admin
+
+  // 权限同步：先拉预览，确认后再执行
+  const [syncOpen, setSyncOpen] = React.useState(false)
+  const [syncPreview, setSyncPreview] = React.useState<PermissionSyncPreview | null>(null)
+  const [syncLoading, setSyncLoading] = React.useState(false)
+  const [syncing, setSyncing] = React.useState(false)
+
+  const reloadTree = async () => {
+    try {
+      setTree(await permissionApi.tree())
+    } catch {
+      // 刷新失败不影响同步结果，用户可手动刷新页面
+    }
+  }
+
+  const openSyncPreview = async () => {
+    setSyncLoading(true)
+    try {
+      setSyncPreview(await permissionApi.previewSync())
+      setSyncOpen(true)
+    } catch (err) {
+      toast.error(getErrorMessage(err, "获取同步预览失败，请稍后重试"))
+    } finally {
+      setSyncLoading(false)
+    }
+  }
+
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      const result = await permissionApi.sync()
+      toast.success(
+        `同步完成：新增 ${result.created} 个，更新 ${result.updated} 个`
+        + (result.removed > 0 ? `，删除 ${result.removed} 个` : "")
+      )
+      setSyncOpen(false)
+      await reloadTree()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "同步失败，请稍后重试"))
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  const syncHasChanges = !!syncPreview && (
+    syncPreview.created_count > 0
+    || syncPreview.updated_count > 0
+    || syncPreview.removed_count > 0
+  )
 
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
@@ -262,10 +314,18 @@ export function AccountsPage() {
                 {"重置"}
               </Button>
             </div>
-            <Button size="sm" onClick={openCreate}>
-              <IconPlus className="size-4" />
-              {"新增账号"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={openCreate}>
+                <IconPlus className="size-4" />
+                {"新增账号"}
+              </Button>
+              {isSuperAdmin && (
+                <Button variant="outline" size="sm" onClick={openSyncPreview} disabled={syncLoading}>
+                  <IconReload className="size-4" />
+                  {syncLoading ? "加载中..." : "同步权限"}
+                </Button>
+              )}
+            </div>
           </div>
         </FilterCard>
 
@@ -394,6 +454,104 @@ export function AccountsPage() {
         confirmLabel={"删除"}
         onConfirm={submitDelete}
       />
+
+      {/* 权限同步：预览 → 确认执行 */}
+      <Dialog
+        open={syncOpen}
+        onOpenChange={(open) => { if (!syncing) setSyncOpen(open) }}
+      >
+        <DialogContent
+          onInteractOutside={(e) => e.preventDefault()}
+          className="w-[calc(100%-2rem)] sm:max-w-lg"
+        >
+          <DialogHeader>
+            <DialogTitle>{"同步权限"}</DialogTitle>
+          </DialogHeader>
+
+          <p className="text-sm text-muted-foreground">
+            {"将按当前程序内置的权限清单更新系统权限：补上缺失项、更新名称；清单里已经没有的权限会连同账号授权一起删除。"}
+          </p>
+
+          {syncHasChanges ? (
+            <div className="max-h-[45vh] space-y-4 overflow-y-auto pr-1">
+              {syncPreview!.created_count > 0 && (
+                <section>
+                  <h3 className="mb-2 text-sm font-medium">
+                    {`将新增 ${String(syncPreview!.created_count)} 项`}
+                  </h3>
+                  <ul className="space-y-1">
+                    {syncPreview!.created.map((item) => (
+                      <li
+                        key={item.key}
+                        className="flex items-center justify-between gap-3 rounded-md bg-muted/50 px-2 py-1 text-sm"
+                      >
+                        <span>{`${item.group_name} / ${item.name}`}</span>
+                        <span className="font-mono text-xs text-muted-foreground">{item.key}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {syncPreview!.updated_count > 0 && (
+                <section>
+                  <h3 className="mb-2 text-sm font-medium">
+                    {`将更新 ${String(syncPreview!.updated_count)} 项`}
+                  </h3>
+                  <ul className="space-y-1">
+                    {syncPreview!.updated.map((item) => (
+                      <li
+                        key={item.key}
+                        className="flex items-center justify-between gap-3 rounded-md bg-muted/50 px-2 py-1 text-sm"
+                      >
+                        <span>
+                          {item.name_changed
+                            ? `${item.group_name} / ${item.before_name} → ${item.name}`
+                            : `${item.before_group_name ?? "未分组"} → ${item.group_name} / ${item.name}`}
+                        </span>
+                        <span className="font-mono text-xs text-muted-foreground">{item.key}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {syncPreview!.removed_count > 0 && (
+                <section>
+                  <h3 className="mb-2 text-sm font-medium text-destructive">
+                    {`将删除 ${String(syncPreview!.removed_count)} 个清单外的权限`}
+                  </h3>
+                  <ul className="space-y-1">
+                    {syncPreview!.removed.map((item) => (
+                      <li
+                        key={item.key}
+                        className="flex items-center justify-between gap-3 rounded-md bg-destructive/10 px-2 py-1 text-sm"
+                      >
+                        <span>{item.name}</span>
+                        <span className="font-mono text-xs text-muted-foreground">{item.key}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {"删除后持有这些权限的账号会失去对应操作能力。"}
+                  </p>
+                </section>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm">{"没有需要同步的变更，系统权限已是最新。"}</p>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSyncOpen(false)} disabled={syncing}>
+              {"取消"}
+            </Button>
+            <Button onClick={handleSync} disabled={syncing || !syncHasChanges}>
+              {syncing ? "同步中..." : "确认同步"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

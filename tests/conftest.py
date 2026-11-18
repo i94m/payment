@@ -296,12 +296,22 @@ async def client(engine, seeded, monkeypatch):
             return self._d.get(key)
 
         async def set(self, key, value, **kwargs):
+            # 注意：不实现 nx/ex 语义——本套测试依赖「锁恒成功、无 TTL」的旧行为，
+            # 真实 Redis 语义由 production 代码与自己项目的集成测试覆盖。
             self._d[key] = value
             return True
 
-        async def delete(self, key):
-            self._d.pop(key, None)
+        async def delete(self, *keys):
+            for key in keys:
+                self._d.pop(key, None)
             return None
+
+        async def scan_iter(self, match=None, count=None):
+            import fnmatch
+
+            for key in list(self._d):
+                if match is None or fnmatch.fnmatch(key, match):
+                    yield key
 
         async def incr(self, key):
             n = int(self._d.get(key, 0) or 0) + 1

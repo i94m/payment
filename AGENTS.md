@@ -22,7 +22,7 @@ uv run pytest                            # tests (sqlite at /tmp/pay_pytest.db)
 uv run pytest tests/test_pay_flow.py::test_create_order_and_notify_paid   # single test
 ```
 
-Other `artisan.py` groups: `permission sync`, `cache clear`, `admin`, `migrate` (`migrate create-tables` = create-all without alembic).
+Other `artisan.py` groups: `permission sync`（改权限树后用；超管也可在「系统 → 账号管理」点「同步权限」，先预览再执行）, `cache clear`, `admin`, `migrate` (`migrate create-tables` = create-all without alembic).
 
 Frontend lives in `resources/console` (pnpm, not part of `uv`):
 

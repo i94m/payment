@@ -43,7 +43,15 @@ export type { AdminSettleData, MerchantSettleData, SettleInfo } from "./settle"
 export { recordsApi } from "./records"
 export type { MerchantRecordData, MerchantSettlementData } from "./records"
 export { permissionApi } from "./permission"
-export type { AdminAccountData, PermissionNode } from "./permission"
+export type {
+  AdminAccountData,
+  PermissionNode,
+  PermissionSyncCreated,
+  PermissionSyncPreview,
+  PermissionSyncRemoved,
+  PermissionSyncResult,
+  PermissionSyncUpdated,
+} from "./permission"
 export { accountApi } from "./account"
 export type { ApiKeyData, SettingItem } from "./account"
 export { securityApi } from "./account"
