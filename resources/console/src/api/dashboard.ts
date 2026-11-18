@@ -21,6 +21,8 @@ export interface AdminOverview {
   today: { count: number; money: number; profit: number }
   total: { count: number; money: number; merchant_count: number }
   trend: TrendPoint[]
+  /** 首页是否展示「近 7 日收款趋势」卡片（settings: dashboard_trend_enable，默认展示） */
+  trend_enable?: boolean
   count1: number
   count2: number
   usermoney: number
@@ -34,6 +36,8 @@ export interface AdminOverview {
   success_rate_30m: number
   success_rate_10m: number
   success_rate_1m: number
+  /** 今日已支付笔数（按订单创建时间，与上方成功率各窗口同口径） */
+  sucnum_today: number
   sucnum_60m: number
   sucnum_30m: number
   sucnum_10m: number

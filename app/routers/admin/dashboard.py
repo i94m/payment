@@ -39,6 +39,7 @@ from app.services.home_config import (
     set_ratelimit_last,
     set_ratelimit_one,
 )
+from app.services.settings import get_all_settings, setting_enabled
 
 router = APIRouter()
 
@@ -166,6 +167,10 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
     )).one()
     order_today = await _today_stats(session, today_start)
 
+    # 首页趋势图显隐（settings KV，默认开启；关闭后前端不渲染该卡片）
+    settings = await get_all_settings(session)
+    trend_enable = setting_enabled(settings.get("dashboard_trend_enable", True))
+
     # ---- 近 N 日趋势（图表用，保持既有口径：money=申报金额）----
     # 单条 GROUP BY 取代原来的「每天 2 条计数/求和」循环（30 天省 58 次往返）
     trend_days = max(1, min(days, 30))
@@ -221,6 +226,7 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
         "total": {"count": int(total_paid_count), "money": _f(total_paid_money),
                   "merchant_count": int(count2)},
         "trend": trend,
+        "trend_enable": trend_enable,
         # ---- 首页统计点（实时）----
         "count1": int(count1),
         "count2": int(count2),
@@ -235,6 +241,7 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
         "success_rate_30m": _rate(suc30, all30),
         "success_rate_10m": _rate(suc10, all10),
         "success_rate_1m": _rate(suc1m, all1m),
+        "sucnum_today": sucnum,
         "sucnum_60m": suc60,
         "sucnum_30m": suc30,
         "sucnum_10m": suc10,

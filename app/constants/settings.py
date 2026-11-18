@@ -111,6 +111,8 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
                     "下游API支付接口开关（关闭后开放API拒绝下单/查单，商户端隐藏「API信息」菜单）"),
         SettingSpec("api_refund_enable", SettingType.BOOL, True, SettingGroup.SITE,
                     "商户退款API开关（关闭后开放API拒绝退款）"),
+        SettingSpec("dashboard_trend_enable", SettingType.BOOL, True, SettingGroup.SITE,
+                    "首页收款趋势图开关"),
         SettingSpec("api_order_rate_limit", SettingType.INT, 60, SettingGroup.ORDER,
                     "开放API下单限流（次/分钟/来源IP，0=不限）"),
         # ---- 商户端菜单显隐 ----
@@ -122,13 +124,13 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
     ]
 }
 
-# 站点配置页可见 key 白名单：站点名称 + 扣量 + 结算组（自动结算 / D+1 除外）。
+# 站点配置页可见 key 白名单：站点名称 + 首页趋势图开关 + 扣量 + 结算组（自动结算 / D+1 除外）。
 # 注册开关、api_pay_enable / landing_enable / api_order_rate_limit、过期单回补窗口
 # （late_pay_backfill_hours，固定用默认 24h）等不在页面上暴露——仍由注册表提供默认值、
 # 运行期生效，需要时直接写库；不在页面展示是因为这些口径不需要运维日常调整。
 ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable", "settle_d1_enable"}
 ADMIN_SETTING_KEYS: set[str] = (
-    {"site_name"}
+    {"site_name", "dashboard_trend_enable"}
     | {k for k in SETTINGS_REGISTRY if k.startswith("deduct_")}
     | {k for k, spec in SETTINGS_REGISTRY.items() if spec.group is SettingGroup.SETTLE}
 ) - ADMIN_SETTING_HIDDEN_KEYS

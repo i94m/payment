@@ -8,16 +8,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PanelError } from "@/components/data-list"
 import { useRequest } from "@/apps/shared/use-request"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
-import {
-  ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig,
-} from "@/components/ui/chart"
+import { TREND_CHART_CLASS, TrendChart } from "@/components/trend-chart"
 import { IconCoin, IconChartBar, IconWallet, IconTarget } from "@tabler/icons-react"
-
-const trendChartConfig = {
-  money: { label: "金额(元)", color: "var(--primary)" },
-  count: { label: "笔数", color: "var(--chart-2)" },
-} satisfies ChartConfig
 
 function fmtMoney(v: number | string): string {
   return Number(v ?? 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -102,13 +94,12 @@ export function DashboardPage() {
           ))}
         </div>
 
-        {/* Trend Chart */}
+        {/* Trend Chart（与管理端首页同一张卡片：标题 + 说明 + 右上角汇总，图表高度共用 TrendChart） */}
         <div className="px-4 lg:px-6">
-          <Card className="shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <div>
-                <CardTitle className="text-base">{"近 7 日收款趋势"}</CardTitle>
-              </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>{"近 7 日收款趋势"}</CardTitle>
+              <CardDescription>{"近期收款金额与笔数走势"}</CardDescription>
               <CardAction>
                 <span className="text-xs text-muted-foreground">
                   {"今日金额"} ¥{fmtMoney(overview?.today.money ?? 0)}
@@ -117,24 +108,9 @@ export function DashboardPage() {
             </CardHeader>
             <CardContent className="px-2 pt-0 sm:px-4">
               {loading && !overview ? (
-                <Skeleton className="h-[200px] w-full" />
+                <Skeleton className={TREND_CHART_CLASS} />
               ) : (
-                <ChartContainer config={trendChartConfig} className="aspect-auto h-[200px] w-full">
-                  <AreaChart data={overview?.trend ?? []}>
-                    <defs>
-                      <linearGradient id="fillMoney" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--color-money)" stopOpacity={0.8} />
-                        <stop offset="95%" stopColor="var(--color-money)" stopOpacity={0.1} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid vertical={false} />
-                    <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={4} minTickGap={24} tick={{ fontSize: 11 }} />
-                    <YAxis yAxisId="money" tickLine={false} axisLine={false} width={56} tick={{ fontSize: 11 }} />
-                    <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                    <Area yAxisId="money" dataKey="money" type="natural" fill="url(#fillMoney)" stroke="var(--color-money)" />
-                    <Area yAxisId="money" dataKey="count" type="natural" stroke="var(--color-count)" fill="none" />
-                  </AreaChart>
-                </ChartContainer>
+                <TrendChart data={overview?.trend ?? []} />
               )}
             </CardContent>
           </Card>

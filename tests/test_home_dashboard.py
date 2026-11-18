@@ -198,6 +198,8 @@ async def test_dashboard_stats_fields(client, session, two_channels):
     assert data["today_deduct_count"] == 1
     assert data["today_deduct_money"] == 50.0   # 预计收入 = 扣量订单金额
     assert data["success_rate"] == 66.67
+    # 今日已支付笔数：与成功率同口径（创建时间落在今日 + status=1），待支付不计
+    assert data["sucnum_today"] == 2
 
     assert str(tid) in data["paytype"]  # 支付方式/通道名称映射
     assert str(seeded["channel"].id) in data["channel"]
@@ -210,7 +212,31 @@ async def test_dashboard_stats_fields(client, session, two_channels):
     # 今日金额路由的快捷配置可见
     assert "paytype" in data and "channel" in data
     assert len(data["trend"]) == 7
+    # 趋势图默认展示（settings 未配置时取注册表默认 True）
+    assert data["trend_enable"] is True
     assert "server_time" in data
+
+
+@pytest.mark.asyncio
+async def test_dashboard_trend_switch(client, session):
+    """首页趋势图显隐由 settings.dashboard_trend_enable 控制：关闭后接口下发 False。"""
+    from app.services.settings import set_settings
+
+    headers = await _admin_headers(session)
+    r = await client.get("/admin-api/dashboard", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["data"]["trend_enable"] is True
+
+    await set_settings(session, {"dashboard_trend_enable": False})
+    r = await client.get("/admin-api/dashboard", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["data"]["trend_enable"] is False
+
+    # 该开关在站点配置页可编辑（ADMIN_SETTING_KEYS 白名单内）
+    r = await client.get("/admin-api/setting", headers=headers)
+    assert r.status_code == 200
+    keys = {item["key"] for item in r.json()["data"]["items"]}
+    assert "dashboard_trend_enable" in keys
 
 
 @pytest.mark.asyncio
