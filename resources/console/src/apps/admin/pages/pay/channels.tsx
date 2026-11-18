@@ -32,7 +32,7 @@ import {
 } from "@/components/data-list/"
 import type { ActionItem } from "@/components/data-list/"
 import {
-  IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconFlask, IconCopy, IconList,
+  IconSearch, IconRefresh, IconPlus, IconEdit, IconTrash, IconFlask, IconCopy, IconList, IconUpload,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
@@ -140,6 +140,9 @@ export function ChannelsPage() {
     },
   })
 
+  // 通道名称是否被用户手动改过：未改过时随「支付方式 + 插件」自动生成
+  const nameTouchedRef = React.useRef(false)
+
   // 测试支付弹窗
   const [testChannel, setTestChannel] = React.useState<ChannelData | null>(null)
   const [testing, setTesting] = React.useState(false)
@@ -151,10 +154,10 @@ export function ChannelsPage() {
   const [testDebug, setTestDebug] = React.useState<ChannelTestDebug | null>(null)
   // 插件刷新（插件目录扫描，刷新后同步插件下拉与通道列表）
   const [syncing, setSyncing] = React.useState(false)
-  // 上传安装编译后的插件包（zip：build_plugin.sh 产物，仅 .so）
-  // 暂不上线「上传插件」按钮：状态与处理函数一并注释，恢复时取消注释即可
-  // const [uploading, setUploading] = React.useState(false)
-  // const uploadRef = React.useRef<HTMLInputElement>(null)
+  // 上传安装编译后的插件包（zip：build_plugin.sh 产物，仅 .so + signature.json）；
+  // 后端仅超管可用（装插件 = 进程内执行 .so），前端也按超管显隐
+  const [uploading, setUploading] = React.useState(false)
+  const uploadRef = React.useRef<HTMLInputElement>(null)
 
   const fetchStats = React.useCallback(() => {
     payApi.channelStats().then(setStats).catch(() => {})
@@ -202,28 +205,38 @@ export function ChannelsPage() {
     }
   }
 
-  // 上传插件包：安装到 storage/plugins/（持久卷）并刷新注册表与插件列表
-  // 暂不上线，随「上传插件」按钮一起注释
-  // const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  //   const f = e.target.files?.[0]
-  //   e.target.value = ""   // 允许重复选择同一文件
-  //   if (!f) return
-  //   setUploading(true)
-  //   try {
-  //     const res = await payApi.uploadPlugin(f)
-  //     toast.success(res?.note || "上传成功")
-  //     payApi.plugins().then(setPlugins).catch(() => {})
-  //     refresh()
-  //   } catch (err) {
-  //     toast.error(getErrorMessage(err, "上传失败"))
-  //   } finally {
-  //     setUploading(false)
-  //   }
-  // }
+  // 上传插件包：安装到 storage/plugins/（持久卷）并刷新注册表与插件列表。
+  // 编译镜像会校验包内 signature.json，未签名的包会被后端拒绝。
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ""   // 允许重复选择同一文件
+    if (!f) return
+    if (!f.name.toLowerCase().endsWith(".zip")) {
+      toast.error("请选择 .zip 插件包（scripts/build_plugin.sh 产物）")
+      return
+    }
+    setUploading(true)
+    try {
+      const res = await payApi.uploadPlugin(f)
+      toast.success(res?.note || "上传成功", {
+        description: res?.showname ? `已安装：${res.showname}` : undefined,
+      })
+      payApi.plugins().then(setPlugins).catch(() => {})
+      refresh()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "上传失败"))
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const openCreate = () => {
     setEditingId(null)
     setCurrentInputs([])
+    // 新增时名称跟随插件自动生成，直到用户手动改过
+    nameTouchedRef.current = false
+    lastPluginRef.current = ""
+    configCacheRef.current = {}
     channelForm.reset({
       name: "", plugin_name: "",
       // 支付方式默认选中下拉框第一项；新增通道默认关闭（后端固定 status=0）
@@ -240,6 +253,10 @@ export function ChannelsPage() {
     try {
       const detail = await payApi.channelDetail(id, { reveal: true })
       setEditingId(id)
+      nameTouchedRef.current = true
+      // 编辑允许换插件：先记下当前插件与其凭证，切走再切回来能恢复
+      lastPluginRef.current = detail.plugin_name
+      configCacheRef.current = { [detail.plugin_name]: { ...(detail.config || {}) } }
       setCurrentInputs(detail.inputs || [])
       if (!detail.config_revealed) {
         toast.error("无权限查看明文凭证", { description: "需要「支付通道-更新」权限，当前显示为脱敏值" })
@@ -272,6 +289,9 @@ export function ChannelsPage() {
     try {
       const detail = await payApi.channelDetail(id, { reveal: true })
       setEditingId(null)
+      nameTouchedRef.current = true
+      lastPluginRef.current = detail.plugin_name
+      configCacheRef.current = { [detail.plugin_name]: { ...(detail.config || {}) } }
       setCurrentInputs(detail.inputs || [])
       if (!detail.config_revealed) {
         toast.error("无权限查看明文凭证", { description: "需要「支付通道-更新」权限，当前显示为脱敏值" })
@@ -347,29 +367,6 @@ export function ChannelsPage() {
     return list
   }, [plugins, selectedTypeCode, editingId, formPluginName])
 
-  // 切换支付方式后，当前插件若不支持则清空选择（连带凭证）
-  const onTypeChange = (v: string) => {
-    const code = payTypes.find((t) => String(t.id) === v)?.code
-    if (code && formPluginName) {
-      const supported = plugins
-        .find((p) => p.name === formPluginName)
-        ?.supported_types.includes(code)
-      if (!supported) {
-        channelForm.setValue("plugin_name", "")
-        setCurrentInputs([])
-        channelForm.setValue("config", {})
-        channelForm.clearErrors("config")
-      }
-    }
-  }
-
-  // 换插件后凭证已清空，旧凭证错误一并清除
-  const onPluginChange = (name: string) => {
-    const plugin = plugins.find((p) => p.name === name)
-    setCurrentInputs(plugin?.inputs || [])
-    channelForm.setValue("config", {})
-    channelForm.clearErrors("config")
-  }
 
   const submit = channelForm.handleSubmit(async (values) => {
     setSaving(true)
@@ -457,7 +454,7 @@ export function ChannelsPage() {
   }
 
   const {
-    table, total, loading, error, applyFilters, refresh, updateRow,
+    table, data: channelRows, total, loading, error, applyFilters, refresh, updateRow,
   } = useDataList<ChannelData>({
     fetchFn: (params) => payApi.channels(params as never),
     filters: filterParams,
@@ -571,6 +568,88 @@ export function ChannelsPage() {
     perPage: 20,
   })
 
+  // ---- 通道名称自动生成：新增时填插件显示名，重名自动加 -2/-3 ----
+  const makeChannelName = (pluginName?: string) => {
+    if (!pluginName) return ""
+    const plugin = plugins.find((p) => p.name === pluginName)
+    if (!plugin) return ""
+    const base = plugin.showname
+    const taken = new Set(channelRows.map((c) => c.name))
+    if (!taken.has(base)) return base
+    for (let i = 2; i < 100; i++) {
+      const candidate = `${base}-${i}`
+      if (!taken.has(candidate)) return candidate
+    }
+    return base
+  }
+
+  // 只在新增、且用户还没手动改过名称时自动填充
+  const applyAutoName = (pluginName?: string) => {
+    if (editingId || nameTouchedRef.current) return
+    const auto = makeChannelName(pluginName)
+    if (!auto) return
+    channelForm.setValue("name", auto, { shouldValidate: false })
+    channelForm.clearErrors("name")
+  }
+
+  // 当前表单里填着的凭证，按「所属插件」缓存：切换插件再切回来能恢复（未保存的编辑）
+  const lastPluginRef = React.useRef("")
+  const configCacheRef = React.useRef<Record<string, Record<string, string>>>({})
+
+  // 整体替换凭证：先写 config 对象，再逐字段写一遍 —— 不同插件可能有同名字段
+  // （如 appurl/appkey），只 setValue("config", …) 时旧插件的输入框不会刷新
+  const applyConfig = (config: Record<string, string>) => {
+    const current = (channelForm.getValues("config") || {}) as Record<string, string>
+    const keys = new Set([...Object.keys(current), ...Object.keys(config)])
+    const merged: Record<string, string> = {}
+    keys.forEach((k) => { merged[k] = config[k] ?? "" })
+    channelForm.setValue("config", merged)
+    Object.entries(merged).forEach(([k, v]) => {
+      channelForm.setValue(`config.${k}`, v, { shouldValidate: false })
+    })
+  }
+
+  const rememberConfig = (pluginName: string) => {
+    if (!pluginName) return
+    const current = channelForm.getValues("config") as Record<string, string> | undefined
+    configCacheRef.current[pluginName] = { ...(current || {}) }
+  }
+
+  // 换插件：按新插件的 inputs 渲染表单，凭证回填该插件之前填过的值（没有则清空）
+  const onPluginChange = (name: string) => {
+    const prev = lastPluginRef.current
+    if (prev && prev !== name) rememberConfig(prev)
+    lastPluginRef.current = name
+
+    const plugin = plugins.find((p) => p.name === name)
+    setCurrentInputs(plugin?.inputs || [])
+    applyConfig({ ...(configCacheRef.current[name] || {}) })
+    channelForm.clearErrors("config")
+    applyAutoName(name)
+  }
+
+  // 切换支付方式后，当前插件若不支持则清空选择（凭证先按插件缓存，切回来可恢复）
+  const onTypeChange = (v: string) => {
+    const code = payTypes.find((t) => String(t.id) === v)?.code
+    if (code && formPluginName) {
+      const supported = plugins
+        .find((p) => p.name === formPluginName)
+        ?.supported_types.includes(code)
+      if (!supported) {
+        rememberConfig(formPluginName)
+        lastPluginRef.current = ""
+        channelForm.setValue("plugin_name", "")
+        setCurrentInputs([])
+        applyConfig({})
+        channelForm.clearErrors("config")
+        // 插件被清空：自动生成的名称一并清掉，避免留下旧插件的名称
+        if (!editingId && !nameTouchedRef.current) channelForm.setValue("name", "")
+        return
+      }
+    }
+    // 名称只跟插件走，切换支付方式不影响已填的名称
+  }
+
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -625,14 +704,18 @@ export function ChannelsPage() {
                 </Badge>
                 {"刷新插件"}
               </Button>
-              {/* 暂不上线：上传插件按钮（.so 插件包安装），恢复时取消注释即可
-              <Button size="sm" variant="outline" onClick={() => uploadRef.current?.click()}
-                      disabled={uploading} title="上传编译后的插件包（zip：build_plugin.sh 产物，仅 .so）">
-                <IconUpload className={`size-4 ${uploading ? "animate-pulse" : ""}`} />
-                {uploading ? "上传中…" : "上传插件"}
-              </Button>
-              <input ref={uploadRef} type="file" accept=".zip" className="hidden" onChange={handleUpload} />
-              */}
+              {/* 上传插件：仅超管（与后端 require_super_admin 一致），仅接受已签名的 .so 包 */}
+              {user?.is_super_admin && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => uploadRef.current?.click()}
+                          disabled={uploading}
+                          title="上传已签名的插件包（zip：scripts/build_plugin.sh 产物，仅超管）">
+                    <IconUpload className={`size-4 ${uploading ? "animate-pulse" : ""}`} />
+                    {uploading ? "上传中…" : "上传插件"}
+                  </Button>
+                  <input ref={uploadRef} type="file" accept=".zip" className="hidden" onChange={handleUpload} />
+                </>
+              )}
               <Button size="sm" onClick={openCreate}>
                 <IconPlus className="size-4" />
                 {"新增通道"}
@@ -660,23 +743,6 @@ export function ChannelsPage() {
           </DialogHeader>
           <form onSubmit={submit}>
             <div className="grid grid-cols-2 gap-3">
-              <Controller
-                name="name"
-                control={channelForm.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid} className="col-span-2">
-                    <FieldLabel htmlFor={field.name}>{"通道名称"}<RequiredMark /></FieldLabel>
-                    <Input
-                      id={field.name}
-                      value={field.value ?? ""}
-                      onChange={(e) => field.onChange(e.target.value)}
-                      placeholder={"请输入通道名称"}
-                      aria-invalid={fieldState.invalid || undefined}
-                    />
-                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
-                  </Field>
-                )}
-              />
               <Controller
                 name="payment_type_id"
                 control={channelForm.control}
@@ -706,7 +772,7 @@ export function ChannelsPage() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={field.name}>{"支付插件"}<RequiredMark /></FieldLabel>
-                    <Select value={field.value || undefined} onValueChange={(v) => { field.onChange(v); onPluginChange(v) }} disabled={!!editingId}>
+                    <Select value={field.value || undefined} onValueChange={(v) => { field.onChange(v); onPluginChange(v) }}>
                       <SelectTrigger id={field.name} className="w-full" aria-invalid={fieldState.invalid || undefined}><SelectValue placeholder={"选择支付插件"} /></SelectTrigger>
                       <SelectContent>
                         {availablePlugins.length === 0 && (
@@ -717,6 +783,27 @@ export function ChannelsPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
+                  </Field>
+                )}
+              />
+              <Controller
+                name="name"
+                control={channelForm.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid} className="col-span-2">
+                    <FieldLabel htmlFor={field.name}>{"通道名称"}<RequiredMark /></FieldLabel>
+                    <Input
+                      id={field.name}
+                      value={field.value ?? ""}
+                      onChange={(e) => {
+                        // 用户一动手就停止自动生成，避免把自定义名称冲掉
+                        nameTouchedRef.current = true
+                        field.onChange(e.target.value)
+                      }}
+                      placeholder={"选择支付方式与支付插件后自动填充，也可自行修改"}
+                      aria-invalid={fieldState.invalid || undefined}
+                    />
                     {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
                   </Field>
                 )}
