@@ -13,10 +13,12 @@
 #   后台「支付通道 → 上传插件」选择该 zip → 建通道填凭证 → 测试 → 启用
 #   上传后写跨进程刷新戳，多 worker/多副本随后自动加载，无需重启容器
 #
+#   包内自带 signature.json（Ed25519 签名，编译镜像强制校验），未签名会被拒绝
+#
 # 自用/托管部署（目录映射，无需重建镜像）:
-#   把 dist/plugins/<插件名>/ 整个目录拷到服务器的 storage/plugins/<插件名>/，
-#   到后台点一次「刷新插件」即可生效（与后台上传同一目录；同名覆盖镜像内置
-#   插件，后台标记为「三方」）。无需重启容器。
+#   把 dist/plugins/<插件名>/ 整个目录（含 signature.json）拷到服务器的
+#   storage/plugins/<插件名>/，到后台点一次「刷新插件」即可生效（与后台上传
+#   同一目录；同名覆盖镜像内置插件，后台标记为「三方」）。无需重启容器。
 #
 # 注意: 产物仅适用于生产镜像（cp312 / linux-amd64）；三方目录同名插件会覆盖镜像内置版本
 set -euo pipefail
@@ -63,6 +65,28 @@ elif command -v zip >/dev/null 2>&1; then
   (cd "$ROOT/dist/plugins" && zip -qr "$PKG" "$PLUGIN")
 else
   echo "需要 python3 或 zip 命令来生成上传包"; exit 1
+fi
+
+# 签名：编译镜像会强制校验包内 signature.json，未签名的包上传被拒、加载被跳过。
+# 私钥 license_private.pem 只在作者本机；没有私钥时跳过（源码自用部署不强制，可直拷目录）。
+VERSION="$(grep -oE 'version="[^"]*"' "$ROOT/plugins/$PLUGIN/plugin.py" 2>/dev/null | head -1 | cut -d'"' -f2)"
+if [ -f "$ROOT/license_private.pem" ]; then
+  if command -v uv >/dev/null 2>&1; then
+    (cd "$ROOT" && uv run python scripts/plugin_sign.py sign "$PKG" ${VERSION:+--version "$VERSION"})
+  else
+    (cd "$ROOT" && python3 scripts/plugin_sign.py sign "$PKG" ${VERSION:+--version "$VERSION"})
+  fi
+  # 目录投放（拷 dist/plugins/<名>/ 到 storage/plugins/）同样需要签名文件，一并落一份
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$PKG" "$PLUGIN" "$OUT_DIR" <<'PY2'
+import pathlib, sys, zipfile
+pkg, name, out = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3])
+with zipfile.ZipFile(pkg) as zf:
+    (out / "signature.json").write_bytes(zf.read(f"{name}/signature.json"))
+PY2
+  fi
+else
+  echo "警告：未找到 license_private.pem，跳过签名 —— 编译镜像会拒绝这个未签名包！"
 fi
 
 echo "产物: $OUT_DIR"

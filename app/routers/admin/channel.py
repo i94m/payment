@@ -25,6 +25,7 @@ from app.services.crypto import decrypt_config, encrypt_config
 from app.services.plugin import PluginRegistry
 from app.services.plugin_interfaces import PluginMeta
 from app.services.plugin_sync import sync_plugins
+from app.core import plugin_signing
 
 router = APIRouter()
 
@@ -119,7 +120,8 @@ async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
       <插件名>/plugin.cpython-312-x86_64-linux-gnu.so
     仅接受 .so 编译产物（含 .py 一律拒绝，与镜像源码保护口径一致）；插件名取
     zip 内目录名，元信息/版本号来自插件类的 meta（不再支持 info.json，包内残留的
-    info.json 会被忽略）。安装到 storage/plugins/<插件名>/（持久卷随 storage 备份，
+    info.json 会被忽略）。**编译镜像还要求包内带 signature.json（Ed25519 签名）**，
+    由 scripts/build_plugin.sh 打���时自动生成；未签名的包一律拒绝。安装到 storage/plugins/<插件名>/（持久卷随 storage 备份，
     容器重建不丢），安装后立即刷新注册表并同步 Plugin 表。
     重扫会写跨进程刷新戳：其他 worker/副本随后自动跟上，无需重启。
     """
@@ -173,6 +175,15 @@ async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
                 return err(-1, "压缩包包含非法路径")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(zf.read(i))
+        # 包签名校验：编译镜像强制（源码运行可跳过）。必须在落盘前完成，
+        # 否则未签名的包会先进入 storage/plugins 再被删，期间仍可能被扫描加载
+        if plugin_signing.is_enforced():
+            staged_so = stage / main.filename[len(prefix):]
+            try:
+                plugin_signing.verify_plugin_dir(stage, staged_so, expect_name=name)
+            except plugin_signing.PackageSignatureError as e:
+                return err(-1, f"插件包签名校验失败：{e}（请用 scripts/build_plugin.sh 打包/签名）")
+
         target_dir = upload_root / name
         if target_dir.exists():
             shutil.rmtree(target_dir)

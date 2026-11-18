@@ -6,6 +6,9 @@
 - 支付插件分两档：builtin=镜像内置（`plugins/`，随镜像编译），
   third=三方（`storage/plugins/`，后台上传或部署方直接拷入 .so 目录），
   同名时三方覆盖内置，无需重建镜像即可上线新插件
+- 三方插件在编译镜像里强制验签（`app/core/plugin_signing.py`）：上传接口与
+  加载扫描都会校验包内 `signature.json`，未签名/被改动的插件直接拒绝或跳过；
+  源码运行跳过校验，方便本地开发
 - 跨进程刷新：多 worker/多副本部署下注册表是进程内内存态，单进程 reload()
   只影响自己。因此 reload() 会写一个「刷新戳」文件（三方目录内），
   其他进程在热点路径上按指纹（戳内容 + 目录 mtime）发现变化后自动重扫，
@@ -24,6 +27,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
+from app.core import plugin_signing
 from app.services.plugin_interfaces import (
     BasePayment,
     BaseSms,
@@ -190,6 +194,13 @@ class PluginRegistry:
                 so_path = cls._find_plugin_module(d)
                 if so_path is None:
                     continue
+                # 编译镜像强制验签：挡住绕过上传接口、直接把 .so 拷进 storage/plugins 的情况
+                if plugin_signing.is_enforced():
+                    try:
+                        plugin_signing.verify_plugin_dir(d, so_path, expect_name=d.name)
+                    except plugin_signing.PackageSignatureError as e:
+                        _log.warning(f"三方插件签名校验失败，已跳过 {d.name}: {e}")
+                        continue
                 try:
                     mod = cls._import_upload(d.name, so_path)
                 except Exception as e:
