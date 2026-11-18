@@ -4,7 +4,6 @@ import * as React from "react"
 import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
-import { cn } from "@/lib/utils"
 import { dashboardApi } from "@/api"
 import type { AdminOverview, DayStat, HomeConfig, RatelimitStats } from "@/api/dashboard"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,6 +26,10 @@ import {
 } from "@tabler/icons-react"
 
 const RATELIMIT_LS_KEY = "ratelimit_last_channel"
+
+/** 首页统计自动轮询间隔（ms）与失败退避上限 */
+const REFRESH_MS = 10_000
+const REFRESH_MAX_MS = 4 * REFRESH_MS
 
 /** 金额路由表单值（enable 由 channel>0 推导，不单独维护） */
 interface RouteForm {
@@ -65,8 +68,10 @@ function TodayTable({ dayToday, nameMap, metaMap, kind }: {
   kind: "paytype" | "channel" | "profit"
 }) {
   const ids = Object.keys(nameMap)
-  const cellOf = (id: string) =>
-    fmtMoney((kind === "profit" ? dayToday.profit_paytype[id] : dayToday[kind][id]) ?? 0)
+  // 取原始数值交给 AnimatedNumber：只有金额真的变了才做滚动动画
+  const cellValue = (id: string): number =>
+    Number((kind === "profit" ? dayToday.profit_paytype[id] : dayToday[kind][id]) ?? 0)
+  const totalValue = Number((kind === "profit" ? dayToday.profit_all : dayToday.all) ?? 0)
   return (
     <Table>
       <TableHeader>
@@ -89,9 +94,13 @@ function TodayTable({ dayToday, nameMap, metaMap, kind }: {
       <TableBody>
         <TableRow>
           <TableCell className="h-8 font-medium">{"今日"}</TableCell>
-          {ids.map((id) => <TableCell key={id} className="h-8 tabular-nums">{cellOf(id)}</TableCell>)}
+          {ids.map((id) => (
+            <TableCell key={id} className="h-8 tabular-nums">
+              <AnimatedNumber value={cellValue(id)} format={fmtMoney} />
+            </TableCell>
+          ))}
           <TableCell className="h-8 font-medium tabular-nums">
-            {fmtMoney(kind === "profit" ? dayToday.profit_all : dayToday.all)}
+            <AnimatedNumber value={totalValue} format={fmtMoney} />
           </TableCell>
         </TableRow>
       </TableBody>
@@ -109,23 +118,33 @@ function TodayTableSkeleton() {
   )
 }
 
-/** 数字滚动动画：挂载/数值变化时从 0 递增到目标值；prefers-reduced-motion 时直接显示 */
+/** 数字滚动动画：数值变化时从「上一次的值」缓动到新值（挂载时从 0 起）。
+ *  值没变就不动，避免轮询把屏幕上的数字无谓地重播一遍；prefers-reduced-motion 时直接显示。 */
 function AnimatedNumber({ value, format }: { value: number; format: (v: number) => string }) {
+  const target = Number.isFinite(value) ? value : 0
   const [display, setDisplay] = React.useState(0)
+  // 上一次渲染到的目标值：从它出发做增量动画（不是每次都从 0 重播）
+  const prevRef = React.useRef(0)
 
   React.useEffect(() => {
+    const from = prevRef.current
+    prevRef.current = target
+    if (from === target) return
+
     const reduce = typeof window !== "undefined"
       && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-    const target = Number.isFinite(value) ? value : 0
-    const duration = reduce || target === 0 ? 0 : 600
+    if (reduce) { setDisplay(target); return }
+
+    // 变动幅度越大动画略长一点，但封顶 900ms，避免大额数字滚太久
+    const duration = Math.min(900, 400 + Math.log10(Math.abs(target - from) + 1) * 250)
     const start = performance.now()
     let raf = requestAnimationFrame(function tick(now) {
-      const p = duration === 0 ? 1 : Math.min(1, (now - start) / duration)
-      setDisplay(target * (1 - (1 - p) ** 3))
+      const p = Math.min(1, (now - start) / duration)
+      setDisplay(from + (target - from) * (1 - (1 - p) ** 3))
       if (p < 1) raf = requestAnimationFrame(tick)
     })
     return () => cancelAnimationFrame(raf)
-  }, [value])
+  }, [target])
 
   return <>{format(display)}</>
 }
@@ -186,18 +205,27 @@ export function DashboardPage() {
     }
   }, [])
 
-  const [refreshing, setRefreshing] = React.useState(false)
   const [loadError, setLoadError] = React.useState<unknown>(null)
-  const getData = React.useCallback(async () => {
-    setRefreshing(true)
+  // 在途请求去重：轮询与手动刷新可能撞在一起，只发一个请求
+  const inFlightRef = React.useRef(false)
+
+  /** 拉取首页统计；silent=轮询调用（失败不弹 toast，由调用方退避）。
+   *  返回是否成功，供轮询判断失败退避（已有在途请求时按成功处理，不累加失败次数）。 */
+  const getData = React.useCallback(async (silent = false): Promise<boolean> => {
+    if (inFlightRef.current) return true
+    inFlightRef.current = true
     try {
       const data = await dashboardApi.overview()
       setOverview(data as AdminOverview)
+      // 轮询成功后自动走出加载失败态（断网恢复后无需手动重试）
+      setLoadError(null)
+      return true
     } catch (err) {
       // 401 已由 api-client 跳转到登录页；其余错误要显式提示，不能把「0」当成真实统计
-      toast.error(getErrorMessage(err, "统计数据刷新失败"))
+      if (!silent) toast.error(getErrorMessage(err, "统计数据刷新失败"))
+      return false
     } finally {
-      setRefreshing(false)
+      inFlightRef.current = false
     }
   }, [])
 
@@ -227,6 +255,55 @@ export function DashboardPage() {
     return () => { alive = false }
   }, [applyAll])
 
+  // 自动轮询：每 10s 刷新一次统计（后端每次实时计算，不需要缓存层）
+  // - 标签页不可见时跳过请求，切回可见立即补刷一次
+  // - 连续失败指数退避（10s→20s→40s→上限 40s），且不弹 toast，避免断网时刷屏
+  // - 递归 setTimeout 而非 setInterval：上一轮没结束不会叠加请求
+  React.useEffect(() => {
+    let alive = true
+    let timer: number | undefined
+    let running = false
+    let failures = 0
+
+    const schedule = (delay: number) => {
+      if (!alive || timer !== undefined) return
+      timer = window.setTimeout(() => {
+        timer = undefined
+        void tick()
+      }, delay)
+    }
+
+    const tick = async () => {
+      if (!alive || running) return
+      running = true
+      try {
+        if (document.visibilityState === "visible") {
+          const ok = await getData(true)
+          failures = ok ? 0 : failures + 1
+        }
+      } finally {
+        running = false
+      }
+      schedule(Math.min(REFRESH_MS * 2 ** failures, REFRESH_MAX_MS))
+    }
+
+    const onVisibility = () => {
+      if (!alive || document.visibilityState !== "visible") return
+      failures = 0
+      if (timer !== undefined) { window.clearTimeout(timer); timer = undefined }
+      if (running) schedule(REFRESH_MS)
+      else void tick()
+    }
+
+    document.addEventListener("visibilitychange", onVisibility)
+    schedule(REFRESH_MS)
+    return () => {
+      alive = false
+      if (timer !== undefined) window.clearTimeout(timer)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [getData])
+
   // 失败重试：由点击触发，先回到骨架态再拉取
   const retryLoad = () => {
     setLoading(true)
@@ -243,35 +320,36 @@ export function DashboardPage() {
   }
 
   const trend: { date: string; count: number; money: number }[] = overview?.trend ?? []
+  // 卡片数值保留原始 number，交给 AnimatedNumber 做变化动画（格式化在渲染时做）
   const kpis = [
     {
       key: "today_deduct_money", label: "今日预计收入", icon: IconTrendingUp,
-      value: fmtMoney(overview?.today_deduct_money ?? 0), to: "",
+      value: overview?.today_deduct_money ?? 0, format: fmtMoney, to: "",
       note: "今日实时汇总",
     },
     {
       key: "yesterday_deduct_money", label: "昨日预计收入", icon: IconCalendarStats,
-      value: fmtMoney(overview?.yesterday_deduct_money ?? 0), to: "",
+      value: overview?.yesterday_deduct_money ?? 0, format: fmtMoney, to: "",
       note: "昨日全天汇总",
     },
     {
       key: "usermoney", label: "总计余额", icon: IconCoin,
-      value: fmtMoney(overview?.usermoney ?? 0), to: "",
+      value: overview?.usermoney ?? 0, format: fmtMoney, to: "",
       note: "商户余额合计",
     },
     {
       key: "settlemoney", label: "结算总额", icon: IconGauge,
-      value: fmtMoney(overview?.settlemoney ?? 0), to: "/settle",
+      value: overview?.settlemoney ?? 0, format: fmtMoney, to: "/settle",
       note: "已结算总金额",
     },
     {
       key: "count1", label: "订单总数", icon: IconChartBar,
-      value: fmtNum(overview?.count1 ?? 0), to: "/trade/orders",
+      value: overview?.count1 ?? 0, format: fmtCount, to: "/trade/orders",
       note: "已支付总单数",
     },
     {
       key: "count2", label: "商户数量", icon: IconUsers,
-      value: fmtNum(overview?.count2 ?? 0), to: "/merchants",
+      value: overview?.count2 ?? 0, format: fmtCount, to: "/merchants",
       note: "入驻商户总数",
     },
   ]
@@ -413,7 +491,9 @@ export function DashboardPage() {
                   <CardHeader>
                     <CardDescription>{kpi.label}</CardDescription>
                     <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-                      {loading ? <Skeleton className="h-8 w-24" /> : kpi.value}
+                      {loading
+                        ? <Skeleton className="h-8 w-24" />
+                        : <AnimatedNumber value={kpi.value} format={kpi.format} />}
                     </CardTitle>
                   </CardHeader>
                   <CardFooter className="flex-col items-start text-sm">
@@ -641,8 +721,8 @@ export function DashboardPage() {
                 <CardDescription>{"支付方式收入 / 通道收入 / 手续费利润"}</CardDescription>
                 <CardAction>
                   <Button variant="outline" size="icon" className="size-7" onClick={() => getData()}
-                    title="刷新" disabled={refreshing} aria-label="刷新">
-                    <IconRefresh className={cn("size-3.5", refreshing && "animate-spin")} />
+                    title={`刷新（每 ${REFRESH_MS / 1000} 秒自动更新）`} aria-label="刷新">
+                    <IconRefresh className="size-3.5" />
                   </Button>
                 </CardAction>
               </CardHeader>
