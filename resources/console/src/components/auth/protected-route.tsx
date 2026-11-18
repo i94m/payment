@@ -3,7 +3,12 @@ import { useAuthStore } from "@/stores/auth-store"
 import type { ReactNode } from "react"
 import { Error403 } from "@/pages/errors/403"
 
-export function ProtectedRoute({ children, permission }: { children: ReactNode; permission?: string }) {
+export function ProtectedRoute({ children, permission, superOnly }: {
+  children: ReactNode
+  permission?: string
+  /** 仅超管可进：后端对应模块的接口全是 super-only，子账号进来只会 403 */
+  superOnly?: boolean
+}) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const user = useAuthStore((s) => s.user)
   const permissions = useAuthStore((s) => s.permissions)
@@ -15,6 +20,10 @@ export function ProtectedRoute({ children, permission }: { children: ReactNode; 
     // from 排除含 /login 的脏路径,避免登录后又被带回污染 URL。
     const from = location.pathname.includes("/login") ? "/" : location.pathname
     return <Navigate to="/login" state={{ from }} replace />
+  }
+
+  if (superOnly && !user?.is_super_admin) {
+    return <Error403 />
   }
 
   // "*" 为全量放行（商户端单一角色由后端下发 permissions=["*"]）

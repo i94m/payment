@@ -49,11 +49,10 @@ export function getAdminMenu(): MenuSection[] {
         { title: "支付通道", url: "/pay/channels", icon: IconRoute, permission: "channel.view" },
         { title: "支付方式", url: "/pay/types", icon: IconCreditCard, permission: "payment_type.view" },
         { title: "站点配置", url: "/setting/pay", icon: IconAdjustments, permission: "pay_setting.view" },
-        // 管理员账号（RBAC）：静态隐藏 —— 侧边栏不显示，页面/路由/接口保留，
-        // 需要时去掉 hidden 即可；直链 /admin#/system/accounts 仍可访问
+        // 管理员账号（RBAC）：仅超管可见/可进（后端该模块全部接口要求超管）
         {
           title: "管理员账号", url: "/system/accounts", icon: IconShieldLock,
-          permission: "system.admin", hidden: true,
+          permission: "system.admin", superOnly: true,
         },
       ],
     },

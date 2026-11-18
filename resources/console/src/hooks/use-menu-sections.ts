@@ -31,7 +31,8 @@ export function useMenuSections(): MenuSection[] {
       .map((section) => ({
         ...section,
         // hidden 为静态隐藏（功能开关关闭），权限过滤之外再剔除一次
-        items: section.items.filter((item) => !item.hidden && hasPermission(item.permission)),
+        items: section.items.filter((item) =>
+          !item.hidden && (!item.superOnly || !!user?.is_super_admin) && hasPermission(item.permission)),
       }))
       // 整组都被过滤掉时不渲染分组标题/下拉触发器
       .filter((section) => section.items.length > 0)

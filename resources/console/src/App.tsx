@@ -61,7 +61,7 @@ function AppRoutes({ routes }: { routes: PermissionRouteObject[] }) {
   const wrappedRoutes = routes.map((route) => ({
     ...route,
     element: (
-      <ProtectedRoute permission={route.permission}>
+      <ProtectedRoute permission={route.permission} superOnly={route.superOnly}>
         {route.element}
       </ProtectedRoute>
     ),

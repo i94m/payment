@@ -29,6 +29,8 @@ import { Error500 } from "@/pages/errors/500"
 // which an interface cannot extend. Use an intersection type instead.
 export type PermissionRouteObject = RouteObject & {
   permission?: string
+  /** 仅超级管理员可进（后端该模块全部接口要求 super，避免子账号拿到权限键也只会 403） */
+  superOnly?: boolean
 }
 
 // permission 与后端 PERMISSION_TREE 的 key 对齐
@@ -50,7 +52,7 @@ const pageRoutes: PermissionRouteObject[] = [
     element: <FeatureGate feature="announce_enable"><AnnouncesPage /></FeatureGate>,
   },
   { path: "/setting/pay", element: <PaySettingsPage />, permission: "pay_setting.view" },
-  { path: "/system/accounts", element: <AccountsPage />, permission: "system.admin" },
+  { path: "/system/accounts", element: <AccountsPage />, permission: "system.admin", superOnly: true },
   { path: "/403", element: <Error403 /> },
   { path: "/500", element: <Error500 /> },
   { path: "*", element: <Error404 /> },

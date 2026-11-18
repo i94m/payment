@@ -96,6 +96,18 @@ async def accounts_index(session: SessionDep,
                         has_more_pages=page * per_page < total, has_pages=total > per_page))
 
 
+@router.get("/accounts/{item_id}", dependencies=_require_super)
+async def accounts_show(item_id: int, session: SessionDep):
+    """账号详情（编辑弹窗回填用）：附带已勾选的权限 id 列表。
+
+    早前只提供列表接口，前端编辑走 GET /accounts/{id} 会 404 报错。
+    """
+    admin = await session.get(SystemAdmin, item_id)
+    if not admin:
+        return err(404, "记录不存在")
+    return suc(_dump_admin(admin, permissions=await _load_perms(session, admin.id)))
+
+
 @router.post("/accounts", dependencies=_require_super)
 async def accounts_store(body: AccountRequest, session: SessionDep):
     if not body.password:

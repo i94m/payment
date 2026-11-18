@@ -699,7 +699,7 @@ export function MerchantsPage() {
         width="sm:max-w-sm"
         fields={[
           { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", required: true, props: { autoComplete: "off" } },
-          { type: "password", name: "password", label: "密码", placeholder: "密码", span: "full", required: true, props: { autoComplete: "new-password" } },
+          { type: "input", name: "password", label: "密码", placeholder: "密码", span: "full", required: true, props: { autoComplete: "new-password", spellCheck: false } },
           {
             type: "switch-group", name: "switch_group", span: "full",
             items: [

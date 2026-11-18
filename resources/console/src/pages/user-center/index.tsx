@@ -256,7 +256,7 @@ function AdminAccountCard() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={field.name}>{"原密码"}<RequiredMark /></FieldLabel>
-                    <Input {...field} id={field.name} type="password" placeholder={"输入原密码"} />
+                    <Input {...field} id={field.name} type="password" placeholder={"输入原密码"} autoComplete="new-password" />
                     {fieldState.invalid && <FieldError>{fieldState.error?.message}</FieldError>}
                   </Field>
                 )}
@@ -267,7 +267,7 @@ function AdminAccountCard() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={field.name}>{"新密码"}<RequiredMark /></FieldLabel>
-                    <Input {...field} id={field.name} type="password" placeholder={"设置新密码"} />
+                    <Input {...field} id={field.name} type="password" placeholder={"设置新密码"} autoComplete="new-password" />
                     {fieldState.invalid && <FieldError>{fieldState.error?.message}</FieldError>}
                   </Field>
                 )}
@@ -278,7 +278,7 @@ function AdminAccountCard() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={field.name}>{"确认密码"}<RequiredMark /></FieldLabel>
-                    <Input {...field} id={field.name} type="password" placeholder={"确认新密码"} />
+                    <Input {...field} id={field.name} type="password" placeholder={"确认新密码"} autoComplete="new-password" />
                     {fieldState.invalid && <FieldError>{fieldState.error?.message}</FieldError>}
                   </Field>
                 )}

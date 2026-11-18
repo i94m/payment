@@ -72,7 +72,7 @@ export function PasswordPage() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={field.name}>{"原密码"}<RequiredMark /></FieldLabel>
-                    <Input id={field.name} type="password" className="w-full sm:max-w-sm" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value)} placeholder={"请输入原密码"} aria-invalid={fieldState.invalid || undefined} />
+                    <Input id={field.name} type="password" className="w-full sm:max-w-sm" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value)} placeholder={"请输入原密码"} autoComplete="new-password" aria-invalid={fieldState.invalid || undefined} />
                     {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
                   </Field>
                 )}
@@ -83,7 +83,7 @@ export function PasswordPage() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={field.name}>{"新密码"}<RequiredMark /></FieldLabel>
-                    <Input id={field.name} type="password" className="w-full sm:max-w-sm" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value)} placeholder={"至少 6 位，非纯数字"} aria-invalid={fieldState.invalid || undefined} />
+                    <Input id={field.name} type="password" className="w-full sm:max-w-sm" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value)} placeholder={"至少 6 位，非纯数字"} autoComplete="new-password" aria-invalid={fieldState.invalid || undefined} />
                     {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
                   </Field>
                 )}
@@ -94,7 +94,7 @@ export function PasswordPage() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={field.name}>{"确认新密码"}<RequiredMark /></FieldLabel>
-                    <Input id={field.name} type="password" className="w-full sm:max-w-sm" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value)} placeholder={"请再次输入新密码"} aria-invalid={fieldState.invalid || undefined} />
+                    <Input id={field.name} type="password" className="w-full sm:max-w-sm" value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value)} placeholder={"请再次输入新密码"} autoComplete="new-password" aria-invalid={fieldState.invalid || undefined} />
                     {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
                   </Field>
                 )}

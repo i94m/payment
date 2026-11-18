@@ -162,6 +162,8 @@ function renderField(
           onChange={(e) => field.onChange(e.target.value)}
           onBlur={field.onBlur}
           disabled={disabled}
+          // 密码类字段一律不参与浏览器自动填充（后台新增/编辑表单）
+          {...(config.type === "password" ? { autoComplete: "new-password" } : {})}
           {...(config.props as Record<string, unknown>)}
         />
       )
