@@ -42,7 +42,7 @@ async def order_pay_types(trade_no: str, session: SessionDep, cache: CacheDep,
     """订单信息 + 可选支付方式列表。"""
     order = await get_order_by_trade_no(session, trade_no)
     if not order:
-        return err(404, "订单不存在")
+        return err(404, "订单不存在或已失效")
     if order.status == ORDER_PAID:
         return_url = await _signed_return_url(order, session, cache)
         return suc_data({"status": 1, "money": str(order.money), "subject": order.subject,
@@ -78,9 +78,9 @@ async def launch_payment(request: Request, session: SessionDep, cache: CacheDep,
     except HTTPException:
         raise
     except Exception:
-        return err(-1, "参数错误")
+        return err(-1, "请求参数有误，请返回重新付款")
     if not trade_no or not type_code:
-        return err(-1, "参数错误")
+        return err(-1, "请求参数有误，请返回重新付款")
 
     order = await get_order_by_trade_no(session, trade_no)
     if not order:
@@ -88,17 +88,20 @@ async def launch_payment(request: Request, session: SessionDep, cache: CacheDep,
     if order.status == ORDER_PAID:
         return err(-1, "订单已支付")
     if order.status != 0:
-        return err(-1, "订单状态异常")
+        return err(-1, "订单当前无法支付，请返回重新下单")
 
     pay_type = (await session.exec(
         select(PaymentType).where(PaymentType.code == type_code, PaymentType.status == 1)
     )).first()
     if not pay_type:
-        return err(-1, "支付方式不存在")
+        return err(-1, "当前支付方式暂不可用，请选择其他支付方式")
 
     merchant = await session.get(Merchant, order.merchant_id)
     if not merchant:
-        return err(-1, "商户不存在")
+        # 商户被删属于内部异常，买家只看到通用提示，细节写服务端日志
+        _log.warning("收银台拉起支付失败：商户不存在 trade_no=%s merchant_id=%s",
+                     order.trade_no, order.merchant_id)
+        return err(-1, "支付服务暂不可用，请稍后重试")
 
     # 同一支付方式重复拉起：复用已落库的上游支付信息（与开放 API 下单口径一致），
     # 收银台刷新/回退不再每次都向上游新建付款会话；切换支付方式或 refresh=true 才重新拉起。

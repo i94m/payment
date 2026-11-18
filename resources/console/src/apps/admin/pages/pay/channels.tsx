@@ -223,15 +223,14 @@ export function ChannelsPage() {
     e.target.value = ""   // 允许重复选择同一文件
     if (!f) return
     if (!f.name.toLowerCase().endsWith(".zip")) {
-      toast.error("请选择 .zip 插件包（scripts/build_plugin.sh 产物）")
+      toast.error("请选择 .zip 格式的插件包")
       return
     }
     setUploading(true)
     try {
       const res = await payApi.uploadPlugin(f)
-      toast.success(res?.note || "上传成功", {
-        description: res?.showname ? `已安装：${res.showname}` : undefined,
-      })
+      const label = [res?.showname, res?.version].filter(Boolean).join(" ")
+      toast.success(label ? `${label} 安装成功` : (res?.note || "安装成功"))
       payApi.plugins().then(setPlugins).catch(() => {})
       refresh()
     } catch (err) {
@@ -342,9 +341,9 @@ export function ChannelsPage() {
       const url = /^https?:\/\//.test(data.pay_info || "") ? data.pay_info : ""
       if (url && data.pay_type !== "html") {
         window.open(url, "_blank")
-        toast.success(`测试通过：${data.pay_type}`, { description: "已在新窗口打开上游支付页" })
+        toast.success(`测试通过：${data.pay_type}`, { description: "已在新窗口打开支付页" })
       } else if (data.pay_type === "qrcode" || data.pay_type === "html") {
-        toast.success(`测试通过：${data.pay_type}`, { description: "上游返回内容见浏览器控制台 / 调试信息" })
+        toast.success(`测试通过：${data.pay_type}`, { description: "返回内容可在浏览器控制台查看" })
         console.info("[channel testpay]", data)
       } else {
         toast.success(`测试通过：${data.pay_type}`)

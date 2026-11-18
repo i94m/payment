@@ -137,7 +137,7 @@ async def _direct_launch(request: Request, order: Order, merchant: Merchant,
         if not flow.ok:
             return HTMLResponse(_render_result(
                 "err", "拉起支付失败",
-                flow.error or "上游通道暂不可用，请稍后刷新重试",
+                flow.error or "支付服务暂不可用，请稍后刷新重试",
                 _pay_display_money(order), order.trade_no, "",
             ))
         pay_type, pay_info = flow.pay_type, flow.pay_info or ""

@@ -158,6 +158,11 @@ async def test_upload_install_success(client, upload_root, admin_headers, monkey
     assert body["code"] == 0, body
     assert body["data"]["name"] == "myplug"
     assert body["data"]["showname"] == "测试插件"
+    # 安装提示只给插件名 + 版本（不暴露 worker/副本 这类实现细节）
+    assert body["data"]["version"] == "1.0.1"
+    note = body["data"]["note"]
+    assert "测试插件" in note and "1.0.1" in note
+    assert "worker" not in note and "副本" not in note
 
     # 安装目录保持文件夹形式且无 .py、无 info.json
     assert (upload_root / "myplug" / SO_NAME).is_file()

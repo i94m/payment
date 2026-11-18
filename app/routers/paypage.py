@@ -58,7 +58,8 @@ async def load_paypage_merchant(session: SessionDep, cache: CacheDep,
         return None, "链接无效"
     m = await _load_merchant(session, pt.merchant_id)
     if not m:
-        return None, "商户不存在"
+        _log.warning("收款页不可用：商户不存在 merchant_id=%s", pt.merchant_id)
+        return None, "收款页暂不可用"
     if m.pay_status != 1:
         return None, "商户暂不可收款"
     if not _random_ready(m):
@@ -78,7 +79,8 @@ async def paypage_info(request: Request, session: SessionDep, cache: CacheDep,
         return err(404, "链接无效")
     m = await _load_merchant(session, pt.merchant_id)
     if not m:
-        return err(404, "商户不存在")
+        _log.warning("收款页接口：商户不存在 merchant_id=%s", pt.merchant_id)
+        return err(404, "收款页暂不可用")
     return suc_data({
         "pid": m.pid,
         "name": m.username,

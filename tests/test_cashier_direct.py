@@ -108,7 +108,9 @@ async def test_direct_launch_failure_shows_error_page(client, seeded, session):
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     assert "拉起支付失败" in resp.text
-    assert "无可用支付通道" in resp.text
+    # 买家侧只看到可读提示（具体原因在服务端日志）
+    assert "当前支付方式暂不可用" in resp.text
+    assert "通道" not in resp.text
     assert "刷新重试" in resp.text
     assert order.trade_no in resp.text
 

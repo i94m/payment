@@ -235,8 +235,9 @@ async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
         session.add(Plugin(name=name, showname=showname, supported_types=types,
                            inputs_schema=inputs, version=version, is_enabled=True))
     await session.commit()
-    return suc({"name": name, "showname": showname,
-                "note": "安装成功；其他 worker/副本随后自动生效，后台刷新即可看到"})
+    # 提示只给运维看得懂的信息：插件名 + 版本（"其他 worker/副本自动生效"属于实现细节）
+    return suc({"name": name, "showname": showname, "version": version or "",
+                "note": f"{showname} {version or ''} 安装成功".replace("  ", " ").strip()})
 
 
 # ============================================================

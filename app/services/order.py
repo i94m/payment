@@ -420,7 +420,9 @@ async def process_payment(
         from app.services.channel import get_channel_with_config
         ch, ch_config = await get_channel_with_config(session, channel_id)
         if not ch:
-            return PayFlowResult(ok=False, error="支付通道不存在")
+            _log.warning("拉起支付失败：通道不存在 channel_id=%s trade_no=%s",
+                         channel_id, order.trade_no)
+            return PayFlowResult(ok=False, error="当前支付方式暂不可用，请稍后重试")
         resolved = ResolvedChannel(
             channel=ch, config=ch_config,
             merchant_rate=ch.merchant_rate, cost_rate=ch.cost_rate,
@@ -430,7 +432,9 @@ async def process_payment(
             session, cache, order.payment_type_id, order.money, merchant_rate=merchant.rate
         )
     if not resolved:
-        return PayFlowResult(ok=False, error="无可用支付通道")
+        _log.warning("拉起支付失败：无可用通道 trade_no=%s type=%s money=%s",
+                     order.trade_no, order.payment_type_id, order.money)
+        return PayFlowResult(ok=False, error="当前支付方式暂不可用，请稍后重试")
 
     # 金额计算：实付金额（realmoney）按商户随机金额设置抖动，
     # 商户申报金额 money 保持不变，到账/成本/利润按实付计算。
@@ -461,7 +465,9 @@ async def process_payment(
     plugin = PluginRegistry.get_payment(resolved.channel.plugin_name, resolved.config)
     if not plugin:
         _dbg_submit(resolved.channel, order, "no_plugin", is_mobile=is_mobile)
-        return PayFlowResult(ok=False, error=f"支付插件 {resolved.channel.plugin_name} 未安装")
+        _log.warning("拉起支付失败：插件未安装 plugin=%s trade_no=%s",
+                     resolved.channel.plugin_name, order.trade_no)
+        return PayFlowResult(ok=False, error="当前支付方式暂不可用，请稍后重试")
 
     ctx = build_payment_context(
         order, resolved.channel.plugin_name, notify_base, return_base, site_url, is_mobile,
@@ -472,14 +478,18 @@ async def process_payment(
         _log.exception("插件下单异常 plugin=%s trade_no=%s", resolved.channel.plugin_name, order.trade_no)
         _dbg_submit(resolved.channel, order, "exception", ctx, is_mobile,
                     error=traceback.format_exc(), plugin=plugin)
-        return PayFlowResult(ok=False, error="上游通道请求失败，请稍后重试", plugin=plugin)
+        return PayFlowResult(ok=False, error="支付服务暂不可用，请稍后重试", plugin=plugin)
 
     if result.kind == "error" or (result.kind != "jump" and not result.url and not result.html):
         _dbg_submit(resolved.channel, order, "biz_error", ctx, is_mobile,
                     result={"kind": result.kind, "url": result.url,
                             "html": result.html, "msg": result.msg},
                     plugin=plugin)
-        return PayFlowResult(ok=False, error=result.msg or "获取支付接口数据失败", plugin=plugin)
+        # 插件返回的 msg 可能是上游原文（含参数/签名等术语）：直接给买家看不好懂，
+        # 这里统一成可读提示，原文由 debug 日志（_dbg_submit）保留
+        _log.warning("插件下单失败 plugin=%s trade_no=%s msg=%s",
+                     resolved.channel.plugin_name, order.trade_no, result.msg)
+        return PayFlowResult(ok=False, error="当前支付方式暂不可用，请稍后重试", plugin=plugin)
 
     # 事务 B：存支付信息
     order.extra = {**(order.extra or {}), "pay_type": result.kind, "pay_info": (result.url or result.html)[:2000]}
