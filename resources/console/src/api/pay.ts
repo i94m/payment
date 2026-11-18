@@ -32,8 +32,12 @@ export interface PluginData {
 /** 同步插件目录的返回（POST /pay/plugins/sync） */
 export interface PluginSyncResult {
   synced: number
+  /** 本次新增入库的插件数（0 表示盘上没有新插件） */
+  added: number
   removed: string[]
   referenced: string[]
+  /** 加载失败的插件目录 → 原因（导入报错 / 没有 BasePayment 子类等） */
+  errors?: Record<string, string>
   message: string
 }
 
@@ -153,7 +157,12 @@ export const payApi = {
   uploadPlugin: (file: File) => {
     const fd = new FormData()
     fd.append("file", file)
-    return apiClient.post("/pay/plugins/upload", fd) as Promise<Record<string, string>>
+    // 必须显式声明 multipart：apiClient 默认 Content-Type=application/json，
+    // axios 会把 FormData 序列化成 JSON（文件变成空对象），后端只会回
+    // 422 body.file Field required。声明成 multipart 后 axios 交给浏览器写 boundary。
+    return apiClient.post("/pay/plugins/upload", fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }) as Promise<Record<string, string>>
   },
 
   payTypes: () => apiClient.get("/pay/types") as Promise<PaymentTypeData[]>,

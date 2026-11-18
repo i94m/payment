@@ -15,6 +15,7 @@ import {
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Field, FieldLabel, FieldError, RequiredMark } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
@@ -198,6 +199,14 @@ export function ChannelsPage() {
     try {
       const res = await payApi.syncPlugins()
       toast.success(res?.message || "同步成功")
+      // 有插件加载失败时只提示数量与插件名（内部异常细节留在服务端日志）
+      const failures = Object.keys(res?.errors || {})
+      if (failures.length > 0) {
+        toast.warning(`${failures.length} 个插件加载失败：${failures.join("、")}`, {
+          description: "请确认插件包与当前系统环境匹配，详情见服务端日志",
+          duration: 8000,
+        })
+      }
       payApi.plugins().then(setPlugins).catch(() => {})
       refresh()
     } catch (err) {
@@ -698,23 +707,32 @@ export function ChannelsPage() {
               </Button>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing}
-                      title="重新扫描插件目录，刷新插件列表">
-                <IconRefresh className={`size-4 ${syncing ? "animate-spin" : ""}`} />
-                <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
-                  {plugins.length}
-                </Badge>
-                {"刷新插件"}
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing}
+                          aria-label={"刷新插件"}>
+                    <IconRefresh className={`size-4 ${syncing ? "animate-spin" : ""}`} />
+                    {"刷新插件"}
+                    <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                      {plugins.length}
+                    </Badge>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">{"重新扫描插件目录，刷新插件列表"}</TooltipContent>
+              </Tooltip>
               {/* 上传插件：需「支付通道-更新」权限（与后端 PermissionChecker 一致），仅接受已签名的 .so 包 */}
               {canUploadPlugin && (
                 <>
-                  <Button size="sm" variant="outline" onClick={() => uploadRef.current?.click()}
-                          disabled={uploading}
-                          title="上传已签名的插件包（zip：scripts/build_plugin.sh 产物，需支付通道更新权限）">
-                    <IconUpload className={`size-4 ${uploading ? "animate-pulse" : ""}`} />
-                    {uploading ? "上传中…" : "上传插件"}
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={() => uploadRef.current?.click()}
+                              disabled={uploading} aria-label={"上传插件"}>
+                        <IconUpload className={`size-4 ${uploading ? "animate-pulse" : ""}`} />
+                        {uploading ? "上传中…" : "上传插件"}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{"上传插件包（仅支持 .zip）"}</TooltipContent>
+                  </Tooltip>
                   <input ref={uploadRef} type="file" accept=".zip" className="hidden" onChange={handleUpload} />
                 </>
               )}
