@@ -523,10 +523,11 @@ async def _hit_deduct(session: AsyncSession, order: Order,
       - 单笔 order.money（**商户申报额**，不是 realmoney）>= deduct_minmoney
         （起扣金额，0 = 不限金额；**恰好等于也扣**，即 `>=` 边界）
 
-    计数仍是**全平台一个计数器**（所有开启商户共用同一根刻度）：
+    计数**按商户独立**：每个商户一根自己的刻度（Redis key / counters 行都带 merchant_id），
+    商户自己的第 N 笔合格单命中，互不影响——A 配 N 不会因为 B 的单量而变化。
     Redis `INCR` 原子计数 —— 无行锁，多进程/多实例并发下天然原子，
     模运算自然循环无需重置；Redis 不可用回退 counters 表行级 FOR UPDATE。
-    命中即第 frequency 笔成功单（n % frequency == 0）。
+    命中即该商户第 frequency 笔成功单（n % frequency == 0）。
     """
     merchant = await session.get(Merchant, order.merchant_id)
     if merchant is None or not merchant.deduct_enable:
@@ -539,20 +540,24 @@ async def _hit_deduct(session: AsyncSession, order: Order,
     if min_money > 0 and dmoney(order.money) < min_money:
         return False
 
-    # Redis 原子计数：INCR 单命令原子，取模命中即第 frequency 笔（模自然循环，无需重置）
+    counter_key = f"deduct_order:{order.merchant_id}"
+
+    # Redis 原子计数：INCR 单命令原子，取模命中即该商户第 frequency 笔（模自然循环，无需重置）
     if cache is not None:
         try:
-            n = await cache.incr(CacheKeys.DEDUCT_ORDER_COUNTER)
+            n = await cache.incr(
+                CacheKeys.DEDUCT_ORDER_COUNTER.format(merchant_id=order.merchant_id)
+            )
             return int(n) % frequency == 0
         except Exception:
             _log.warning("扣量 Redis 计数异常，回退行锁", exc_info=True)
 
-    # 回退：counters 行 FOR UPDATE（无 Redis / 测试环境）
+    # 回退：counters 行 FOR UPDATE（无 Redis / 测试环境），同样按商户分行
     counter = (await session.exec(
-        select(Counter).where(Counter.key == "deduct_order").with_for_update()
+        select(Counter).where(Counter.key == counter_key).with_for_update()
     )).first()
     if not counter:
-        counter = Counter(key="deduct_order", value=0)
+        counter = Counter(key=counter_key, value=0)
         session.add(counter)
     counter.value += 1
     hit = counter.value % frequency == 0

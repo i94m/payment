@@ -1078,7 +1078,7 @@ export function MerchantsPage() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground">
-              {"单笔订单金额 ≥ 起扣金额才参与扣量（恰好等于也扣）；0 = 不限。比较的是商户申报金额，不含随机金额加成。每 N 笔是全平台共用一个计数器，不是本商户自己的第 N 笔。"}
+              {"单笔订单金额 ≥ 起扣金额才参与扣量（恰好等于也扣）；0 = 不限。比较的是商户申报金额，不含随机金额加成。每 N 笔按本商户自己的合格单独立计数，与其他商户互不影响。"}
             </p>
           </div>
           <DialogFooter>
@@ -1264,7 +1264,7 @@ export function MerchantsPage() {
             </div>
             <Alert variant="warning" className="px-3 py-2.5">
               <AlertDescription className="mt-0 text-xs">
-                {"开启：全部商户同时开启并下发该频次与起扣金额（留空按不限金额）；关闭：只写开关位，频次与金额原样保留，可用于紧急停止。仅开启个别商户时，其命中位置容易被自行反推，建议一次开启多个有真实单量的商户。"}
+                {"开启：全部商户同时开启并下发该频次与起扣金额（留空按不限金额）；关闭：只写开关位，频次与金额原样保留，可用于紧急停止。每个商户按自己的合格单独立计数，互不影响。"}
               </AlertDescription>
             </Alert>
           </div>
