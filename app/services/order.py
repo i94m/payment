@@ -515,36 +515,28 @@ async def process_payment(
 
 async def _hit_deduct(session: AsyncSession, order: Order,
                       cache: CacheClient | None = None) -> bool:
-    """扣量判定：deduct_enable 开启且 frequency>0 时，按成功订单计数轮询。
+    """扣量判定：配置全部来自商户行（merchants.deduct_*），没有全局参数。
 
-    金额≤deduct_minmoney（配置>0 时）豁免；命中即第 frequency 笔成功单。
-    计数优先走 Redis INCR 原子计数 —— 无行锁，多进程/多实例并发下天然原子，
+    生效条件（AND）：
+      - 商户 deduct_enable 开（唯一开关）
+      - deduct_frequency > 0（防御值；停用请用开关，别把频次填 0）
+      - 单笔 order.money（**商户申报额**，不是 realmoney）>= deduct_minmoney
+        （起扣金额，0 = 不限金额；**恰好等于也扣**，即 `>=` 边界）
+
+    计数仍是**全平台一个计数器**（所有开启商户共用同一根刻度）：
+    Redis `INCR` 原子计数 —— 无行锁，多进程/多实例并发下天然原子，
     模运算自然循环无需重置；Redis 不可用回退 counters 表行级 FOR UPDATE。
+    命中即第 frequency 笔成功单（n % frequency == 0）。
     """
-    from app.services.settings import get_setting, setting_enabled
-
-    settings_all = None
-    try:
-        from app.services.settings import get_all_settings
-        settings_all = await get_all_settings(session)
-    except Exception:
-        pass
-    if settings_all is not None:
-        enabled = setting_enabled(settings_all.get("deduct_enable", False))
-        try:
-            frequency = int(settings_all.get("deduct_frequency", 0) or 0)
-        except (TypeError, ValueError):
-            frequency = 0
-        min_money = dmoney(settings_all.get("deduct_minmoney", "0.00") or 0)
-    else:
-        enabled = bool(await get_setting(session, "deduct_enable", False))
-        frequency = await get_int_setting(session, "deduct_frequency")
-        from app.services.settings import get_money_setting
-        min_money = await get_money_setting(session, "deduct_minmoney")
-
-    if not enabled or frequency <= 0:
+    merchant = await session.get(Merchant, order.merchant_id)
+    if merchant is None or not merchant.deduct_enable:
         return False
-    if min_money > 0 and dmoney(order.money) <= min_money:
+    frequency = int(merchant.deduct_frequency or 0)
+    if frequency <= 0:
+        return False
+    # 起扣金额按 Decimal 比较：0 = 不限，>0 时小于门槛的单豁免且不消耗计数
+    min_money = dmoney(merchant.deduct_minmoney or 0)
+    if min_money > 0 and dmoney(order.money) < min_money:
         return False
 
     # Redis 原子计数：INCR 单命令原子，取模命中即第 frequency 笔（模自然循环，无需重置）
@@ -583,7 +575,7 @@ async def undo_deduct(session: AsyncSession, order: Order) -> bool:
     if income > 0:
         await change_merchant_balance(
             session, order.merchant_id, income,
-            biz_type="order_income", trade_no=order.trade_no, remark="扣量补单入账",
+            biz_type="order_income", trade_no=order.trade_no, remark="订单补入账",
         )
         await _apply_invite_rebate(session, order.trade_no, order.merchant_id, income)
 
