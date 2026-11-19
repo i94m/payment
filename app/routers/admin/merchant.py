@@ -723,12 +723,13 @@ async def set_merchant_deduct(merchant_id: int, body: SetDeductRequest, session:
 
 
 class SetAllDeductRequest(BaseModel):
-    """批量扣量：入参只有开关；开启时必带频次（否则批量开后全部 frequency=0，永不扣）。
+    """批量扣量：开启时同时下发频次与起扣金额（金额留空 = 0，不限金额）。
 
-    起扣金额不参与批量下发——批量抹平个别商户的特殊金额配置，事后没人查得出来。
+    关闭不传任何数值：只写开关位，两个配置项原样保留，恢复时不用凭记忆重配。
     """
     deduct_enable: bool
     deduct_frequency: Optional[int] = None
+    deduct_minmoney: Optional[str] = None
 
 
 @router.post("/deduct/set-all", dependencies=[Depends(PermissionChecker("merchant.update"))])
@@ -736,18 +737,27 @@ async def set_all_merchant_deduct(body: SetAllDeductRequest, session: SessionDep
     """批量扣量开关：作用于全部商户（含配置锁定商户，急停必须覆盖全场）。
 
     关：只写开关位，频次与起扣金额原样保留，恢复时不用凭记忆重配。
-    开：同时下发频次；起扣金额保持各商户原值。
+    开：频次 + 起扣金额一起下发（金额留空按 0 处理，与单商户表单一致）。
     """
     frequency = int(body.deduct_frequency or 0)
     if frequency < 0:
         return err(-1, "扣量频次不能为负数")
     if body.deduct_enable and frequency <= 0:
         return err(-1, "开启扣量必须填写频次（每 N 笔扣 1）")
+    min_money = Decimal("0")
+    if body.deduct_enable:
+        try:
+            min_money = dmoney(body.deduct_minmoney) if body.deduct_minmoney else Decimal("0")
+        except Exception:
+            return err(-1, "金额格式错误")
+        if min_money < 0:
+            return err(-1, "起扣金额不能为负数")
     merchants = (await session.exec(select(Merchant))).all()
     for m in merchants:
         m.deduct_enable = body.deduct_enable
         if body.deduct_enable:
             m.deduct_frequency = frequency
+            m.deduct_minmoney = min_money
         session.add(m)
     await session.commit()
     return suc(f"已应用到 {len(merchants)} 个商户")

@@ -132,8 +132,8 @@ export const merchantsApi = {
   setDeduct: (id: number, data: { deduct_enable: boolean; deduct_frequency?: number; deduct_minmoney?: string }) =>
     apiClient.post(`/merchant/${id}/deduct`, data) as Promise<null>,
 
-  /** 批量扣量：入参只有开关（开启时必带频次），不动起扣金额 */
-  setAllDeduct: (data: { deduct_enable: boolean; deduct_frequency?: number }) =>
+  /** 批量扣量：开启时下发频次与起扣金额（金额留空 = 不限）；关闭只写开关位 */
+  setAllDeduct: (data: { deduct_enable: boolean; deduct_frequency?: number; deduct_minmoney?: string }) =>
     apiClient.post("/merchant/deduct/set-all", data) as Promise<string>,
 
   /** SSO 一键登录商户后台，返回一次性落地 URL */

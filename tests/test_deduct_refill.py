@@ -244,6 +244,68 @@ async def test_deduct_admin_endpoints(client, seeded, session, engine):
 
 
 @pytest.mark.asyncio
+async def test_deduct_batch_enable_writes_frequency_and_minmoney(client, seeded, session, engine):
+    """批量开：频次与起扣金额一起下发到全部商户；金额留空按 0（不限金额）。"""
+    adm = await _admin_headers(session)
+    m = await _get_merchant(session)
+    other = Merchant(pid=2104, username="deduct-batch", password="x", status=1,
+                     balance=dmoney("0"), deduct_minmoney=dmoney("88.00"))
+    session.add(other)
+    await session.commit()
+    await session.refresh(other)
+
+    r = await client.post("/admin-api/merchant/deduct/set-all", headers=adm,
+                          json={"deduct_enable": True, "deduct_frequency": 6,
+                                "deduct_minmoney": "50"})
+    assert r.json()["code"] == 0, r.json()
+    for mid in (m.id, other.id):
+        fresh = await _refetch_merchant(engine, mid)
+        assert fresh.deduct_enable is True
+        assert fresh.deduct_frequency == 6
+        assert str(fresh.deduct_minmoney) == "50.00"  # 覆盖原 88.00
+
+    # 金额留空 = 0（不限金额），与单商户表单一致
+    r = await client.post("/admin-api/merchant/deduct/set-all", headers=adm,
+                          json={"deduct_enable": True, "deduct_frequency": 6})
+    assert r.json()["code"] == 0, r.json()
+    fresh = await _refetch_merchant(engine, m.id)
+    assert str(fresh.deduct_minmoney) == "0.00"
+
+    # 负数金额拒收
+    r = await client.post("/admin-api/merchant/deduct/set-all", headers=adm,
+                          json={"deduct_enable": True, "deduct_frequency": 6,
+                                "deduct_minmoney": "-1"})
+    assert r.json()["code"] != 0
+
+
+@pytest.mark.asyncio
+async def test_deduct_batch_disable_keeps_frequency_and_minmoney(client, seeded, session, engine):
+    """批量关：只写开关位，频次与起扣金额原样保留（即便请求里带了值也不动）。"""
+    adm = await _admin_headers(session)
+    m = await _get_merchant(session)
+    await _enable_deduct(session, 9, minmoney="123.45", merchant=m)
+
+    r = await client.post("/admin-api/merchant/deduct/set-all", headers=adm,
+                          json={"deduct_enable": False})
+    assert r.json()["code"] == 0, r.json()
+    fresh = await _refetch_merchant(engine, m.id)
+    assert fresh.deduct_enable is False
+    assert fresh.deduct_frequency == 9
+    assert str(fresh.deduct_minmoney) == "123.45"
+
+    # 关闭时即使带了频次/金额也不写入（只认开关位，避免误抹配置）
+    await _enable_deduct(session, 9, minmoney="123.45", merchant=m)
+    r = await client.post("/admin-api/merchant/deduct/set-all", headers=adm,
+                          json={"deduct_enable": False, "deduct_frequency": 1,
+                                "deduct_minmoney": "0"})
+    assert r.json()["code"] == 0, r.json()
+    fresh = await _refetch_merchant(engine, m.id)
+    assert fresh.deduct_enable is False
+    assert fresh.deduct_frequency == 9
+    assert str(fresh.deduct_minmoney) == "123.45"
+
+
+@pytest.mark.asyncio
 async def test_deduct_single_update_keeps_unpassed_fields(client, seeded, session, engine):
     """单商户接口：只改开关（不带频次/金额）不得清掉已有配置；显式传 0 才是「不限金额」。"""
     adm = await _admin_headers(session)

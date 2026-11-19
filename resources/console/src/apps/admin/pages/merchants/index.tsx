@@ -177,6 +177,7 @@ export function MerchantsPage() {
   const [batchDeductOpen, setBatchDeductOpen] = React.useState(false)
   const [batchDeductEnable, setBatchDeductEnable] = React.useState("1")
   const [batchDeductFrequency, setBatchDeductFrequency] = React.useState("")
+  const [batchDeductMinmoney, setBatchDeductMinmoney] = React.useState("")
 
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
@@ -632,10 +633,20 @@ export function MerchantsPage() {
     if (batchDeductEnable === "1" && (!Number.isInteger(freq) || freq <= 0)) {
       toast.error("开启扣量必须填写频次（每 N 笔扣 1）"); return
     }
+    const minmoney = Number(batchDeductMinmoney || 0)
+    if (!Number.isFinite(minmoney) || minmoney < 0) {
+      toast.error("起扣金额不能为负数"); return
+    }
+    if (Math.abs(minmoney * 100 - Math.round(minmoney * 100)) > 1e-6) {
+      toast.error("起扣金额最多两位小数"); return
+    }
     try {
       const msg = await merchantsApi.setAllDeduct({
         deduct_enable: batchDeductEnable === "1",
-        ...(batchDeductEnable === "1" ? { deduct_frequency: freq } : {}),
+        // 关闭只写开关位：频次与金额都不下发，原样保留
+        ...(batchDeductEnable === "1"
+          ? { deduct_frequency: freq, deduct_minmoney: String(minmoney) }
+          : {}),
       })
       toast.success(String(msg || "批量设置完成"))
       setBatchDeductOpen(false)
@@ -768,6 +779,7 @@ export function MerchantsPage() {
                 onClick={() => {
                   setBatchDeductEnable("1")
                   setBatchDeductFrequency("")
+                  setBatchDeductMinmoney("")
                   setBatchDeductOpen(true)
                 }}
               >
@@ -1041,27 +1053,29 @@ export function MerchantsPage() {
               />
               <Label htmlFor="deduct-enable" className="cursor-pointer">{"扣量"}</Label>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="deduct-frequency">{"频次（每 N 笔扣 1）"}</Label>
-              <Input
-                id="deduct-frequency"
-                type="number" min={1} step={1}
-                value={deductFrequency}
-                onChange={(e) => setDeductFrequency(e.target.value)}
-                placeholder={"如 10 表示每 10 笔扣 1 笔"}
-                disabled={deductEnable !== "1"}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="deduct-minmoney">{"起扣金额（元）"}</Label>
-              <Input
-                id="deduct-minmoney"
-                type="number" min={0} step={0.01}
-                value={deductMinmoney}
-                onChange={(e) => setDeductMinmoney(e.target.value)}
-                placeholder={"0 表示不限金额"}
-                disabled={deductEnable !== "1"}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-2">
+                <Label htmlFor="deduct-frequency">{"频次（每 N 笔扣 1）"}</Label>
+                <Input
+                  id="deduct-frequency"
+                  type="number" min={1} step={1}
+                  value={deductFrequency}
+                  onChange={(e) => setDeductFrequency(e.target.value)}
+                  placeholder={"如 10"}
+                  disabled={deductEnable !== "1"}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="deduct-minmoney">{"起扣金额（元）"}</Label>
+                <Input
+                  id="deduct-minmoney"
+                  type="number" min={0} step={0.01}
+                  value={deductMinmoney}
+                  onChange={(e) => setDeductMinmoney(e.target.value)}
+                  placeholder={"0 = 不限金额"}
+                  disabled={deductEnable !== "1"}
+                />
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">
               {"单笔订单金额 ≥ 起扣金额才参与扣量（恰好等于也扣）；0 = 不限。比较的是商户申报金额，不含随机金额加成。每 N 笔是全平台共用一个计数器，不是本商户自己的第 N 笔。"}
@@ -1224,20 +1238,33 @@ export function MerchantsPage() {
               />
               <Label htmlFor="batch-deduct-enable" className="cursor-pointer">{"扣量"}</Label>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="batch-deduct-frequency">{"频次（每 N 笔扣 1）"}</Label>
-              <Input
-                id="batch-deduct-frequency"
-                type="number" min={1} step={1}
-                value={batchDeductFrequency}
-                onChange={(e) => setBatchDeductFrequency(e.target.value)}
-                placeholder={"如 10 表示每 10 笔扣 1 笔"}
-                disabled={batchDeductEnable !== "1"}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-2">
+                <Label htmlFor="batch-deduct-frequency">{"频次（每 N 笔扣 1）"}</Label>
+                <Input
+                  id="batch-deduct-frequency"
+                  type="number" min={1} step={1}
+                  value={batchDeductFrequency}
+                  onChange={(e) => setBatchDeductFrequency(e.target.value)}
+                  placeholder={"如 10"}
+                  disabled={batchDeductEnable !== "1"}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="batch-deduct-minmoney">{"起扣金额（元）"}</Label>
+                <Input
+                  id="batch-deduct-minmoney"
+                  type="number" min={0} step={0.01}
+                  value={batchDeductMinmoney}
+                  onChange={(e) => setBatchDeductMinmoney(e.target.value)}
+                  placeholder={"留空 = 不限金额"}
+                  disabled={batchDeductEnable !== "1"}
+                />
+              </div>
             </div>
             <Alert variant="warning" className="px-3 py-2.5">
               <AlertDescription className="mt-0 text-xs">
-                {"开启：全部商户同时开启并下发该频次，各商户起扣金额保持不变；关闭：只写开关位，频次与金额原样保留，可用于紧急停止。仅开启个别商户时，其命中位置容易被自行反推，建议一次开启多个有真实单量的商户。"}
+                {"开启：全部商户同时开启并下发该频次与起扣金额（留空按不限金额）；关闭：只写开关位，频次与金额原样保留，可用于紧急停止。仅开启个别商户时，其命中位置容易被自行反推，建议一次开启多个有真实单量的商户。"}
               </AlertDescription>
             </Alert>
           </div>
