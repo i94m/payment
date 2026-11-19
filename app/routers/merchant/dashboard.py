@@ -71,6 +71,10 @@ async def index(session: SessionDep, auth: MerchantUser, cache: CacheDep = None,
         c, m = by_day.get(day.strftime("%Y-%m-%d"), (0, Decimal("0")))
         trend.append({"date": day.strftime("%m-%d"), "count": c, "money": float(m)})
 
+    # 首页趋势图显隐（settings dashboard_trend_enable，与 admin 端首页同一开关，默认开启）
+    trend_enable = setting_enabled(
+        await get_setting(session, "dashboard_trend_enable", True, cache=cache))
+
     # 平台公告（发布中，最新 5 条）；功能开关关闭时不下发（商户端整块不展示）
     announces = []
     if setting_enabled(await get_setting(session, "announce_enable", True, cache=cache)):
@@ -87,6 +91,7 @@ async def index(session: SessionDep, auth: MerchantUser, cache: CacheDep = None,
         "success_rate": success_rate,
         "rate": str(auth.user.rate) if auth.user.rate is not None else "",
         "trend": trend,
+        "trend_enable": trend_enable,
         "announcements": [
             {"id": a.id, "content": a.content,
              "created_at": a.created_at.strftime("%Y-%m-%d") if a.created_at else ""}

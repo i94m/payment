@@ -59,6 +59,8 @@ export interface MerchantOverview {
   success_rate: number | null
   rate: string
   trend: TrendPoint[]
+  /** 首页是否展示「近 7 日收款趋势」卡片（settings: dashboard_trend_enable，默认展示；与 admin 端共用） */
+  trend_enable?: boolean
   announcements: { id: number; content: string; created_at: string }[]
 }
 

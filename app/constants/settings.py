@@ -112,7 +112,8 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
         SettingSpec("api_refund_enable", SettingType.BOOL, True, SettingGroup.SITE,
                     "商户退款API开关（关闭后开放API拒绝退款）"),
         SettingSpec("dashboard_trend_enable", SettingType.BOOL, True, SettingGroup.SITE,
-                    "首页收款趋势图开关"),
+                    "首页收款趋势图开关",
+                    description="同时控制管理端与商户端首页的「近 7 日收款趋势」卡片显隐"),
         SettingSpec("api_order_rate_limit", SettingType.INT, 60, SettingGroup.ORDER,
                     "开放API下单限流（次/分钟/来源IP，0=不限）"),
         # ---- 商户端菜单显隐 ----

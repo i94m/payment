@@ -216,3 +216,23 @@ async def test_payment_type_name_falls_back_to_code(client, seeded, session):
     names = await payment_type_name_map(session)
     assert names.get("alipay") == "支付宝"
     assert names.get("nonexistent", "nonexistent") == "nonexistent"
+
+
+# ------------------------------------------------------------
+# B15 首页趋势图开关同时作用于商户端
+# ------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_dashboard_trend_switch_applies_to_merchant(client, seeded, session):
+    """settings.dashboard_trend_enable 同时控制商户端首页趋势图：关闭后下发 trend_enable=False。"""
+    from app.services.settings import set_settings
+
+    headers = await _mch_headers(session)
+    data = (await client.get("/merchant-api/dashboard", headers=headers)).json()["data"]
+    # 未配置时取注册表默认 True，趋势数组照常返回
+    assert data["trend_enable"] is True
+    assert len(data["trend"]) == 7
+
+    await set_settings(session, {"dashboard_trend_enable": False})
+    data = (await client.get("/merchant-api/dashboard", headers=headers)).json()["data"]
+    assert data["trend_enable"] is False
