@@ -69,12 +69,6 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
         SettingSpec("merchant_reg_open", SettingType.BOOL, False, SettingGroup.SITE, "商户自助注册开关"),
         SettingSpec("merchant_reg_review", SettingType.BOOL, False, SettingGroup.SITE,
                     "注册商户需审核（开启后新注册商户支付权限为待审核）"),
-        SettingSpec("deduct_enable", SettingType.BOOL, False, SettingGroup.ORDER, "扣量开关",
-                    description="开启后按成功订单频次轮询抽单，商户侧显示为未支付"),
-        SettingSpec("deduct_frequency", SettingType.INT, 0, SettingGroup.ORDER,
-                    "扣量频率（每 N 笔扣 1，0=不扣）"),
-        SettingSpec("deduct_minmoney", SettingType.DECIMAL, "0.00", SettingGroup.ORDER,
-                    "豁免金额（订单≤该值不扣，0=不豁免）"),
         # ---- notify ----
         SettingSpec("notify_retry_ladder", SettingType.LIST_INT,
                     [1, 2, 5, 10, 30, 60, 120], SettingGroup.NOTIFY,
@@ -124,14 +118,14 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
     ]
 }
 
-# 站点配置页可见 key 白名单：站点名称 + 首页趋势图开关 + 扣量 + 结算组（自动结算 / D+1 除外）。
+# 站点配置页可见 key 白名单：站点名称 + 首页趋势图开关 + 结算组（自动结算 / D+1 除外）。
+# 扣量已下放到商户行（merchants.deduct_*），不再有全局 deduct_* key。
 # 注册开关、api_pay_enable / landing_enable / api_order_rate_limit、过期单回补窗口
 # （late_pay_backfill_hours，固定用默认 24h）等不在页面上暴露——仍由注册表提供默认值、
 # 运行期生效，需要时直接写库；不在页面展示是因为这些口径不需要运维日常调整。
 ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable", "settle_d1_enable"}
 ADMIN_SETTING_KEYS: set[str] = (
     {"site_name", "dashboard_trend_enable"}
-    | {k for k in SETTINGS_REGISTRY if k.startswith("deduct_")}
     | {k for k, spec in SETTINGS_REGISTRY.items() if spec.group is SettingGroup.SETTLE}
 ) - ADMIN_SETTING_HIDDEN_KEYS
 
