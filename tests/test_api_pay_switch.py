@@ -160,7 +160,8 @@ async def test_api_order_rate_limit_configurable(client, session):
 
 @pytest.mark.asyncio
 async def test_settings_page_whitelist_deduct_and_settle(client, session):
-    """页面白名单 = 站点名称 + 订单回补窗口 + 扣量 + 结算组（自动结算/D+1 除外）：
+    """页面白名单 = 站点名称 + 首页趋势 + 结算组（自动结算/D+1 除外）：
+    扣量已下放到商户行，三个全局 deduct_* key 已下架（注册表 + 页面 + PATCH 均不可见）；
     注册开关、D+1 开关不再展示；PATCH 只接受页面白名单内的键（P1-9），
     其余配置走服务层/直接写库。"""
     from app.constants.settings import ADMIN_SETTING_KEYS
@@ -173,11 +174,17 @@ async def test_settings_page_whitelist_deduct_and_settle(client, session):
     assert "site_name" in keys
     assert "merchant_reg_open" not in keys
     assert "settle_d1_enable" not in keys
+    # 扣量全局 key 已整体下架（只剩商户级 merchants.deduct_*）
+    assert not {k for k in keys if k.startswith("deduct_")}
 
     # 页面外键被 PATCH 拒绝
     denied = await client.patch("/admin-api/setting",
                                 json={"settle_d1_enable": True}, headers=h)
     assert denied.status_code == 422
+    # 已下架的扣量全局 key 同样拒绝
+    denied_deduct = await client.patch("/admin-api/setting",
+                                       json={"deduct_enable": True}, headers=h)
+    assert denied_deduct.status_code == 422
 
     # 服务层写入后运行期读取生效
     await _ss(session, {"settle_d1_enable": True})

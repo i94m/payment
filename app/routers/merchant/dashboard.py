@@ -1,6 +1,7 @@
 """商户端概览：今日/昨日/累计 + 近 7 日趋势 + 成功率 + 公告（merchant_id 隔离）。
 
-统计口径：已支付收款单（status=1 且 order_type=0），充值单不计入收入。
+统计口径：已支付收款单（status=1 且 order_type=0 且 is_deducted=0），充值单与扣量单不计入。
+扣量单在商户侧一律显示为未支付，若计入会与订单列表「已支付」汇总对不上账。
 """
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -11,13 +12,43 @@ from sqlmodel import col, select
 
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import MerchantUser
+from app.lib.linktoken import paypage_url
 from app.models import Announcement, Order
 from app.responses import suc
+from app.services import paytoken
 from app.services.settings import get_setting, setting_enabled
 
 router = APIRouter()
 
-_PAID = (Order.status == 1, Order.order_type == 0)
+_PAID = (Order.status == 1, Order.order_type == 0, col(Order.is_deducted) == False)  # noqa: E712
+
+
+def _fmt_dt(dt: datetime | None) -> str:
+    return dt.strftime("%Y-%m-%d %H:%M:%S") if dt else ""
+
+
+@router.get("/profile")
+async def profile(session: SessionDep, auth: MerchantUser, cache: CacheDep = None):
+    """商户基础资料 + 专属收款链接（首页「收款信息」卡）。
+
+    链接与「聚合收款」设置页同一口径：/p/{短码}，agent_id=0 的商户直连码，
+    惰性生成后终身复用（不暴露 pid）。paypage_enable 是平台全局开关，
+    关闭时前端提示链接暂不可用。
+    """
+    m = auth.user
+    return suc({
+        "id": m.id,
+        "pid": m.pid,
+        "username": m.username,
+        "email": m.email or "",
+        "phone": m.phone or "",
+        "status": m.status,
+        "rate": str(m.rate) if m.rate is not None else "",
+        "created_at": _fmt_dt(m.created_at),
+        "last_login_at": _fmt_dt(m.last_login_at),
+        "link": paypage_url(await paytoken.get_or_create(session, m.id)),
+        "paypage_enable": bool(await get_setting(session, "paypage_enable", True, cache=cache)),
+    })
 
 
 @router.get("")
@@ -71,6 +102,10 @@ async def index(session: SessionDep, auth: MerchantUser, cache: CacheDep = None,
         c, m = by_day.get(day.strftime("%Y-%m-%d"), (0, Decimal("0")))
         trend.append({"date": day.strftime("%m-%d"), "count": c, "money": float(m)})
 
+    # 首页趋势图显隐（settings dashboard_trend_enable，与 admin 端首页同一开关，默认开启）
+    trend_enable = setting_enabled(
+        await get_setting(session, "dashboard_trend_enable", True, cache=cache))
+
     # 平台公告（发布中，最新 5 条）；功能开关关闭时不下发（商户端整块不展示）
     announces = []
     if setting_enabled(await get_setting(session, "announce_enable", True, cache=cache)):
@@ -87,6 +122,7 @@ async def index(session: SessionDep, auth: MerchantUser, cache: CacheDep = None,
         "success_rate": success_rate,
         "rate": str(auth.user.rate) if auth.user.rate is not None else "",
         "trend": trend,
+        "trend_enable": trend_enable,
         "announcements": [
             {"id": a.id, "content": a.content,
              "created_at": a.created_at.strftime("%Y-%m-%d") if a.created_at else ""}

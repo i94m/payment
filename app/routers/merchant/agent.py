@@ -3,23 +3,24 @@
 业绩口径：已支付收款单（排除充值单与扣量单），金额一律 Order.money；
 今日/昨日按 paid_at 划分（对齐老系统 date 列语义）。
 代理名称全局唯一（代理端登录身份）；删除为软删除，历史业绩聚合保留。
+整组接口受站点开关 agent_enable 门控（关闭后 403，不只是隐藏菜单）。
 """
 import secrets
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import and_, case, desc, func, or_
 from sqlmodel import col, select
 
-from app.core.deps import CacheDep, SessionDep
+from app.core.deps import CacheDep, SessionDep, require_agent_enabled
 from app.core.security import MerchantUser, hash_password
 from app.lib.linktoken import paypage_url
 from app.services import paytoken
 from app.models import Agent, Order
 from app.responses import err, paginate, suc
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_agent_enabled)])
 
 # 业绩口径：已支付收款单，排除扣量单（商户/代理侧统计均不含被抽单订单）
 _PAID_INCOME = (Order.status == 1, Order.order_type == 0, col(Order.is_deducted) == False)  # noqa: E712

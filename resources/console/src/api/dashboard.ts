@@ -50,6 +50,23 @@ export interface AdminOverview {
   server_time: string
 }
 
+/** 商户基础资料 + 专属收款链接（商户首页「收款信息」卡） */
+export interface MerchantProfile {
+  id: number
+  pid: number
+  username: string
+  email: string
+  phone: string
+  status: number
+  rate: string
+  created_at: string
+  last_login_at: string
+  /** 相对链接 /p/{短码}，前端拼当前站点 origin */
+  link: string
+  /** 平台收款页全局开关，关闭时链接暂不可用 */
+  paypage_enable: boolean
+}
+
 export interface MerchantOverview {
   balance: string
   today: { count: number; money: number }
@@ -59,6 +76,8 @@ export interface MerchantOverview {
   success_rate: number | null
   rate: string
   trend: TrendPoint[]
+  /** 首页是否展示「近 7 日收款趋势」卡片（settings: dashboard_trend_enable，默认展示；与 admin 端共用） */
+  trend_enable?: boolean
   announcements: { id: number; content: string; created_at: string }[]
 }
 
@@ -101,6 +120,8 @@ export const dashboardApi = {
     APP_MODULE === "merchant"
       ? apiClient.get("/dashboard") as Promise<MerchantOverview>
       : apiClient.get("/dashboard") as Promise<AdminOverview>,
+  /** 商户首页「收款信息」卡：基础资料 + 专属收款链接（仅商户端） */
+  profile: () => apiClient.get("/dashboard/profile") as Promise<MerchantProfile>,
   homeConfig: () =>
     apiClient.get("/dashboard/config") as Promise<HomeConfig>,
   savePayrouteBatch: (items: PayRouteSaveItem[]) =>
