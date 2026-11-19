@@ -36,6 +36,8 @@ def _dump_order(order: Order, merchant_username: str = "", type_name: str = "",
         "api_trade_no": order.api_trade_no or "",
         "merchant_id": order.merchant_id,
         "merchant_username": merchant_username,
+        # 0=普通收款 1=余额充值 2=测试单（前端据此显示「测试」标记并禁用通知等操作）
+        "order_type": order.order_type,
         "type": order.payment_type_code,
         "type_name": type_name,
         "type_icon": type_icon,
@@ -65,6 +67,16 @@ def _dump_order(order: Order, merchant_username: str = "", type_name: str = "",
 
 def _build_query(body: dict):
     query = select(Order).order_by(col(Order.id).desc())
+    # 订单类型：默认排除测试单（测试单是联调用的，日常浏览不掺进来）；
+    # 显式传 0/1/2 按类型筛，传 all 表示不筛（全部类型）。
+    # 按平台订单号精确查询时不套默认排除 —— 搜到具体单号就应该能打开详情（测试单也一样）。
+    ot = str(body.get("order_type", "") or "").strip()
+    if ot == "all":
+        pass
+    elif ot in ("0", "1", "2"):
+        query = query.where(Order.order_type == int(ot))
+    elif not body.get("trade_no"):
+        query = query.where(col(Order.order_type) != 2)
     if body.get("trade_no"):
         query = query.where(Order.trade_no == body["trade_no"])
     if body.get("out_trade_no"):
@@ -141,12 +153,14 @@ async def order_export(session: SessionDep, request: Request):
         name_map = {m.id: m.username for m in merchants}
 
     status_text = {0: "待支付", 1: "已支付", 2: "已退款", 3: "已过期"}
+    type_text = {0: "正式收款", 1: "余额充值", 2: "测试单"}
     rows = []
     for o in orders:
         rows.append({
             "trade_no": o.trade_no,
             "out_trade_no": o.out_trade_no,
             "merchant": name_map.get(o.merchant_id, ""),
+            "order_type": type_text.get(o.order_type, str(o.order_type)),
             "type": o.payment_type_code,
             "subject": o.subject,
             "money": str(o.money),
@@ -158,8 +172,8 @@ async def order_export(session: SessionDep, request: Request):
             "paid_at": o.paid_at.strftime("%Y-%m-%d %H:%M:%S") if o.paid_at else "",
         })
     return export_xlsx(rows, f"orders_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx",
-                      columns=["trade_no", "out_trade_no", "merchant", "type", "subject",
-                               "money", "realmoney", "merchant_income", "profit",
+                      columns=["trade_no", "out_trade_no", "merchant", "order_type", "type",
+                               "subject", "money", "realmoney", "merchant_income", "profit",
                                "status", "created_at", "paid_at"])
 
 
@@ -209,7 +223,7 @@ async def order_refill(session: SessionDep, cache: CacheDep, request: Request, a
         allow_expired=True,  # 人工确认过的受控回补
     )
     if result.status in ("paid", "duplicate"):
-        if result.status == "paid":
+        if result.status == "paid" and result.should_notify:
             try:
                 await enqueue("notify_merchant_job", trade_no=trade_no)
             except Exception:

@@ -85,7 +85,10 @@ async def get_system_info(session: SessionDep):
     仅超管/持 system.admin 的管理员可用：商户/管理员规模属平台运营数据（B04）。
     """
     from sqlmodel import func, select
-    merchant_count = (await session.exec(select(func.count()).select_from(Merchant))).one()
+    from app.services.test_pay import TEST_MERCHANT_PID
+    merchant_count = (await session.exec(
+        select(func.count()).select_from(Merchant).where(Merchant.pid != TEST_MERCHANT_PID)
+    )).one()
     admin_count = (await session.exec(select(func.count()).select_from(SystemAdmin))).one()
     return suc({
         # 版本/修订号来自镜像构建期（Dockerfile build-arg → ENV），源码运行为 dev

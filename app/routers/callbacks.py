@@ -152,9 +152,9 @@ async def upstream_notify(plugin_name: str, trade_no: str, request: Request,
             "upstream": getattr(plugin, "last_debug", None),
         })
     if result.status in ("paid", "duplicate"):
-        # 充值单（order_type=1）等无商户回调场景 should_notify=False；
-        # duplicate（重复回调已支付单）保持重发通知行为
-        if result.status == "duplicate" or result.should_notify:
+        # 只有「需要商户通知」的订单才投递：充值单（order_type=1）、测试单（order_type=2）、
+        # 扣量单、无回调地址的单都不通知（should_notify 由 process_paid_order 统一判定）
+        if result.should_notify:
             await _notify_merchant(trade_no, session)
         return Response(content=RESP_OK, media_type="text/plain")
     if result.status == "lock_failed":
@@ -197,12 +197,13 @@ async def upstream_return(plugin_name: str, trade_no: str, request: Request,
             raw_money = result.get("money")
             if raw_money in (None, ""):
                 raw_money = params.get("money")
-            await process_paid_order(
+            paid = await process_paid_order(
                 trade_no, result.get("api_trade_no", ""),
                 str(raw_money) if raw_money not in (None, "") else None,
                 "", session, cache,
             )
-            await _notify_merchant(trade_no, session)
+            if paid.should_notify:
+                await _notify_merchant(trade_no, session)
 
     await session.refresh(order)
     if order.return_url:

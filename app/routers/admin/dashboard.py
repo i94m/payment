@@ -40,6 +40,8 @@ from app.services.home_config import (
     set_ratelimit_one,
 )
 from app.services.settings import get_all_settings, setting_enabled
+from app.services.order import ORDER_TYPE_TEST
+from app.services.test_pay import TEST_MERCHANT_PID
 
 router = APIRouter()
 
@@ -70,6 +72,7 @@ async def _today_stats(session: AsyncSession, today_start: datetime) -> dict:
             func.coalesce(func.sum(Order.realmoney), 0), func.coalesce(func.sum(Order.profit), 0),
         )
         .where(col(Order.status) == 1,
+               col(Order.order_type) != ORDER_TYPE_TEST,
                col(Order.paid_at) >= today_start,
                col(Order.paid_at) < today_start + timedelta(days=1))
         .group_by(Order.payment_type_id, Order.channel_id)
@@ -116,7 +119,8 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
             func.sum(case((and_(col(Order.created_at) >= win1_start, col(Order.created_at) < win1_end),
                            1), else_=0)).label("allnum_1m"),
         )
-        .where(col(Order.created_at) >= stats_since)
+        .where(col(Order.created_at) >= stats_since,
+               col(Order.order_type) != ORDER_TYPE_TEST)
     )).one()
     r = row._tuple() if hasattr(row, "_tuple") else row
     (allnum, sucnum, suc60, suc30, suc10, suc1m, all60, all30, all10, all1m) = [int(v or 0) for v in r]
@@ -141,8 +145,10 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
     # ---- 订单/商户计数（两条标量子查询，一次往返）----
     count1, count2 = (await session.exec(
         select(
-            select(func.count()).select_from(Order).scalar_subquery(),
-            select(func.count()).select_from(Merchant).scalar_subquery(),
+            select(func.count()).select_from(Order)
+            .where(col(Order.order_type) != ORDER_TYPE_TEST).scalar_subquery(),
+            select(func.count()).select_from(Merchant)
+            .where(col(Merchant.pid) != TEST_MERCHANT_PID).scalar_subquery(),
         )
     )).one()
 
@@ -186,6 +192,7 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
         )
         .select_from(Order)
         .where(col(Order.status) == 1,
+               col(Order.order_type) != ORDER_TYPE_TEST,
                col(Order.paid_at) >= trend_start,
                col(Order.paid_at) < trend_end)
         .group_by(day_col)
@@ -208,7 +215,8 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
             func.coalesce(func.sum(Order.profit), 0),
         )
         .select_from(Order)
-        .where(col(Order.status) == 1, col(Order.paid_at) >= today_start)
+        .where(col(Order.status) == 1, col(Order.order_type) != ORDER_TYPE_TEST,
+               col(Order.paid_at) >= today_start)
     )).one()
     total_paid_count, total_paid_money = (await session.exec(
         select(
@@ -216,7 +224,7 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
             func.coalesce(func.sum(Order.money), 0),
         )
         .select_from(Order)
-        .where(col(Order.status) == 1)
+        .where(col(Order.status) == 1, col(Order.order_type) != ORDER_TYPE_TEST)
     )).one()
 
     return suc({
@@ -424,6 +432,7 @@ async def ratelimit_stats(session: SessionDep, cid: int = Query(0, ge=0)):
     allnum = int((await session.exec(
         select(func.count()).select_from(Order)
         .where(col(Order.channel_id) == cid,
+               col(Order.order_type) != ORDER_TYPE_TEST,
                col(Order.created_at) >= win_start,
                col(Order.created_at) < win_end)
     )).one())
@@ -432,7 +441,9 @@ async def ratelimit_stats(session: SessionDep, cid: int = Query(0, ge=0)):
     # 最近 N 单（1 分钟前之前）的成交情况；status 1=已支付 计为成功
     subq = (
         select(Order.status)
-        .where(col(Order.channel_id) == cid, col(Order.created_at) < win_end)
+        .where(col(Order.channel_id) == cid,
+               col(Order.order_type) != ORDER_TYPE_TEST,
+               col(Order.created_at) < win_end)
         .order_by(col(Order.created_at).desc(), col(Order.trade_no).desc())
         .limit(limit)
         .subquery()

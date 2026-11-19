@@ -256,6 +256,10 @@ async def _create_refund_impl(
     if order.is_deducted or order.status != ORDER_PAID:
         await session.rollback()
         raise ValueError("订单未支付，无法退款")
+    if order.order_type != 0:
+        # 充值单/测试单没有真实商户到账，不参与退款
+        await session.rollback()
+        raise ValueError("该订单类型不支持退款")
 
     base = refundable_base(order)
     refundable = (base - dmoney(order.refunded_amount)).quantize(CENT)

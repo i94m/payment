@@ -112,6 +112,7 @@ async def choose_channel(
     payment_type_id: int,
     money: Decimal,
     merchant_rate: Decimal | None = None,
+    skip_limits: bool = False,
 ) -> ResolvedChannel | None:
     """为订单选择通道。无可用通道返回 None。
 
@@ -119,6 +120,9 @@ async def choose_channel(
     读侧 MGET 预过滤（Redis 不可用回退 DB 双窗口检查）→ 金额路由（金额落在配置区间时
     优先走固定支付通道，占坑失败回退正常选择）→ 候选按 mode 排序后逐个 Redis 原子占坑，
     窗口已满换下一个候选。
+
+    skip_limits=True 时跳过限速占坑与日限额累计（测试单专用）：测试不该消耗真实额度，
+    否则反复测试可能把通道测到 daystatus 超限自动关闭。
     """
     money = dmoney(money)
     rows = (await session.exec(
@@ -130,7 +134,7 @@ async def choose_channel(
         return None
 
     # 通道限速：读侧预过滤已达速率上限的通道集合
-    ratelimit_map = await get_ratelimit_map(session)
+    ratelimit_map = {} if skip_limits else await get_ratelimit_map(session)
     exceeded: set[int] = set()
     if ratelimit_map:
         exceeded = await exceeded_channel_ids_redis(cache, ratelimit_map)
@@ -142,9 +146,10 @@ async def choose_channel(
     if route and route.get("enable") == 1 and money_ok(route.get("min", "0"), route.get("max", "0"), money):
         target_id = int(route.get("channel") or 0)
         target = next((c for c in rows if c.id == target_id and c.id not in exceeded), None)
-        if target is not None and await reserve_channel_slot(
-            cache, target.id, ratelimit_map.get(target.id, 0)
-        ) is not False:
+        if target is not None and (
+            skip_limits
+            or await reserve_channel_slot(cache, target.id, ratelimit_map.get(target.id, 0)) is not False
+        ):
             return _resolve(session, target, merchant_rate)
         # 固定通道窗口已满 → 回退正常选择
 
@@ -161,7 +166,7 @@ async def choose_channel(
     for c in candidates:
         if c.id in exceeded:
             continue
-        if await _check_day_limit(cache, c, money):
+        if skip_limits or await _check_day_limit(cache, c, money):
             available.append(c)
     if not available:
         return None
@@ -169,7 +174,7 @@ async def choose_channel(
     # 按 mode 排定候选后逐个占坑：未限速/Redis 不可用直接通过；窗口已满换下一个
     mode = available[0].mode
     for c in _ordered_candidates(available, mode):
-        if await reserve_channel_slot(cache, c.id, ratelimit_map.get(c.id, 0)) is not False:
+        if skip_limits or await reserve_channel_slot(cache, c.id, ratelimit_map.get(c.id, 0)) is not False:
             return _resolve(session, c, merchant_rate)
     return None
 

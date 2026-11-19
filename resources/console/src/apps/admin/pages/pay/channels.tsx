@@ -6,7 +6,7 @@ import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { payApi } from "@/api"
-import type { ChannelData, ChannelStats, ChannelTestDebug, PluginData, PaymentTypeData, PluginInput } from "@/api"
+import type { ChannelData, ChannelStats, ChannelTestDebug, ChannelTestPayResult, PluginData, PaymentTypeData, PluginInput } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -149,6 +149,8 @@ export function ChannelsPage() {
   // 测试支付弹窗
   const [testChannel, setTestChannel] = React.useState<ChannelData | null>(null)
   const [testing, setTesting] = React.useState(false)
+  // 本次测试落库的测试单（成功后留在弹窗里，可直接跳订单页核对回调）
+  const [testResult, setTestResult] = React.useState<ChannelTestPayResult | null>(null)
   const testForm = useForm<z.input<typeof testPaySchema>, unknown, z.output<typeof testPaySchema>>({
     resolver: zodResolver(testPaySchema),
     defaultValues: { name: "支付测试", amount: "1.00" },
@@ -329,21 +331,22 @@ export function ChannelsPage() {
     }
   }
 
-  // 测试支付：在测试商户名下按本通道建单，打开收银台走完整支付流程
-  // 通道测试：直接用该通道凭证向上游下单，不建订单/不涉及商户。
+  // 通道测试：用该通道凭证真实下一笔单（落测试单 order_type=2）。
+  // 测试单可在订单页核对回调结果，但不入余额/统计、不投递商户通知。
   // 拿到支付信息后：链接类直接新窗口打开，二维码/HTML 提示人工查看。
   const submitTest = testForm.handleSubmit(async (values) => {
     if (!testChannel) return
     setTesting(true)
+    setTestResult(null)
     try {
       const data = await payApi.testChannelPay(testChannel.id, values)
-      setTestChannel(null)
+      setTestResult(data)
       const url = /^https?:\/\//.test(data.pay_info || "") ? data.pay_info : ""
       if (url && data.pay_type !== "html") {
         window.open(url, "_blank")
-        toast.success(`测试通过：${data.pay_type}`, { description: "已在新窗口打开支付页" })
+        toast.success(`测试通过：${data.pay_type}`, { description: `测试单 ${data.trade_no} 已创建，支付后可在订单页核对状态` })
       } else if (data.pay_type === "qrcode" || data.pay_type === "html") {
-        toast.success(`测试通过：${data.pay_type}`, { description: "返回内容可在浏览器控制台查看" })
+        toast.success(`测试通过：${data.pay_type}`, { description: "支付内容见弹窗，测试单已创建" })
         console.info("[channel testpay]", data)
       } else {
         toast.success(`测试通过：${data.pay_type}`)
@@ -559,7 +562,7 @@ export function ChannelsPage() {
         meta: { headClassName: "w-[90px] text-center", cellClassName: "text-center" },
       },
       actionsColumn([
-        { label: "测试", icon: <IconFlask className="size-4" />, onClick: (item) => { testForm.reset({ name: "支付测试", amount: "1.00" }); setTestChannel(item) } },
+        { label: "测试", icon: <IconFlask className="size-4" />, onClick: (item) => { testForm.reset({ name: "支付测试", amount: "1.00" }); setTestResult(null); setTestChannel(item) } },
         { label: "编辑", icon: <IconEdit className="size-4" />, onClick: (item) => openEdit(item.id) },
         { label: "复制", icon: <IconCopy className="size-4" />, onClick: (item) => openCopy(item.id) },
         {
@@ -905,14 +908,14 @@ export function ChannelsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 测试支付：建测试单打开收银台走完整流程 */}
+      {/* 测试支付：建测试单打开支付页，走完整回调链路 */}
       <Dialog open={!!testChannel} onOpenChange={(open) => { if (!open) setTestChannel(null) }}>
         <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"测试支付"}{testChannel ? ` - ${testChannel.name}` : ""}</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground">
-            {"直接使用该通道凭证向上游发起一笔测试下单，不创建订单、不涉及商户"}
+            {"用该通道凭证真实下一笔单：会创建一笔「测试单」，支付后可在订单页核对回调是否置为已支付。测试单不计入余额、统计，也不占通道日限额。"}
           </p>
           <form onSubmit={submitTest}>
             <div className="grid gap-3">
@@ -944,9 +947,32 @@ export function ChannelsPage() {
                 )}
               />
             </div>
+            {testResult && (
+              <div className="mt-4 space-y-2 rounded-md border bg-muted/40 p-3">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-muted-foreground shrink-0">{"测试单号"}</span>
+                  <span className="font-mono break-all">{testResult.trade_no}</span>
+                  <Badge variant="secondary" className="shrink-0">{"测试单"}</Badge>
+                </div>
+                {/^https?:\/\//.test(testResult.pay_info || "") && testResult.pay_type !== "html" && (
+                  <Button asChild variant="outline" size="sm" className="h-7">
+                    <a href={testResult.pay_info} target="_blank" rel="noreferrer">{"打开支付页"}</a>
+                  </Button>
+                )}
+                {(testResult.pay_type === "qrcode" || testResult.pay_type === "html") && (
+                  <pre className="max-h-32 overflow-auto text-xs break-all whitespace-pre-wrap">{testResult.pay_info}</pre>
+                )}
+              </div>
+            )}
             <DialogFooter className="mt-6">
-              <Button type="button" variant="outline" onClick={() => setTestChannel(null)}>{"取消"}</Button>
-              <Button type="submit" disabled={testing}>{"发起测试"}</Button>
+              <Button type="button" variant="outline" onClick={() => setTestChannel(null)}>{"关闭"}</Button>
+              {testResult && (
+                <Button type="button" variant="secondary"
+                        onClick={() => { setTestChannel(null); navigate(`/trade/orders?trade_no=${testResult.trade_no}`) }}>
+                  {"查看订单"}
+                </Button>
+              )}
+              <Button type="submit" disabled={testing}>{testResult ? "再测一笔" : "发起测试"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

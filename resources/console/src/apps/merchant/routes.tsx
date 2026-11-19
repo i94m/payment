@@ -12,6 +12,7 @@ const PaypageMchPage = lazy(() => import("./pages/paypage").then((m) => ({ defau
 const MessagesPage = lazy(() => import("./pages/messages").then((m) => ({ default: m.MessagesPage })))
 const SecurityPage = lazy(() => import("./pages/security").then((m) => ({ default: m.SecurityPage })))
 const PasswordPage = lazy(() => import("./pages/password").then((m) => ({ default: m.PasswordPage })))
+const TestPayPage = lazy(() => import("./pages/testpay").then((m) => ({ default: m.TestPayPage })))
 const UserCenterPage = lazy(() => import("@/pages/user-center").then((m) => ({ default: m.UserCenterPage })))
 // 错误页体积小且需在异常时立即可用，保持静态导入
 import { Error403 } from "@/pages/errors/403"
@@ -29,6 +30,7 @@ export const routes: PermissionRouteObject[] = [
   { path: "/", element: <DashboardPage /> },
   { path: "/user-center", element: <UserCenterPage /> },
   { path: "/orders", element: <OrdersPage /> },
+  { path: "/testpay", element: <TestPayPage /> },
   { path: "/settle", element: <SettlePage /> },
   { path: "/records", element: <RecordsPage /> },
   { path: "/agents", element: <AgentsPage /> },

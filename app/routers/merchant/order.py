@@ -38,6 +38,8 @@ def _dump_order(o: Order, type_names: dict[str, str] | None = None,
     return {
         "trade_no": o.trade_no,
         "out_trade_no": o.out_trade_no,
+        # 0=普通收款 2=测试单（商户列表默认只看普通收款，测试单手动筛）
+        "order_type": o.order_type,
         "type": type_code,
         "type_name": (type_names or {}).get(type_code, type_code),
         "type_icon": (type_icons or {}).get(type_code, ""),
@@ -55,13 +57,17 @@ def _dump_order(o: Order, type_names: dict[str, str] | None = None,
 
 
 def _build_conditions(auth: MerchantUser, body: dict, for_summary: bool = False) -> list:
-    """列表/统计/导出共用的过滤条件（恒定 merchant_id 隔离 + 仅收款单）。
+    """列表/统计/导出共用的过滤条件（恒定 merchant_id 隔离 + 收款单/测试单）。
 
     for_summary=True 时排除扣量单（统计口径不含被抽单订单）；
     列表场景保留扣量单但状态筛选按「商户视角」处理：筛 1=已支付 时排除扣量单，
     筛 0=未支付 时把扣量单（商户视角的未支付）也纳入。
+
+    订单类型：默认只看普通收款单（order_type=0）；order_type=2 时只看测试单。
+    充值单在资金流水/充值入口体现，不在订单列表出现。
     """
-    conditions = [Order.merchant_id == auth.user.id, Order.order_type == 0]
+    order_type = 2 if str(body.get("order_type", "") or "") == "2" else 0
+    conditions = [Order.merchant_id == auth.user.id, Order.order_type == order_type]
     if body.get("trade_no"):
         conditions.append(Order.trade_no == body["trade_no"])
     if body.get("out_trade_no"):
@@ -145,6 +151,7 @@ async def order_export(session: SessionDep, auth: MerchantUser, body: dict | Non
         row = _dump_order(o, type_names, type_icons)
         # 导出文件里支付方式/状态给人类可读文案，避免导出 alipay / 2 这类裸 code
         row["type"] = row["type_name"]
+        row["order_type"] = "测试单" if o.order_type == 2 else "正式收款"
         row["status"] = status_text.get(row["status"], str(row["status"]))
         rows.append(row)
     return export_xlsx(
@@ -152,6 +159,7 @@ async def order_export(session: SessionDep, auth: MerchantUser, body: dict | Non
         filename=f"orders-{auth.user.pid}.xlsx",
         columns=[
             ("trade_no", "平台订单号"), ("out_trade_no", "商户订单号"),
+            ("order_type", "订单类型"),
             ("type", "支付方式"), ("subject", "商品名称"),
             ("money", "金额"), ("realmoney", "实付金额"), ("merchant_income", "到账金额"),
             ("status", "状态"),
@@ -203,6 +211,8 @@ async def order_notify(trade_no: str, session: SessionDep, auth: MerchantUser):
         return err(404, "订单不存在")
     if order.is_deducted:
         return err(-1, "订单未支付，无法通知")
+    if order.order_type == 2:
+        return err(-1, "测试单不发送商户通知")
     if not await requeue_notify(session, trade_no):
         return err(-1, "订单未支付，无法通知")
     try:

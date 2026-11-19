@@ -29,6 +29,7 @@ from app.routers.common.params import parse_int
 from app.services.merchant import generate_merchant_pid
 from app.services.balance import change_merchant_balance, dmoney
 from app.services.settings import get_all_settings
+from app.services.test_pay import TEST_MERCHANT_PID
 from app.lib.sign import derive_public_key, pem_to_flat
 
 router = APIRouter()
@@ -105,7 +106,8 @@ def _dump_merchant(m: Merchant) -> dict:
 
 def _build_query(body: dict):
     """列表/导出共用查询构造。body 为前端过滤参数。"""
-    query = select(Merchant)
+    # 系统测试商户（测试单挂载点）不参与商户管理/统计
+    query = select(Merchant).where(col(Merchant.pid) != TEST_MERCHANT_PID)
     # 关键字：未指定字段时按 商户号/用户名 统一模糊
     keyword = str(body.get("keyword", "") or "").strip()
     search_field = str(body.get("search_field", "") or "")
