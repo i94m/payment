@@ -40,6 +40,11 @@ ORDER_PAID = 1
 ORDER_REFUNDED = 2
 ORDER_EXPIRED = 3
 
+# 订单类型（orders.order_type）
+ORDER_TYPE_NORMAL = 0     # 普通收款
+ORDER_TYPE_RECHARGE = 1   # 余额充值（全额入账、不回调）
+ORDER_TYPE_TEST = 2       # 测试单（不记账、不通知、不进统计/限额）
+
 CENT = Decimal("0.01")
 
 
@@ -318,6 +323,62 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
     return order
 
 
+def generate_test_trade_no() -> str:
+    """测试单号：TEST + 微秒时间戳（4+18=22 位，与正式单号同宽）。"""
+    return "TEST" + datetime.now().strftime("%y%m%d%H%M%S%f")
+
+
+async def create_test_order(
+    session: AsyncSession,
+    *,
+    merchant: Merchant,
+    payment_type: PaymentType,
+    money: Decimal | str,
+    subject: str = "",
+    client_ip: str = "",
+    return_url: str = "",
+    cache: CacheClient | None = None,
+) -> Order:
+    """建测试单（order_type=2）：不走 create_order 的商户支付状态/域名白名单校验。
+
+    管理端通道测试挂在系统测试商户名下（该商户支付权限关闭，正常建单入口会拒），
+    商户端测试支付则挂商户自己名下，因此统一由内部入口直接落行：
+    - notify_url 留空：测试单不需要商户回调，通知任务会直接收口
+    - 先落库再向上游下单（与老系统一致）：上游若已收款，回调仍有单可记
+    """
+    amount = dmoney(money)
+    if amount <= 0:
+        raise ValueError("金额必须大于0")
+
+    try:
+        expire_minutes = await get_int_setting(session, "order_expire_minutes", cache)
+    except Exception:
+        expire_minutes = 0
+    if expire_minutes <= 0:
+        expire_minutes = 30
+
+    trade_no = generate_test_trade_no()
+    order = Order(
+        trade_no=trade_no,
+        merchant_id=merchant.id,
+        out_trade_no=trade_no,
+        payment_type_id=payment_type.id,
+        payment_type_code=payment_type.code,
+        subject=(subject or "测试订单")[:128],
+        money=amount,
+        return_url=(return_url or "")[:500],
+        client_ip=(client_ip or "")[:45],
+        order_type=ORDER_TYPE_TEST,
+        status=ORDER_PENDING,
+        created_at=datetime.now(),
+        expire_at=datetime.now() + timedelta(minutes=expire_minutes),
+    )
+    session.add(order)
+    await session.commit()
+    await session.refresh(order)
+    return order
+
+
 # ============================================================
 # 拉起支付（选通道 + 金额计算 + 插件下单）
 # ============================================================
@@ -435,7 +496,9 @@ async def process_payment(
         )
     else:
         resolved = await choose_channel(
-            session, cache, order.payment_type_id, order.money, merchant_rate=merchant.rate
+            session, cache, order.payment_type_id, order.money, merchant_rate=merchant.rate,
+            # 测试单不占通道日限额/限速窗口，避免反复测试把通道测到自动关闭
+            skip_limits=order.order_type == ORDER_TYPE_TEST,
         )
     if not resolved:
         _log.warning("拉起支付失败：无可用通道 trade_no=%s type=%s money=%s",
@@ -446,16 +509,25 @@ async def process_payment(
     # 商户申报金额 money 保持不变，到账/成本/利润按实付计算。
     # 随机金额单 realmoney 只随机一次（首次拉起落库后保持不变）——
     # 幂等重提交/收银台换支付方式重复拉起若重新随机，会导致已分发的
-    # 付款链接金额与订单不符、回调金额比对失败
+    # 付款链接金额与订单不符、回调金额比对失败。
+    # 测试单按填写金额原样走（不抖金额），到账/成本/利润记 0：不参与任何资金口径。
     realmoney = _quant(order.money)
-    if merchant.random_enable and merchant.random_min > 0 and merchant.random_max > 0:
+    if order.order_type == ORDER_TYPE_TEST:
+        merchant_income = Decimal("0.00")
+        channel_cost = Decimal("0.00")
+        profit = Decimal("0.00")
+    elif merchant.random_enable and merchant.random_min > 0 and merchant.random_max > 0:
         if order.realmoney is not None and order.realmoney > 0:
             realmoney = _quant(order.realmoney)
         else:
             realmoney = _quant(random_money(merchant))
-    merchant_income, channel_cost, profit = compute_amounts(
-        realmoney, resolved.merchant_rate, resolved.cost_rate
-    )
+        merchant_income, channel_cost, profit = compute_amounts(
+            realmoney, resolved.merchant_rate, resolved.cost_rate
+        )
+    else:
+        merchant_income, channel_cost, profit = compute_amounts(
+            realmoney, resolved.merchant_rate, resolved.cost_rate
+        )
 
     # 事务 A：落通道与金额（无外部 IO）
     order.channel_id = resolved.channel.id
@@ -659,7 +731,16 @@ async def process_paid_order(
         if not order:
             return PaidResult(status="not_found")
         if order.status == ORDER_PAID:
-            return PaidResult(status="duplicate", order=order)
+            # 重复回调：正常收款单保持重发商家通知（原来的行为），
+            # 充值单/测试单/扣量单没有通知语义
+            return PaidResult(
+                status="duplicate", order=order,
+                should_notify=(
+                    order.order_type == ORDER_TYPE_NORMAL
+                    and not order.is_deducted
+                    and bool(order.notify_url)
+                ),
+            )
         late_pay = False
         if order.status == ORDER_EXPIRED:
             if not (allow_expired or await late_pay_allowed(session, order, cache)):
@@ -680,6 +761,23 @@ async def process_paid_order(
             if claimed != expected:
                 _log.warning("金额不符 trade_no=%s claimed=%s expected=%s", trade_no, claimed, expected)
                 return PaidResult(status="mismatch", order=order)
+
+        # 测试单（order_type=2）：落「已支付」供后台/商户端核对链路，
+        # 但不入余额、不算分润/邀请返现、不投递商户通知、不进任何统计口径
+        if order.order_type == ORDER_TYPE_TEST:
+            order.status = ORDER_PAID
+            order.paid_at = datetime.now()
+            order.merchant_income = Decimal("0.00")
+            order.channel_cost = Decimal("0.00")
+            order.profit = Decimal("0.00")
+            if api_trade_no:
+                order.api_trade_no = api_trade_no[:64]
+            if buyer_id:
+                order.buyer_id = buyer_id[:64]
+            order.notify_status = 0
+            order.next_notify_at = None
+            await session.commit()
+            return PaidResult(status="paid", order=order, should_notify=False, late_pay=late_pay)
 
         # 扣量判定（仅普通收款单；命中：标记已支付但不入账/不返佣/不通知，
         # 商户侧一切视图显示为未支付）

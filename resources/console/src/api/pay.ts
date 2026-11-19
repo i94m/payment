@@ -110,6 +110,8 @@ export interface ChannelStats {
 }
 
 export interface ChannelTestPayResult {
+  /** 本次测试落库的测试单号（order_type=2，可在订单页按「测试单」筛到） */
+  trade_no: string
   /** 插件返回的支付动作：jump / qrcode / scheme / html */
   pay_type: string
   /** 支付链接、二维码地址或 HTML 表单（按 pay_type 解释） */
@@ -122,7 +124,7 @@ export interface ChannelTestDebug {
   time: string
   client_ip: string
   channel: Record<string, unknown>
-  /** 本次测试模拟的下单参数（不落库、不涉及商户） */
+  /** 本次测试单的下单参数（已落库的测试单） */
   request: Record<string, unknown>
   upstream_request: Record<string, unknown> | null
   error: string

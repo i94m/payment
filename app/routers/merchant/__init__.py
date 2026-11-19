@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from . import (
     auth, common, dashboard, order, account, record, settle,
-    agent, message, paypage,
+    agent, message, paypage, testpay,
 )
 
 router = APIRouter()
@@ -14,6 +14,7 @@ router.include_router(record.router, prefix="/record", tags=["merchant-record"])
 router.include_router(settle.router, prefix="/settle", tags=["merchant-settle"])
 router.include_router(agent.router, prefix="/agent", tags=["merchant-agent"])
 router.include_router(paypage.router, prefix="/paypage", tags=["merchant-paypage"])
+router.include_router(testpay.router, prefix="/testpay", tags=["merchant-testpay"])
 router.include_router(message.router, prefix="/message", tags=["merchant-message"])
 
 # 对接文档已迁移为独立 VitePress 站点（resources/docs），

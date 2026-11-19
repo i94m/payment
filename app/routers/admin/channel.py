@@ -24,6 +24,7 @@ from app.services.balance import dmoney
 from app.services.crypto import decrypt_config, encrypt_config
 from app.services.plugin import PluginRegistry
 from app.services.plugin_interfaces import PluginMeta
+from app.services.order import ORDER_TYPE_TEST
 from app.services.plugin_sync import sync_plugins
 import logging
 
@@ -268,7 +269,8 @@ async def type_stats(session: SessionDep):
     async def _collect(start: datetime, end: datetime, prefix: str):
         rows = (await session.exec(
             select(Order.payment_type_id, func.count(), func.coalesce(func.sum(Order.realmoney), 0))
-            .where(col(Order.status) == 1, col(Order.paid_at) >= start, col(Order.paid_at) < end)
+            .where(col(Order.status) == 1, col(Order.order_type) != ORDER_TYPE_TEST,
+                   col(Order.paid_at) >= start, col(Order.paid_at) < end)
             .group_by(Order.payment_type_id)
         )).all()
         for type_id, cnt, total in rows:
@@ -502,7 +504,8 @@ async def channel_stats(session: SessionDep):
     async def _collect(start: datetime, end: datetime, prefix: str):
         rows = (await session.exec(
             select(Order.channel_id, func.count(), func.coalesce(func.sum(Order.realmoney), 0))
-            .where(col(Order.status) == 1, col(Order.paid_at) >= start, col(Order.paid_at) < end)
+            .where(col(Order.status) == 1, col(Order.order_type) != ORDER_TYPE_TEST,
+                   col(Order.paid_at) >= start, col(Order.paid_at) < end)
             .group_by(Order.channel_id)
         )).all()
         for channel_id, cnt, total in rows:
@@ -664,12 +667,12 @@ TEST_PAY_MIN = "0.01"
 TEST_PAY_MAX = "1000.00"
 
 
-def _test_debug_payload(c: Channel, ctx, plugin=None, client_ip: str = "",
+def _test_debug_payload(c: Channel, order, plugin=None, client_ip: str = "",
                         error: str | None = None) -> dict:
     """通道测试的调试信息：通道/测试请求/上游请求响应快照，失败排障用。
 
     - 凭证类字段一律脱敏：调试弹窗不需要、也不应携带上游 appkey
-    - 测试不落订单、不涉及商户，这里只是插件 submit 用的模拟请求参数
+    - 测试单已落库（order_type=2），这里带出真实单号，便于跳订单页核对
     """
     cfg = decrypt_config(c.config)
     plugin_debug = getattr(plugin, "last_debug", None) if plugin else None
@@ -686,9 +689,9 @@ def _test_debug_payload(c: Channel, ctx, plugin=None, client_ip: str = "",
             "productid": cfg.get("productid", ""),
         },
         "request": {
-            "trade_no": ctx.order.get("trade_no", ""),
-            "amount": ctx.order.get("money", ""),
-            "payment_type": ctx.order.get("payment_type_code", ""),
+            "trade_no": order.trade_no if order else "",
+            "amount": str(order.money) if order else "",
+            "payment_type": order.payment_type_code if order else "",
         },
         "upstream_request": plugin_debug,
         "error": error,
@@ -704,15 +707,19 @@ class ChannelTestPayRequest(BaseModel):
              dependencies=[Depends(PermissionChecker("channel.update"))])
 async def channel_testpay(channel_id: int, body: ChannelTestPayRequest, request: Request,
                           session: SessionDep, cache: CacheDep, admin: AdminUser):
-    """通道测试：用该通道自己的凭证直接向上游发起一笔下单，返回支付信息。
+    """通道测试：建一笔测试单（order_type=2）并用该通道凭证向上游下单。
 
-    只验证「凭证 + 插件协议」是否可用：
-    - 不建订单、不涉及商户、不动余额/费率/统计
-    - 未开启的通道也允许测试（先测通再启用）；金额放宽到 0.01~1000 元
+    链路与正式收款一致（落单 → 上游下单 → 回调验签 → 订单置已支付），
+    因此能验证插件回调；但测试单：
+    - 挂在系统测试商户名下（自动创建，无需配置测试商户号）
+    - 不入余额/分润/结算/统计，不占通道日限额与限速
+    - 不投递商户通知
+    未开启的通道也允许测试（先测通再启用）；金额放宽到 0.01~1000 元。
     """
-    from app.services.plugin import maybe_await
-    from app.services.plugin_interfaces import PaymentContext
+    from app.core.config import config
+    from app.services.order import create_test_order, process_payment
     from app.services.settings import get_all_settings
+    from app.services.test_pay import get_test_merchant
 
     c = await session.get(Channel, channel_id)
     if not c:
@@ -734,46 +741,36 @@ async def channel_testpay(channel_id: int, body: ChannelTestPayRequest, request:
     settings = await get_all_settings(session, cache)
     site = (settings.get("site_url") or str(request.base_url)).rstrip("/")
 
-    import random
-    test_no = f"TEST{datetime.now().strftime('%y%m%d%H%M%S')}{random.randint(100000, 999999)}"
-    # 模拟一笔下单上下文：回调地址仍指向真实域名（部分上游会校验格式），
-    # 但库里没有这笔订单，回调不会被受理 —— 测试只需要拿到支付信息。
-    ctx = PaymentContext(
-        order={
-            "trade_no": test_no,
-            "out_trade_no": test_no,
-            "subject": body.name or "支付测试",
-            "money": str(amount),
-            "realmoney": str(amount),
-            "payment_type_code": pt.code,
-        },
-        notify_url=f"{site}/callbacks/{c.plugin_name}/{test_no}",
-        return_url=f"{site}/callbacks/{c.plugin_name}/{test_no}/return",
-        site_url=site,
-        client_ip=request.client.host if request.client else "",
+    merchant = await get_test_merchant(session)
+    # 支付完成回跳后台订单页：回调会追加 ?trade_no=，HashRouter 会按路由参数打开详情列表
+    return_url = f"{site}/{config.ADMIN_PATH_PREFIX}/#/trade/orders"
+    debug_ip = request.client.host if request.client else ""
+    order = await create_test_order(
+        session,
+        merchant=merchant,
+        payment_type=pt,
+        money=amount,
+        subject=body.name or "支付测试",
+        client_ip=debug_ip,
+        return_url=return_url,
+        cache=cache,
     )
 
-    plugin = PluginRegistry.get_payment(c.plugin_name, decrypt_config(c.config))
-    if not plugin:
-        return err(-1, f"支付插件 {c.plugin_name} 未安装")
-
-    debug_ip = request.client.host if request.client else ""
-    try:
-        result = await maybe_await(plugin.submit(ctx))
-    except Exception as e:
-        import traceback
-        return err(-1, "上游通道请求失败", errors=[
-            _test_debug_payload(c, ctx, plugin, debug_ip, error=traceback.format_exc()),
+    flow = await process_payment(
+        order, merchant, session, cache,
+        notify_base=site, return_base=site, site_url=site,
+        channel_id=c.id,
+    )
+    if not flow.ok:
+        return err(-1, flow.error or "获取支付接口数据失败", errors=[
+            _test_debug_payload(c, order, flow.plugin, debug_ip,
+                                error=flow.error or "获取支付接口数据失败"),
         ])
 
-    pay_info = result.url or result.html or ""
-    debug = _test_debug_payload(c, ctx, plugin, debug_ip,
-                                error=None if result.kind != "error" else result.msg)
-    if result.kind == "error" or (result.kind != "jump" and not pay_info):
-        return err(-1, result.msg or "获取支付接口数据失败", errors=[debug])
-
+    debug = _test_debug_payload(c, order, flow.plugin, debug_ip)
     return suc({
-        "pay_type": result.kind,
-        "pay_info": pay_info,
+        "trade_no": order.trade_no,
+        "pay_type": flow.pay_type,
+        "pay_info": flow.pay_info,
         "debug": debug,
     })

@@ -9,6 +9,8 @@ export interface OrderData {
   api_trade_no?: string
   merchant_id?: number
   merchant_username?: string
+  /** 订单类型：0=正式收款 1=余额充值 2=测试单 */
+  order_type?: number
   type: string
   /** 支付方式显示名称（后端按 payment_types 解析；缺失时用 type 调用值兜底） */
   type_name?: string
@@ -48,6 +50,11 @@ export interface OrderListParams {
   merchant_id?: number | ""
   status?: number | ""
   type?: string
+  /**
+   * 订单类型：""（默认，不含测试单）/ "0" 正式收款 / "1" 余额充值 / "2" 测试单 / "all" 全部。
+   * 商户端只认 "" 与 "2"。
+   */
+  order_type?: string
   notify_status?: number | ""
   /** "start,end"（YYYY-MM-DD） */
   addtime?: string

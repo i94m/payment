@@ -148,7 +148,7 @@ async def query_upstream_job(ctx: Context, trade_no: str) -> None:
                     "paid_status": paid.status,
                     "should_notify": paid.should_notify,
                 })
-            if paid.status == "paid":
+            if paid.status == "paid" and paid.should_notify:
                 from app.services.notify import notify_merchant_once
                 await notify_merchant_once(session, trade_no=trade_no)
                 logger.info(f"query_upstream_job: 补单成功 trade_no={trade_no}")

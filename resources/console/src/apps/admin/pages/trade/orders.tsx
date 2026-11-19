@@ -6,6 +6,7 @@ import type { OrderData } from "@/api"
 import { format } from "date-fns"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -82,6 +83,8 @@ export function OrdersPage() {
   const [merchantId, setMerchantId] = React.useState(searchParams.get("merchant_id") || "")
   const [channelId] = React.useState(searchParams.get("channel_id") || "")
   const [typeCode] = React.useState(searchParams.get("type") || "")
+  // 订单类型：""=默认（不含测试单）/ "0" 正式收款 / "1" 余额充值 / "2" 测试单 / "all" 全部
+  const [orderType, setOrderType] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState("")
   const [notifyFilter, setNotifyFilter] = React.useState("")
   const [startDate, setStartDate] = React.useState<Date | undefined>(undefined)
@@ -102,13 +105,14 @@ export function OrdersPage() {
     const cid = toIntParam(channelId)
     if (cid !== undefined) params.channel_id = cid
     if (typeCode.trim()) params.type = typeCode.trim()
+    if (orderType) params.order_type = orderType
     if (statusFilter !== "") params.status = Number(statusFilter)
     if (notifyFilter !== "") params.notify_status = Number(notifyFilter)
     if (startDate && endDate) {
       params.addtime = `${format(startDate, "yyyy-MM-dd")},${format(endDate, "yyyy-MM-dd")}`
     }
     return params
-  }, [tradeNo, outTradeNo, merchantId, typeCode, statusFilter, notifyFilter, startDate, endDate])
+  }, [tradeNo, outTradeNo, merchantId, typeCode, orderType, statusFilter, notifyFilter, startDate, endDate])
 
   // 日期区间是成对参数：只选一端会被后端静默忽略，这里显式提示而不是「查了没反应」
   const applyFilterParams = () => {
@@ -120,7 +124,7 @@ export function OrdersPage() {
   }
 
   const handleReset = () => {
-    setTradeNo(""); setOutTradeNo(""); setMerchantId("")
+    setTradeNo(""); setOutTradeNo(""); setMerchantId(""); setOrderType("")
     setStatusFilter(""); setNotifyFilter(""); setStartDate(undefined); setEndDate(undefined)
     applyFilters()
   }
@@ -143,7 +147,13 @@ export function OrdersPage() {
         accessorKey: "trade_no",
         enableSorting: false,
         header: () => "平台订单号",
-        cell: ({ row }) => copyableCell(row.original.trade_no),
+        cell: ({ row }) => (
+          <span className="flex items-center gap-1.5">
+            {copyableCell(row.original.trade_no)}
+            {row.original.order_type === 2 && <Badge variant="secondary">{"测试"}</Badge>}
+            {row.original.order_type === 1 && <Badge variant="outline">{"充值"}</Badge>}
+          </span>
+        ),
         meta: { headClassName: "min-w-[170px]", sticky: "left" },
       },
       {
@@ -249,6 +259,7 @@ export function OrdersPage() {
       if (outTradeNo.trim()) params.out_trade_no = outTradeNo.trim()
       const mid = toIntParam(merchantId)
       if (mid !== undefined) params.merchant_id = String(mid)
+      if (orderType) params.order_type = orderType
       if (statusFilter !== "") params.status = statusFilter
       if (notifyFilter !== "") params.notify_status = notifyFilter
       if (startDate && endDate) {
@@ -280,7 +291,7 @@ export function OrdersPage() {
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         <FilterCard>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 items-end">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3 items-end">
             <div className="col-span-1">
               <Input
                 placeholder={"平台订单号"}
@@ -303,6 +314,18 @@ export function OrdersPage() {
               value={merchantId}
               onChange={(e) => setMerchantId(digitsOnly(e.target.value))}
             />
+            <Select value={orderType || "_default"} onValueChange={(v) => setOrderType(v === "_default" ? "" : v)}>
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue placeholder={"订单类型"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_default">{"业务订单（不含测试）"}</SelectItem>
+                <SelectItem value="0">{"正式收款"}</SelectItem>
+                <SelectItem value="1">{"余额充值"}</SelectItem>
+                <SelectItem value="2">{"测试单"}</SelectItem>
+                <SelectItem value="all">{"全部类型"}</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"状态"} />
@@ -390,6 +413,12 @@ export function OrdersPage() {
               </div>
               <Separator />
               <DetailRow label={"商品名称"} value={detailOrder.subject} />
+              {detailOrder.order_type === 2 && (
+                <DetailRow label={"订单类型"} value={<Badge variant="secondary">{"测试单（不计入资金与统计）"}</Badge>} />
+              )}
+              {detailOrder.order_type === 1 && (
+                <DetailRow label={"订单类型"} value={<Badge variant="outline">{"余额充值"}</Badge>} />
+              )}
               <DetailRow label={"商户"} value={detailOrder.merchant_username || String(detailOrder.merchant_id ?? "")} />
               <DetailRow label={"金额"} value={`¥${detailOrder.money}`} />
               <DetailRow label={"实付金额"} value={detailOrder.realmoney ? `¥${detailOrder.realmoney}` : "—"} />
@@ -430,12 +459,13 @@ export function OrdersPage() {
 }
 
 function DetailRow({ label, value, icon, mono, wrap }: {
-  label: string; value?: string | null; icon?: React.ReactNode; mono?: boolean; wrap?: boolean
+  label: string; value?: React.ReactNode; icon?: React.ReactNode; mono?: boolean; wrap?: boolean
 }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1.5">
       <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className={`text-right ${mono ? "font-mono text-xs" : ""} ${wrap ? "break-all" : "truncate"}`} title={value ?? ""}>
+      <span className={`text-right ${mono ? "font-mono text-xs" : ""} ${wrap ? "break-all" : "truncate"}`}
+            title={typeof value === "string" ? value : undefined}>
         {icon ? <span className="inline-flex items-center gap-1.5 align-middle">{icon}{value || "—"}</span> : (value || "—")}
       </span>
     </div>

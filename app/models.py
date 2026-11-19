@@ -405,7 +405,7 @@ class Order(SQLModel, table=True):
     client_ip: Optional[str] = Field(default=None, sa_column=Column(String(45)))
     buyer_id: Optional[str] = Field(default=None, sa_column=Column(String(64)))
     agent_id: int = Field(default=0, sa_column=Column(BigInt, server_default=text("0"), nullable=False))  # 归属代理（agents.id，0=无；代理业绩口径）
-    order_type: int = Field(default=0, sa_column=Column(SmallInteger, server_default=text("0"), nullable=False))  # 0=普通收款 1=余额充值（全额入账、不回调）
+    order_type: int = Field(default=0, sa_column=Column(SmallInteger, server_default=text("0"), nullable=False))  # 0=普通收款 1=余额充值（全额入账、不回调）2=测试单（不记账/不通知/不进统计与通道限额）
     is_deducted: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))  # 命中扣量（商户侧一律显示未支付）
     # 退款配额累计（已退 + 在途预占）：退款并发上限的唯一原子占位口径，
     # 只能通过「条件 UPDATE ... WHERE refunded_amount + amt <= 可退上限」递增（见 services/refund.py）。

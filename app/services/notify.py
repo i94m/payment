@@ -177,7 +177,8 @@ async def _maybe_block_for_notify_failures(
 async def requeue_notify(session: AsyncSession, trade_no: str) -> bool:
     """手动重发通知（admin/merchant 按钮）：重置为待重试并立即投递。"""
     order = await get_order_by_trade_no(session, trade_no)
-    if not order or order.status != ORDER_PAID:
+    # 仅正式收款单有商户通知：充值单/测试单不投递
+    if not order or order.status != ORDER_PAID or order.order_type != 0:
         return False
     order.notify_status = 1
     order.notify_count = 0

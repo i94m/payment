@@ -4,7 +4,7 @@ import {
   IconShieldLock, IconBook,
   IconUsers,
   IconUserEdit, IconLock,
-  IconChartBar, IconBrandQq, IconDeviceMobile,
+  IconChartBar, IconBrandQq, IconDeviceMobile, IconFlask,
 } from "@tabler/icons-react"
 import type { SiteFeatures } from "@/stores/site-store"
 
@@ -56,6 +56,7 @@ export function getMerchantMenu(): MenuSection[] {
       label: "交易中心",
       items: [
         { title: "订单记录", url: "/orders", icon: IconListDetails },
+        { title: "测试支付", url: "/testpay", icon: IconFlask },
         { title: "结算记录", url: "/settle", icon: IconReceipt },
         { title: "资金明细", url: "/records", icon: IconHistory },
       ],

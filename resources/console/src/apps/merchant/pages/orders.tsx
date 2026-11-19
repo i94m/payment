@@ -1,11 +1,13 @@
 "use client"
 
 import * as React from "react"
+import { Link, useSearchParams } from "react-router-dom"
 import { ordersApi } from "@/api"
 import type { OrderData } from "@/api"
 import { format } from "date-fns"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -99,7 +101,10 @@ function NotifyStatusCell({ status, notifyStatus }: { status: number; notifyStat
 }
 
 export function OrdersPage() {
+  // 测试支付页跳转过来时带 ?order_type=2，直接落到测试单列表
+  const [searchParams] = useSearchParams()
   const [outTradeNo, setOutTradeNo] = React.useState("")
+  const [orderType, setOrderType] = React.useState(searchParams.get("order_type") === "2" ? "2" : "")
   const [statusFilter, setStatusFilter] = React.useState("")
   const [startDate, setStartDate] = React.useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = React.useState<Date | undefined>(undefined)
@@ -112,16 +117,18 @@ export function OrdersPage() {
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
     if (outTradeNo.trim()) params.out_trade_no = outTradeNo.trim()
+    if (orderType === "2") params.order_type = "2"
     const status = toIntParam(statusFilter)
     if (status !== undefined) params.status = status
     if (startDate && endDate) {
       params.addtime = `${format(startDate, "yyyy-MM-dd")},${format(endDate, "yyyy-MM-dd")}`
     }
     return params
-  }, [outTradeNo, statusFilter, startDate, endDate])
+  }, [outTradeNo, orderType, statusFilter, startDate, endDate])
 
   const handleReset = () => {
-    setKeyword(""); setOutTradeNo(""); setStatusFilter(""); setStartDate(undefined); setEndDate(undefined)
+    setKeyword(""); setOutTradeNo(""); setOrderType(""); setStatusFilter("")
+    setStartDate(undefined); setEndDate(undefined)
     applyFilters()
   }
 
@@ -187,7 +194,12 @@ export function OrdersPage() {
         accessorKey: "trade_no",
         enableSorting: false,
         header: () => "平台订单号",
-        cell: ({ row }) => copyableCell(row.original.trade_no),
+        cell: ({ row }) => (
+          <span className="flex items-center gap-1.5">
+            {copyableCell(row.original.trade_no)}
+            {row.original.order_type === 2 && <Badge variant="secondary">{"测试"}</Badge>}
+          </span>
+        ),
         meta: { headClassName: "min-w-[170px]", sticky: "left" },
       },
       {
@@ -268,6 +280,11 @@ export function OrdersPage() {
           icon: <IconBell className="size-4" />,
           title: "仅已支付订单可重发通知",
           onClick: (item) => {
+            // 测试单没有商户通知，直接提示，不发无意义请求
+            if (item.order_type === 2) {
+              toast.info("测试单不发送商户通知")
+              return
+            }
             // 未支付/过期订单没有可重发的通知：直接提示，避免无意义的失败请求
             if (item.status !== 1) {
               toast.info("仅已支付订单可重发通知")
@@ -285,7 +302,7 @@ export function OrdersPage() {
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         <FilterCard>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 items-end">
             <div className="col-span-1 lg:col-span-2">
               <Input
                 placeholder={"平台订单号"}
@@ -302,6 +319,15 @@ export function OrdersPage() {
               onChange={(e) => setOutTradeNo(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSearch() }}
             />
+            <Select value={orderType || "_normal"} onValueChange={(v) => setOrderType(v === "_normal" ? "" : v)}>
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue placeholder={"订单类型"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_normal">{"正式收款"}</SelectItem>
+                <SelectItem value="2">{"测试单"}</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"状态"} />
@@ -326,6 +352,13 @@ export function OrdersPage() {
               onChange={setEndDate}
             />
           </div>
+
+          {orderType === "2" && (
+            <p className="text-xs text-muted-foreground">
+              {"测试单仅用于联调验证：不计入余额、结算与任何统计，也不投递商户通知。"}
+              <Link className="ml-1 underline underline-offset-2" to="/testpay">{"发起测试支付"}</Link>
+            </p>
+          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={handleSearch}>
@@ -405,6 +438,9 @@ export function OrdersPage() {
               </div>
               <Separator />
               <Row label={"商品名称"} value={detailOrder.subject || detailOrder.name} wrap />
+              {detailOrder.order_type === 2 && (
+                <Row label={"订单类型"} value={<Badge variant="secondary">{"测试单"}</Badge>} />
+              )}
               <Row label={"支付方式"} value={(
                 <span className="inline-flex items-center gap-1.5">
                   <PayIcon code={detailOrder.type} icon={detailOrder.type_icon} />

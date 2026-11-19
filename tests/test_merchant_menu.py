@@ -32,7 +32,7 @@ async def test_menu_default_sections(client, session):
 
     assert names(None) == ["用户中心"]
     assert names("个人资料") == ["API信息", "修改资料", "修改密码"]
-    assert names("查询") == ["订单记录", "结算记录", "资金明细"]
+    assert names("查询") == ["订单记录", "测试支付", "结算记录", "资金明细"]
     assert names("下级代理") == ["代理管理", "代理业绩"]
     # 外链默认空串 → 不下发
     assert names("其他") == ["开发文档"]
