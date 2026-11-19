@@ -520,8 +520,10 @@ async def _hit_deduct(session: AsyncSession, order: Order,
     生效条件（AND）：
       - 商户 deduct_enable 开（唯一开关）
       - deduct_frequency > 0（防御值；停用请用开关，别把频次填 0）
-      - 单笔 order.money（**商户申报额**，不是 realmoney）>= deduct_minmoney
-        （起扣金额，0 = 不限金额；**恰好等于也扣**，即 `>=` 边界）
+      - 单笔 **买家实付金额**（order.realmoney，为 NULL 时回退 order.money）
+        >= deduct_minmoney（起扣金额，0 = 不限金额；**恰好等于也扣**，即 `>=` 边界）。
+        比较实付而非申报额：随机金额单的 realmoney 是绝对金额（random_min ~ random_max），
+        与申报额无关，拿申报额比会让起扣金额对这类商户形同虚设。
 
     计数**按商户独立**：每个商户一根自己的刻度（Redis key / counters 行都带 merchant_id），
     商户自己的第 N 笔合格单命中，互不影响——A 配 N 不会因为 B 的单量而变化。
@@ -535,9 +537,12 @@ async def _hit_deduct(session: AsyncSession, order: Order,
     frequency = int(merchant.deduct_frequency or 0)
     if frequency <= 0:
         return False
-    # 起扣金额按 Decimal 比较：0 = 不限，>0 时小于门槛的单豁免且不消耗计数
+    # 起扣金额按 Decimal 比较：0 = 不限，>0 时小于门槛的单豁免且不消耗计数。
+    # 比较对象是买家实付金额；realmoney 为空（未拉起过支付的兜底路径）回退到申报额，
+    # 未开随机金额的商户两者恒等，行为不变。
     min_money = dmoney(merchant.deduct_minmoney or 0)
-    if min_money > 0 and dmoney(order.money) < min_money:
+    paid_money = order.realmoney if order.realmoney is not None else order.money
+    if min_money > 0 and dmoney(paid_money) < min_money:
         return False
 
     counter_key = f"deduct_order:{order.merchant_id}"
