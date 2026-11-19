@@ -734,8 +734,9 @@ class SetAllDeductRequest(BaseModel):
 
 @router.post("/deduct/set-all", dependencies=[Depends(PermissionChecker("merchant.update"))])
 async def set_all_merchant_deduct(body: SetAllDeductRequest, session: SessionDep):
-    """批量扣量开关：作用于全部商户（含配置锁定商户，急停必须覆盖全场）。
+    """批量扣量开关：作用于所有未锁定商户，配置锁定的商户不受影响。
 
+    急停（批量关）也不再覆盖锁定商户，锁定的要先去单商户解锁再单独处理。
     关：只写开关位，频次与起扣金额原样保留，恢复时不用凭记忆重配。
     开：频次 + 起扣金额一起下发（金额留空按 0 处理，与单商户表单一致）。
     """
@@ -752,7 +753,9 @@ async def set_all_merchant_deduct(body: SetAllDeductRequest, session: SessionDep
             return err(-1, "金额格式错误")
         if min_money < 0:
             return err(-1, "起扣金额不能为负数")
-    merchants = (await session.exec(select(Merchant))).all()
+    merchants = (await session.exec(
+        select(Merchant).where(col(Merchant.fixed) == False)  # noqa: E712
+    )).all()
     for m in merchants:
         m.deduct_enable = body.deduct_enable
         if body.deduct_enable:
