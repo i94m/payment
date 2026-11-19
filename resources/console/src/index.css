@@ -281,7 +281,7 @@
 @keyframes page-slide-in {
     from {
         opacity: 0;
-        transform: translateX(20px);
+        transform: translateX(12px);
     }
     to {
         opacity: 1;
@@ -289,7 +289,12 @@
     }
 }
 .animate-page-slide-in {
-    animation: page-slide-in 0.2s ease;
+    animation: page-slide-in 0.18s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+    .animate-page-slide-in {
+        animation: none;
+    }
 }
 
 /* NProgress */
