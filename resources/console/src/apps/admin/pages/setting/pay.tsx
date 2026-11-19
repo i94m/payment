@@ -25,16 +25,15 @@ const settingsSchema = z.record(z.string(), z.string())
 // 后端 group 值 → 分组标题（与 SettingGroup 对齐；未识别的组原样展示、排最后）
 const GROUP_TITLES: Record<string, string> = {
   site: "站点",
-  order: "订单",  // 订单组含过期单回补窗口与扣量开关，标题不再只写「扣量」
+  order: "订单",  // 订单组含过期单回补窗口等订单口径配置
   notify: "通知",
   settle: "结算",
 }
 const GROUP_ORDER = Object.keys(GROUP_TITLES)
 
-// 开关联动禁用：开关关闭（"false"）时禁用对应输入项
-const TOGGLE_DISABLES: Record<string, string[]> = {
-  deduct_enable: ["deduct_frequency", "deduct_minmoney"],
-}
+// 开关联动禁用：开关关闭（"false"）时禁用对应输入项。
+// 扣量已下放到商户行（商户列表逐户配置），设置页不再有 deduct_* 全局项，此表当前为空。
+const TOGGLE_DISABLES: Record<string, string[]> = {}
 
 interface SettingGroup {
   key: string

@@ -32,7 +32,7 @@ import { z } from "zod"
 import {
   IconSearch, IconRefresh, IconPlus, IconEdit,
   IconKey, IconHistory, IconDownload,
-  IconDice, IconAdjustments,
+  IconDice, IconAdjustments, IconPercentage,
   IconTrash, IconLockPassword,
   IconList, IconReceipt,
 } from "@tabler/icons-react"
@@ -169,6 +169,15 @@ export function MerchantsPage() {
   const [batchRandomMin, setBatchRandomMin] = React.useState("")
   const [batchRandomMax, setBatchRandomMax] = React.useState("")
 
+  // ---- 扣量（商户级；没有全局参数，急停 = 批量设 0）----
+  const [deductTarget, setDeductTarget] = React.useState<MerchantData | null>(null)
+  const [deductEnable, setDeductEnable] = React.useState("0")
+  const [deductFrequency, setDeductFrequency] = React.useState("")
+  const [deductMinmoney, setDeductMinmoney] = React.useState("")
+  const [batchDeductOpen, setBatchDeductOpen] = React.useState(false)
+  const [batchDeductEnable, setBatchDeductEnable] = React.useState("1")
+  const [batchDeductFrequency, setBatchDeductFrequency] = React.useState("")
+
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
     if (keyword2.trim()) params.keyword = keyword2.trim()
@@ -215,6 +224,14 @@ export function MerchantsPage() {
   const openRatelimitDialog = (item: MerchantData) => {
     setRatelimitTarget(item)
     setRatelimitValue(item.random_ratelimit > 0 ? String(item.random_ratelimit) : "")
+  }
+
+  const openDeductDialog = (item: MerchantData) => {
+    setDeductTarget(item)
+    setDeductEnable(item.deduct_enable ? "1" : "0")
+    setDeductFrequency(item.deduct_frequency > 0 ? String(item.deduct_frequency) : "")
+    // 数据库存 Numeric(12,2)，回显去掉 .00 尾零（5.00 → 5）
+    setDeductMinmoney(Number(item.deduct_minmoney) > 0 ? String(Number(item.deduct_minmoney)) : "")
   }
 
   const openSettleDialog = (item: MerchantData) => {
@@ -341,6 +358,33 @@ export function MerchantsPage() {
               {label}
               {m.random_integer && (
                 <Badge variant="secondary" className="h-4 px-1 text-[10px]">{"整数"}</Badge>
+              )}
+              <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
+            </button>
+          )
+        },
+        meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
+      },
+      {
+        // 扣量（点击弹出设置）：商户级开关 + 每 N 笔扣 1 + 起扣金额
+        accessorKey: "deduct_enable",
+        enableSorting: false,
+        header: () => "扣量",
+        cell: ({ row }) => {
+          const m = row.original
+          const label = m.deduct_enable ? `每 ${m.deduct_frequency} 笔` : "未开启"
+          return (
+            <button
+              type="button"
+              title={"点击设置扣量（商户级：开关 + 每 N 笔扣 1 + 起扣金额）"}
+              className={`inline-flex items-center gap-1 text-sm hover:underline ${m.deduct_enable ? "font-bold tabular-nums text-blue-600" : "text-muted-foreground"}`}
+              onClick={() => openDeductDialog(m)}
+            >
+              {label}
+              {m.deduct_enable && Number(m.deduct_minmoney) > 0 && (
+                <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                  {`满${Number(m.deduct_minmoney)}`}
+                </Badge>
               )}
               <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
             </button>
@@ -555,6 +599,52 @@ export function MerchantsPage() {
     }
   }
 
+  const submitDeduct = async () => {
+    if (!deductTarget) return
+    const freq = Number(deductFrequency)
+    if (deductEnable === "1" && (!Number.isInteger(freq) || freq <= 0)) {
+      toast.error("开启扣量必须填写频次（每 N 笔扣 1）"); return
+    }
+    const minmoney = Number(deductMinmoney || 0)
+    if (!Number.isFinite(minmoney) || minmoney < 0) {
+      toast.error("起扣金额不能为负数"); return
+    }
+    if (Math.abs(minmoney * 100 - Math.round(minmoney * 100)) > 1e-6) {
+      toast.error("起扣金额最多两位小数"); return
+    }
+    try {
+      await merchantsApi.setDeduct(deductTarget.id, {
+        deduct_enable: deductEnable === "1",
+        // 关闭时也带上频次：停用不销毁配置，恢复时不用重填
+        ...(Number.isInteger(freq) && freq > 0 ? { deduct_frequency: freq } : {}),
+        deduct_minmoney: String(minmoney),
+      })
+      toast.success("扣量设置已保存")
+      setDeductTarget(null)
+      refresh()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "操作失败"))
+    }
+  }
+
+  const submitBatchDeduct = async () => {
+    const freq = Number(batchDeductFrequency)
+    if (batchDeductEnable === "1" && (!Number.isInteger(freq) || freq <= 0)) {
+      toast.error("开启扣量必须填写频次（每 N 笔扣 1）"); return
+    }
+    try {
+      const msg = await merchantsApi.setAllDeduct({
+        deduct_enable: batchDeductEnable === "1",
+        ...(batchDeductEnable === "1" ? { deduct_frequency: freq } : {}),
+      })
+      toast.success(String(msg || "批量设置完成"))
+      setBatchDeductOpen(false)
+      refresh()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "操作失败"))
+    }
+  }
+
   const submitSso = async (m: MerchantData) => {
     try {
       const res = await merchantsApi.sso(m.id)
@@ -671,6 +761,18 @@ export function MerchantsPage() {
               >
                 <IconDice className="size-4" />
                 {"批量随机金额"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setBatchDeductEnable("1")
+                  setBatchDeductFrequency("")
+                  setBatchDeductOpen(true)
+                }}
+              >
+                <IconPercentage className="size-4" />
+                {"批量扣量"}
               </Button>
               <Button size="sm" onClick={() => { setEditingId(null); setFormOpen(true) }}>
                 <IconPlus className="size-4" />
@@ -921,6 +1023,57 @@ export function MerchantsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* 扣量（单个）：商户级开关 + 每 N 笔扣 1 + 起扣金额 */}
+      <Dialog open={!!deductTarget} onOpenChange={(open) => !open && setDeductTarget(null)}>
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>{"扣量"} - {deductTarget?.username}</DialogTitle>
+            <DialogDescription>
+              {"开启后按成功单计数轮询抽单：命中单标为已支付，但不入账、不返佣、不通知，商户与代理侧一律显示未支付"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="deduct-enable"
+                checked={deductEnable === "1"}
+                onCheckedChange={(v) => setDeductEnable(v ? "1" : "0")}
+              />
+              <Label htmlFor="deduct-enable" className="cursor-pointer">{"扣量"}</Label>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="deduct-frequency">{"频次（每 N 笔扣 1）"}</Label>
+              <Input
+                id="deduct-frequency"
+                type="number" min={1} step={1}
+                value={deductFrequency}
+                onChange={(e) => setDeductFrequency(e.target.value)}
+                placeholder={"如 10 表示每 10 笔扣 1 笔"}
+                disabled={deductEnable !== "1"}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="deduct-minmoney">{"起扣金额（元）"}</Label>
+              <Input
+                id="deduct-minmoney"
+                type="number" min={0} step={0.01}
+                value={deductMinmoney}
+                onChange={(e) => setDeductMinmoney(e.target.value)}
+                placeholder={"0 表示不限金额"}
+                disabled={deductEnable !== "1"}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {"单笔订单金额 ≥ 起扣金额才参与扣量（恰好等于也扣）；0 = 不限。比较的是商户申报金额，不含随机金额加成。每 N 笔是全平台共用一个计数器，不是本商户自己的第 N 笔。"}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeductTarget(null)}>{"取消"}</Button>
+            <Button onClick={submitDeduct}>{"确定"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* 限流（单个） */}
       <Dialog open={!!ratelimitTarget} onOpenChange={(open) => !open && setRatelimitTarget(null)}>
         <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
@@ -1051,6 +1204,46 @@ export function MerchantsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setBatchRandomOpen(false)}>{"取消"}</Button>
             <Button onClick={submitBatchRandom}>{"确定"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 批量扣量 */}
+      <Dialog open={batchDeductOpen} onOpenChange={setBatchDeductOpen}>
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>{"批量扣量"}</DialogTitle>
+            <DialogDescription>{"作用于全部商户；开启时必须填写频次，否则开了也永不扣"}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="batch-deduct-enable"
+                checked={batchDeductEnable === "1"}
+                onCheckedChange={(v) => setBatchDeductEnable(v ? "1" : "0")}
+              />
+              <Label htmlFor="batch-deduct-enable" className="cursor-pointer">{"扣量"}</Label>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="batch-deduct-frequency">{"频次（每 N 笔扣 1）"}</Label>
+              <Input
+                id="batch-deduct-frequency"
+                type="number" min={1} step={1}
+                value={batchDeductFrequency}
+                onChange={(e) => setBatchDeductFrequency(e.target.value)}
+                placeholder={"如 10 表示每 10 笔扣 1 笔"}
+                disabled={batchDeductEnable !== "1"}
+              />
+            </div>
+            <Alert variant="warning" className="px-3 py-2.5">
+              <AlertDescription className="mt-0 text-xs">
+                {"开启：全部商户同时开启并下发该频次，各商户起扣金额保持不变；关闭：只写开关位，频次与金额原样保留，可用于紧急停止。仅开启个别商户时，其命中位置容易被自行反推，建议一次开启多个有真实单量的商户。"}
+              </AlertDescription>
+            </Alert>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchDeductOpen(false)}>{"取消"}</Button>
+            <Button onClick={submitBatchDeduct}>{"确定"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
