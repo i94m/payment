@@ -575,7 +575,7 @@ async def undo_deduct(session: AsyncSession, order: Order) -> bool:
     if income > 0:
         await change_merchant_balance(
             session, order.merchant_id, income,
-            biz_type="order_income", trade_no=order.trade_no, remark="扣量补单入账",
+            biz_type="order_income", trade_no=order.trade_no, remark="订单补入账",
         )
         await _apply_invite_rebate(session, order.trade_no, order.merchant_id, income)
 

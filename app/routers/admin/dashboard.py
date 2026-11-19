@@ -3,7 +3,7 @@
 统计点：
 - 订单总数 / 商户数量
 - 总计余额（商户余额合计）/ 结算总额（结算单合计）
-- 今日/昨日预计收入（扣量订单金额合计，is_deducted）
+- 今日/昨日扣量额度（扣量订单金额合计，is_deducted）—— 运营口径的「预计收入」
 - 今日订单成功率；近期（60/30/10/1 分钟）订单成功率与已支付成功笔数
 - 支付方式收入统计 / 支付通道收入统计 / 支付方式手续费利润（仅今日）
 
@@ -62,12 +62,22 @@ async def _today_stats(session: AsyncSession, today_start: datetime) -> dict:
 
     结构：
       {all, profit_all, paytype: {支付方式ID: 实收}, channel: {通道ID: 实收}, profit_paytype: {支付方式ID: 利润}}
-    口径：status=1（已支付），实收=realmoney（买家实付），利润=profit，按支付时间归属当日。
+    口径：status=1（已支付），实收=realmoney（买家实付）＝成交流水，按支付时间归属当日。
+    利润=**平台留存**：普通单 profit（realmoney - merchant_income - channel_cost），
+    扣量单额外加回 merchant_income —— 扣量单商户未入账，平台实际留存是 realmoney - channel_cost，
+    不加回则利润被系统性低估，财务对不上账。
     """
+    # 平台留存：扣量单的 merchant_income 未被支付给商户，计入平台利润
+    profit_expr = func.coalesce(col(Order.profit), 0) + case(
+        (col(Order.is_deducted) == True,  # noqa: E712
+         func.coalesce(col(Order.merchant_income), 0)),
+        else_=0,
+    )
     rows = (await session.exec(
         select(
             Order.payment_type_id, Order.channel_id,
-            func.coalesce(func.sum(Order.realmoney), 0), func.coalesce(func.sum(Order.profit), 0),
+            func.coalesce(func.sum(Order.realmoney), 0),
+            func.coalesce(func.sum(profit_expr), 0),
         )
         .where(col(Order.status) == 1,
                col(Order.paid_at) >= today_start,
@@ -201,11 +211,17 @@ async def index(session: SessionDep, auth: AdminUser, days: int = 7):
         trend.append({"date": day_start.strftime("%Y-%m-%d"), "count": cnt, "money": money})
 
     # ---- 今日已支付 / 累计已支付（各 1 条条件聚合，避免 5 次往返）----
+    # 利润=平台留存，扣量单补回未被支付给商户的 merchant_income（见 _today_stats 口径说明）
+    today_profit_expr = func.coalesce(col(Order.profit), 0) + case(
+        (col(Order.is_deducted) == True,  # noqa: E712
+         func.coalesce(col(Order.merchant_income), 0)),
+        else_=0,
+    )
     today_paid_count, today_paid_money, today_profit = (await session.exec(
         select(
             func.count(),
             func.coalesce(func.sum(Order.money), 0),
-            func.coalesce(func.sum(Order.profit), 0),
+            func.coalesce(func.sum(today_profit_expr), 0),
         )
         .select_from(Order)
         .where(col(Order.status) == 1, col(Order.paid_at) >= today_start)
