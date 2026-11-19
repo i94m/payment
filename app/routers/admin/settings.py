@@ -37,7 +37,7 @@ async def update_settings(body: UpdateSettingsRequest, session: SessionDep, cach
     """更新站点配置。
 
     P1-9：**写入同样按 ADMIN_SETTING_KEYS 白名单过滤** —— 只隐藏不拦截等于没拦：
-    此前该接口可改 platform_rsa_private_key / deduct_enable / api_refund_enable
+    此前该接口可改 platform_rsa_private_key / api_refund_enable
     等页面不展示的键（含签名私钥），越权面远超配置页语义。
     站点级开关仍可通过运行期注册表默认值 / 直接写库调整。
     """
