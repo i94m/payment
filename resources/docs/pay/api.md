@@ -4,7 +4,7 @@
 
 URL地址：`{site_url}/api/orders`
 
-请求方式：`POST`（Content-Type: `application/json`，签名在 body 参数内）
+请求方式：`POST`（Content-Type: `application/json` 或 `application/x-www-form-urlencoded`，签名在参数内）
 
 请求参数说明：
 
@@ -19,8 +19,8 @@ URL地址：`{site_url}/api/orders`
 | 商品金额 | money | 是 | String | 1.00 | 单位：元，最多2位小数（超出自动四舍五入） |
 | 业务扩展参数 | param | 否 | String | 没有请留空 | 支付后原样返回，最长500字符 |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝（防重放） |
-| 签名字符串 | sign | 是 | String | jKt+H3m...（Base64） | 签名算法[点此查看](/sign/rsa.html) |
-| 签名类型 | sign_type | 是 | String | RSA2 | 固定为 RSA2 |
+| 签名字符串 | sign | 是 | String | 9f2c1a...（MD5） | 签名算法[点此查看](/sign/index.html) |
+| 签名类型 | sign_type | 是 | String | MD5 | `MD5`（默认）或 `RSA2`（需商户后台开启） |
 
 返回结果（json）：
 
@@ -54,16 +54,16 @@ URL地址：`{site_url}/api/orders`
 curl -X POST "{site_url}/api/orders" \
   -H "Content-Type: application/json" \
   -d '{
-    "pid": 1001,
+    "pid": "1001",
     "type": "alipay",
     "out_trade_no": "20160806151343349",
     "notify_url": "http://www.pay.com/notify_url.php",
     "return_url": "http://www.pay.com/return_url.php",
     "name": "VIP会员",
     "money": "1.00",
-    "timestamp": 1696000000,
-    "sign": "Base64编码的RSA2签名",
-    "sign_type": "RSA2"
+    "timestamp": "1696000000",
+    "sign": "9f2c1a...（32位小写）",
+    "sign_type": "MD5"
   }'
 ```
 

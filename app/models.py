@@ -171,7 +171,8 @@ class Merchant(SQLModel, table=True):
     """商户。
 
     pid 对外暴露（开放 API 认证的 pid 参数）；
-    API 调用须先配置 RSA 公钥（public_key，商户面板一键生成密钥对）。
+    开放 API 默认走 MD5 签名（api_secret，创建商户即生成，Fernet 密文落库）；
+    RSA2 为可选项，需商户面板开启（rsa2_enable=1）并配置 public_key。
     balance 热点行：仅允许 services/balance.change_merchant_balance（行锁+流水）变更。
     """
     __tablename__ = "merchants"
@@ -182,6 +183,10 @@ class Merchant(SQLModel, table=True):
     username: str = Field(sa_column=Column(String(64), unique=True, nullable=False))
     password: str = Field(sa_column=Column(String(255), nullable=False))  # bcrypt
     public_key: Optional[str] = Field(default=None, sa_column=Column(Text))
+    # 开放 API MD5 签名密钥：32 位小写 hex，Fernet 密文落库（services/apikey.py 读写）
+    api_secret: Optional[str] = Field(default=None, sa_column=Column(Text))
+    # RSA2 是否对商户开放（默认 0；开启后 sign_type=RSA2 才受理，仍需 public_key）
+    rsa2_enable: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     balance: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
     frozen_balance: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
     status: int = Field(default=1, sa_column=Column(SmallInteger, server_default=text("1"), nullable=False))  # 1=正常 0=禁用
@@ -383,6 +388,9 @@ class Order(SQLModel, table=True):
     notify_url: Optional[str] = Field(default=None, sa_column=Column(String(500)))
     return_url: Optional[str] = Field(default=None, sa_column=Column(String(500)))
     param: Optional[str] = Field(default=None, sa_column=Column(String(500)))
+    # 下单时客户端使用的签名算法（MD5/RSA2）：通知与回跳按这一单的算法签名，
+    # 不受商户后续开关状态影响（历史订单通知不会因为关掉 RSA2 而验不过）
+    sign_type: str = Field(default="MD5", sa_column=Column(String(8), server_default=text("'MD5'"), nullable=False))
     status: int = Field(default=0, sa_column=Column(SmallInteger, server_default=text("0"), nullable=False))
     notify_status: int = Field(default=0, sa_column=Column(SmallInteger, server_default=text("0"), nullable=False))
     notify_count: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))

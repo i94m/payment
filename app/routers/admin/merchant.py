@@ -30,6 +30,7 @@ from app.services.merchant import generate_merchant_pid
 from app.services.balance import change_merchant_balance, dmoney
 from app.services.settings import get_all_settings
 from app.lib.sign import derive_public_key, pem_to_flat
+from app.services.apikey import get_api_secret, set_api_secret
 
 router = APIRouter()
 
@@ -70,11 +71,15 @@ _ORDER_BY_FIELDS = {
 
 
 def _dump_merchant(m: Merchant) -> dict:
+    secret = get_api_secret(m)
     return {
         "id": m.id,
         "pid": m.pid,
         "username": m.username,
         "public_key": pem_to_flat(m.public_key or ""),
+        "api_secret_masked": (f"{secret[:4]}****{secret[-4:]}" if secret else ""),
+        "has_api_secret": bool(secret),
+        "rsa2_enable": bool(m.rsa2_enable),
         "balance": str(m.balance),
         "frozen_balance": str(m.frozen_balance),
         "status": m.status,
@@ -282,6 +287,8 @@ async def create_merchant(body: CreateMerchantRequest, session: SessionDep):
             pay_status=body.pay_status,
             settle_status=body.settle_status,
         )
+        # 开放 API 默认 MD5：创建即生成密钥（面板可查看/重置）
+        set_api_secret(m)
         session.add(m)
         try:
             await session.commit()
@@ -389,7 +396,7 @@ async def update_merchant(merchant_id: int, body: UpdateMerchantRequest, session
 
 
 class SetStatusRequest(BaseModel):
-    """商户状态开关：type ∈ user/pay/settle/fixed。"""
+    """商户状态开关：type ∈ user/pay/settle/fixed/rsa2。"""
     type: str
     status: int
 
@@ -416,6 +423,12 @@ async def set_merchant_status(merchant_id: int, body: SetStatusRequest, session:
         if body.status not in (0, 1):
             return err(-1, "状态取值不合法")
         m.fixed = bool(body.status)
+    elif body.type == "rsa2":
+        if body.status not in (0, 1):
+            return err(-1, "状态取值不合法")
+        if body.status == 1 and not (m.public_key or "").strip():
+            return err(-1, "商户未配置RSA公钥，不能开启RSA2签名")
+        m.rsa2_enable = bool(body.status)
     else:
         return err(-1, "不支持的状态类型")
     session.add(m)
@@ -476,6 +489,18 @@ async def generate_rsa_key(merchant_id: int, session: SessionDep):
     session.add(m)
     await session.commit()
     return suc({"public_key": public_flat, "private_key": pem_to_flat(private_pem)})
+
+
+@router.post("/{merchant_id}/apisecret", dependencies=[Depends(PermissionChecker("merchant.resetkey"))])
+async def reset_api_secret(merchant_id: int, session: SessionDep):
+    """重置商户 MD5 签名密钥（旧密钥立即失效，接入方需同步更换）。"""
+    m = await _get_merchant_or_404(session, merchant_id)
+    if not m:
+        return err(404, "商户不存在")
+    secret = set_api_secret(m)
+    session.add(m)
+    await session.commit()
+    return suc({"api_secret": secret})
 
 
 class ResetPasswordRequest(BaseModel):

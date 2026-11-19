@@ -7,7 +7,7 @@
 
 URL地址：`{site_url}/api/orders/{trade_no}/refund`
 
-请求方式：`POST`（Content-Type: `application/json`，签名在 body 参数内）
+请求方式：`POST`（Content-Type: `application/json` 或 `application/x-www-form-urlencoded`，签名在参数内）
 
 请求参数说明：
 
@@ -19,8 +19,8 @@ URL地址：`{site_url}/api/orders/{trade_no}/refund`
 | 商户退款号 | out_refund_no | 否 | String | R20260926001 | 商户侧唯一退款单号，幂等键：重复提交返回原退款单 |
 | 退款原因 | reason | 否 | String | 用户申请 | |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝（防重放） |
-| 签名字符串 | sign | 是 | String | jKt+H3m...（Base64） | 签名算法[点此查看](/sign/rsa.html) |
-| 签名类型 | sign_type | 是 | String | RSA2 | 固定为 RSA2 |
+| 签名字符串 | sign | 是 | String | 9f2c1a...（MD5） | 签名算法[点此查看](/sign/index.html) |
+| 签名类型 | sign_type | 是 | String | MD5 | `MD5`（默认）或 `RSA2`（需商户后台开启） |
 
 退款规则：
 
@@ -58,9 +58,9 @@ curl -X POST "{site_url}/api/orders/2609261200000000001234/refund" \
     "refund_amount": "0.50",
     "out_refund_no": "R20260926001",
     "reason": "用户申请",
-    "timestamp": 1696000000,
-    "sign": "Base64编码的RSA2签名",
-    "sign_type": "RSA2"
+    "timestamp": "1696000000",
+    "sign": "9f2c1a...（32位小写）",
+    "sign_type": "MD5"
   }'
 ```
 
@@ -100,13 +100,13 @@ URL地址：`{site_url}/api/refunds/{refund_no}`
 | 商户ID | pid | 是 | Int | 1001 | |
 | 商户退款号 | out_refund_no | 否 | String | R20260926001 | 兜底查询：refund_no 未命中时按它查询 |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝 |
-| 签名字符串 | sign | 是 | String | jKt+H3m...（Base64） | 签名算法[点此查看](/sign/rsa.html) |
-| 签名类型 | sign_type | 是 | String | RSA2 | 固定为 RSA2 |
+| 签名字符串 | sign | 是 | String | 9f2c1a...（MD5） | 签名算法[点此查看](/sign/index.html) |
+| 签名类型 | sign_type | 是 | String | MD5 | `MD5`（默认）或 `RSA2`（需商户后台开启） |
 
 返回字段与申请退款一致（查不到退款单时 `code` 非 0）。示例：
 
 ```bash
-curl "{site_url}/api/refunds/R2609261200000000001001?pid=1001&timestamp=1696000000&sign=...&sign_type=RSA2"
+curl "{site_url}/api/refunds/R2609261200000000001001?pid=1001&timestamp=1696000000&sign=...&sign_type=MD5"
 ```
 
 提示：仅保存了商户退款号（`out_refund_no`）时，可用

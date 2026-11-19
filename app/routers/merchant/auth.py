@@ -20,6 +20,7 @@ from app.core.security import (
 )
 from app.models import Merchant, MerchantLoginLog
 from app.responses import err, suc
+from app.services.apikey import set_api_secret
 from app.services.merchant import generate_merchant_pid
 
 router = APIRouter()
@@ -289,6 +290,7 @@ async def register(body: RegisterRequest, request: Request, session: SessionDep,
             # 注册审核：待审核商户可登录但不可收款
             pay_status=2 if review else 1,
         )
+        set_api_secret(m)  # 开放 API 默认 MD5：注册即生成密钥
         session.add(m)
         try:
             await session.commit()

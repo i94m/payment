@@ -2,8 +2,15 @@ import apiClient from "@/lib/api-client"
 
 export interface ApiKeyData {
   pid: number
-  public_key: string // 商户公钥（未生成为空串）
+  api_secret: string // MD5 签名密钥（默认算法，32 位小写 hex）
+  public_key: string // 商户 RSA 公钥（未配置为空串）
+  rsa2_enable: boolean // RSA2 是否开启（默认关闭）
   platform_public_key: string // 平台公钥（由平台私钥派生，未配置为空串）
+}
+
+export interface SignDebugResult {
+  sign_content: string
+  algorithms: Record<string, { sign?: string; note?: string }>
 }
 
 export interface SettingItem {
@@ -21,7 +28,7 @@ export const accountApi = {
   // ---- 商户端密钥/安全 ----
   apiKey: () => apiClient.get("/account/apikey") as Promise<ApiKeyData>,
 
-  // 保存商户 RSA 公钥（API 调用验签用）；传空即清除公钥
+  // 保存商户 RSA 公钥（RSA2 验签用）；传空即清除公钥
   setPublicKey: (public_key: string) =>
     apiClient.post("/account/publickey", { public_key }) as Promise<{ public_key: string }>,
 
@@ -53,4 +60,16 @@ export const securityApi = {
   // 公私钥均为无头尾单行 base64
   generateRsaPair: () =>
     apiClient.post("/account/rsa/generate") as Promise<{ public_key: string; private_key: string }>,
+
+  // 重置 MD5 签名密钥（旧密钥立即失效）
+  regenerateApiSecret: () =>
+    apiClient.post("/account/apikey/secret") as Promise<{ api_secret: string }>,
+
+  // 开启/关闭 RSA2 签名（开启前需配置公钥）
+  toggleRsa2: (enable: boolean) =>
+    apiClient.post("/account/rsa2", { enable }) as Promise<{ rsa2_enable: boolean }>,
+
+  // 签名自检：回显签名原文 + 已开通算法的期望签名
+  signDebug: (params: Record<string, unknown>) =>
+    apiClient.post("/account/sign-debug", { params }) as Promise<SignDebugResult>,
 }

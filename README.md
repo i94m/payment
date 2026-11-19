@@ -9,7 +9,7 @@
 - **商户开放 API（全新 REST 设计）**：`POST /api/orders`（下单，幂等）、
   `GET /api/orders/{trade_no}`（查单）、`POST /api/orders/{trade_no}/refund`（退款，
   支持多次部分退款）、`GET /api/refunds/{refund_no}`（退款查询）；
-  pid + RSA2 签名认证（签名在 JSON body 参数内），统一 `{code,message,data}` 包络
+  pid + `sign_type` 签名认证（**MD5 默认**，RSA2 可选、商户面板开启；签名在 JSON body / 表单参数内），统一 `{code,message,data}` 包络
 - **收银台**：HTML 页（`/cashier/{不透明令牌}`，Fernet 加密 trade_no，链接不暴露业务号；
   自包含单文件，服务端注入 trade_no）+ 同资源 JSON
   `/cashier/types|pay|status`（页面内部调用，公开 + 限流）
@@ -70,16 +70,18 @@ Docker 全链路：`docker compose -f docker-compose.production.yml up -d`（镜
 初始化后：超管登录 `/admin-api/auth/login`（superadmin / 123456，登录后立即改密）。
 配置流程：插件管理→同步插件 → 支付方式（内置微信/支付宝/QQ钱包/网银/京东/PayPal 六项并带图标，可按需改图标或删除）→
 创建通道（选「易支付」插件填 appurl/appid/appkey；V2 上游选「易支付V2」再填平台公钥/商户私钥，凭证自动加密）→ 创建商户拿到 pid，
-商户面板「安全设置」一键生成 RSA 密钥对后即可调用开放 API。
+商户面板「安全设置」复制 pid 与 MD5 密钥即可调用开放 API（RSA2 为可选，需开启并配置密钥对）。
 
 ## 开放 API 要点
 
-- 认证：`pid + RSA2 签名`（SHA256WithRSA；签名放 JSON body 参数内，`sign/sign_type`
-  与空值不参与拼串、`"0"` 参与签名；`timestamp` 必填且 ±300s 防重放；密钥为
-  RSA-2048/PKCS#8，商户面板可一键生成，公钥单行 base64/PEM 均可）
+- 认证：`pid + sign_type + sign`，`sign_type` 必填（`MD5` 默认 / `RSA2` 需商户面板开启）；
+  签名放 JSON body 或表单参数内，`sign/sign_type` 与空值不参与拼串、`"0"` 参与签名，
+  金额字段统一两位小数；`timestamp` 必填且 ±300s 防重放；
+  MD5 = `md5(拼串 + 商户密钥)` 小写；RSA2 = SHA256WithRSA/RSA-2048，公钥单行 base64/PEM 均可
 - 响应包络：`{"code": 0, "message": "ok", "data": {...}}`；HTTP 状态码语义化（400/401/404）
 - 下单成功 data：`trade_no / pay_type(jump|qrcode|scheme|html) / payurl|qrcode|urlscheme / cashier_url`
-- 商户通知：POST JSON（签名在 body 内，平台私钥 RSA2 签名，商户用平台公钥验签）；
+- 商户通知：POST JSON（签名在 body 内，按订单的 `sign_type` 签名：MD5 单用商户密钥、
+  RSA2 单用平台私钥，body 带 `sign_type` 供商户选择验签函数）；
   `trade_status=TRADE_SUCCESS`；**HTTP 2xx 即送达**；money 固定两位小数（`5.00`），
   验签用收到的原始值拼串
 - 退款：同步模型（上游成功即落库扣余额），可退上限=商户到账金额，`out_refund_no`
@@ -130,7 +132,7 @@ docs/
   index.md                  # 首页
   guide/protocol.md         # 协议规则
   pay/                      # 页面跳转支付 / API接口支付 / 支付结果通知
-  sign/                     # RSA2 签名算法
+  sign/                     # 签名算法（MD5 默认 / RSA2 可选）
   api/                      # 查单 / 退款 / 退款查询
   appendix/                 # 支付方式列表 / 补单机制
 ```

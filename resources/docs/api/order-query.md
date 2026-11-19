@@ -11,10 +11,10 @@ URL地址：`{site_url}/api/orders/{trade_no}`
 | 平台订单号 | trade_no | 是 | String | 2609261200000000001234 | 路径参数 |
 | 商户ID | pid | 是 | Int | 1001 | |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝（防重放） |
-| 签名字符串 | sign | 是 | String | jKt+H3m...（Base64） | 签名算法[点此查看](/sign/rsa.html) |
-| 签名类型 | sign_type | 是 | String | RSA2 | 固定为 RSA2 |
+| 签名字符串 | sign | 是 | String | 9f2c1a...（MD5） | 签名算法[点此查看](/sign/index.html) |
+| 签名类型 | sign_type | 是 | String | MD5 | `MD5`（默认）或 `RSA2`（需商户后台开启） |
 
-签名原文为 `pid + timestamp`（按参数名升序拼串后用商户私钥签名）。
+签名原文为 `pid + timestamp`（按参数名升序拼串；MD5 用商户密钥、RSA2 用商户私钥签名）。
 
 返回结果（json）：
 

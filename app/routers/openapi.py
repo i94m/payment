@@ -1,9 +1,9 @@
 """商户开放 API — 根路径资源风格，统一 {code, message, data} 包络。
 
-认证：pid + RSA2 签名（签名在 JSON body 参数内，支付宝风格）；
-timestamp 必填、±300s 防重放；GET 查单同一组参数放 query。
+认证：pid + sign_type 签名（MD5 默认 / RSA2 需商户面板开启）；
+签名在 JSON body 或表单参数内，timestamp 必填、±300s 防重放；GET 查单同一组参数放 query。
 响应签名不做：请求认证已覆盖请求方向，响应回传在同一 TLS 连接内
-（安全关键通道是 Webhook，已由平台私钥签名）。
+（安全关键通道是 Webhook，按订单算法签名：MD5 用商户密钥、RSA2 用平台私钥）。
 
 端点：
 - POST /api/orders                  创建支付订单
@@ -73,7 +73,7 @@ async def create_payment_order(request: Request, session: SessionDep, cache: Cac
     """创建支付订单。
 
     Body（JSON）：pid, type(alipay/wxpay/...), out_trade_no, notify_url, return_url,
-    name(商品名), money, param(可选), timestamp, sign, sign_type=RSA2
+    name(商品名), money, param(可选), timestamp, sign, sign_type(必填：MD5|RSA2)
 
     成功 data：{trade_no, out_trade_no, pay_type(jump/qrcode/scheme/html),
     payurl|qrcode|urlscheme|html, cashier_url, expires_in}。
@@ -148,7 +148,7 @@ async def create_order_refund(trade_no: str, session: SessionDep, cache: CacheDe
     """发起退款。
 
     Body（JSON）：refund_amount(可选，缺省=剩余可退全额), out_refund_no(可选，幂等键),
-    reason(可选), timestamp, sign, sign_type=RSA2。
+    reason(可选), timestamp, sign, sign_type(必填：MD5|RSA2)。
     同步退款模型：插件返回即终态；上游失败报错不落库零副作用。
     """
     if not setting_enabled(await get_setting(session, "api_refund_enable", True, cache=cache)):

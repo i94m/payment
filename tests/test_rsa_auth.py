@@ -41,7 +41,12 @@ def _gen_keypair() -> tuple[str, str]:
     return priv_b64, pub_flat
 
 
-# ---- verify_api_signature（RSA2 单算法） ----
+# ---- verify_api_signature（RSA2；MD5 见 test_md5_auth.py） ----
+
+def _merchant(pub: str | None, rsa2_enable: bool = True):
+    """verify_api_signature 只读 merchant 的 public_key / rsa2_enable / api_secret。"""
+    return SimpleNamespace(public_key=pub, rsa2_enable=rsa2_enable, api_secret=None)
+
 
 def _signed(pub_params: dict, priv: str) -> dict:
     p = dict(pub_params)
@@ -54,7 +59,7 @@ def _signed(pub_params: dict, priv: str) -> dict:
 def test_valid_signature_passes():
     priv, pub = _gen_keypair()
     params = _signed({"pid": "1001", "type": "alipay"}, priv)
-    verify_api_signature(pub, params)  # 不抛即通过
+    verify_api_signature(_merchant(pub), params)  # 不抛即通过
 
 
 def test_wrong_key_rejected():
@@ -62,7 +67,7 @@ def test_wrong_key_rejected():
     _, other_pub = _gen_keypair()
     params = _signed({"pid": "1001", "type": "alipay"}, priv)
     with pytest.raises(ValueError, match="签名验证失败"):
-        verify_api_signature(other_pub, params)
+        verify_api_signature(_merchant(other_pub), params)
 
 
 def test_missing_timestamp_rejected():
@@ -70,7 +75,7 @@ def test_missing_timestamp_rejected():
     params = {"pid": "1001", "sign_type": "RSA2"}
     params["sign"] = make_rsa_sign(params, priv)
     with pytest.raises(ValueError, match="timestamp"):
-        verify_api_signature(pub, params)
+        verify_api_signature(_merchant(pub), params)
 
 
 def test_stale_timestamp_rejected():
@@ -79,7 +84,7 @@ def test_stale_timestamp_rejected():
     params["timestamp"] = str(int(time.time()) - 1000)
     # 原签名对原 timestamp 有效，改时间戳后验签失败（篡改同源）
     with pytest.raises(ValueError):
-        verify_api_signature(pub, params)
+        verify_api_signature(_merchant(pub), params)
 
 
 def test_stale_timestamp_with_valid_sign_rejected():
@@ -91,7 +96,7 @@ def test_stale_timestamp_with_valid_sign_rejected():
         {k: v for k, v in params.items() if k not in ("sign", "sign_type")}, priv)
     params["sign_type"] = "RSA2"
     with pytest.raises(ValueError, match="时间戳"):
-        verify_api_signature(pub, params)
+        verify_api_signature(_merchant(pub), params)
 
 
 def test_tampered_body_rejected():
@@ -99,20 +104,20 @@ def test_tampered_body_rejected():
     params = _signed({"pid": "1001", "money": "10.00"}, priv)
     params["money"] = "0.01"  # 篡改已签名字段
     with pytest.raises(ValueError):
-        verify_api_signature(pub, params)
+        verify_api_signature(_merchant(pub), params)
 
 
 def test_missing_public_key_rejected():
     priv, _ = _gen_keypair()
     params = _signed({"pid": "1001"}, priv)
     with pytest.raises(ValueError, match="未配置RSA公钥"):
-        verify_api_signature(None, params)
+        verify_api_signature(_merchant(None), params)
 
 
 def test_missing_sign_rejected():
     _, pub = _gen_keypair()
     with pytest.raises(ValueError, match="签名不能为空"):
-        verify_api_signature(pub, {"pid": "1001", "timestamp": str(int(time.time()))})
+        verify_api_signature(_merchant(pub), {"pid": "1001", "sign_type": "RSA2", "timestamp": str(int(time.time()))})
 
 
 # ---- derive_public_key ----

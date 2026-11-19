@@ -29,7 +29,8 @@ from app.services.plugin import PluginRegistry, maybe_await
 from app.services.plugin_interfaces import PaymentContext, PaymentResult
 from app.constants.cache_keys import CacheKeys
 from app.services.settings import get_int_setting
-from app.lib.sign import make_rsa_sign
+from app.lib.sign import make_md5_sign, make_rsa_sign
+from app.services.apikey import get_api_secret
 
 _log = logging.getLogger(__name__)
 
@@ -147,6 +148,10 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
     notify_url = str(params.get("notify_url", "") or "").strip()
     return_url = str(params.get("return_url", "") or "").strip()
     param = str(params.get("param", "") or "").strip()
+    # 本单签名算法：通知/回跳按单签名（内部入口未传时按默认 MD5）
+    sign_type = str(params.get("sign_type") or "").strip().upper()
+    if sign_type not in ("MD5", "RSA2"):
+        sign_type = "MD5"
 
     if not pid:
         raise ValueError("商户ID不能为空")
@@ -261,6 +266,7 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
         notify_url=notify_url[:500] or merchant.default_notify_url,
         return_url=return_url[:500] or merchant.default_return_url,
         param=param[:500],
+        sign_type=sign_type,
         client_ip=str(params.get("client_ip", "") or "")[:45],
         agent_id=agent_id,
         order_type=order_type,
@@ -837,13 +843,15 @@ async def clawback_invite_rebate(
 
 
 # ============================================================
-# 平台 → 商户通知 / 回跳参数（RSA2 签名，平台私钥）
+# 平台 → 商户通知 / 回跳参数（按订单的签名算法：MD5 商户密钥 / RSA2 平台私钥）
 # ============================================================
 
 def build_webhook_payload(order: Order, merchant: Merchant, platform_rsa_key: str = "") -> dict:
-    """构建 Webhook JSON body：业务参数 + timestamp + sign（平台私钥 RSA2 签名）。
+    """构建 Webhook JSON body：业务参数 + timestamp + sign + sign_type。
 
-    商户用平台公钥对 body（去 sign/sign_type）做 get_sign_content 拼串验签。
+    - 订单为 MD5 单（默认）：用商户 api_secret 做 `md5(原文 + 密钥)`，商户用同一把密钥验签
+    - 订单为 RSA2 单：平台私钥签名，商户用平台公钥验签（与原行为一致）
+    签名算法取订单落库的 sign_type，不受商户之后开关状态影响（历史订单照常可验）。
     money 为申报金额固定两位小数（fmt_money）；param 空则省略键。
     """
     data = {
@@ -858,6 +866,14 @@ def build_webhook_payload(order: Order, merchant: Merchant, platform_rsa_key: st
     }
     if order.param:
         data["param"] = order.param
+
+    if (order.sign_type or "MD5").upper() == "MD5":
+        secret = get_api_secret(merchant)
+        if secret:
+            data["sign"] = make_md5_sign(data, secret)
+            data["sign_type"] = "MD5"
+            return data
+        # 商户无密钥（历史数据）时退回 RSA2，避免通知无签名
     if platform_rsa_key:
         data["sign"] = make_rsa_sign(data, platform_rsa_key)
         data["sign_type"] = "RSA2"
@@ -874,7 +890,7 @@ def append_query(url: str, params: dict) -> str:
 
 
 def build_signed_return_url(order: Order, merchant: Merchant, platform_rsa_key: str = "") -> str:
-    """同步回跳地址：return_url + 签名参数（平台私钥 RSA2 签名，商户用平台公钥验签）。"""
+    """同步回跳地址：return_url + 签名参数（算法与异步通知一致，按订单 sign_type）。"""
     if not order.return_url:
         return ""
     return append_query(order.return_url, build_webhook_payload(order, merchant, platform_rsa_key))

@@ -72,6 +72,7 @@ from app.models import (  # noqa: E402
     Setting,
 )
 from app.services.crypto import encrypt_config  # noqa: E402
+from app.services.apikey import set_api_secret  # noqa: E402
 
 
 def _gen_keypair_flat() -> tuple[str, str]:
@@ -102,6 +103,8 @@ PLATFORM_PRIVATE_KEY, PLATFORM_PUBLIC_KEY = _gen_keypair_flat()
 MERCHANT_KEY = MERCHANT_PRIVATE_KEY
 # 上游通道密钥（上游协议 MD5，与商户 API 无关）
 UPSTREAM_KEY = "upstreamkey456"
+# 开放 API MD5 签名密钥（seed 商户；MD5 是默认算法）
+MERCHANT_API_SECRET = "0123456789abcdef0123456789abcdef"
 
 
 def signed_params(params: dict, private_key: str | None = None,
@@ -111,6 +114,18 @@ def signed_params(params: dict, private_key: str | None = None,
     p.setdefault("timestamp", str(int(time.time()) if timestamp is None else timestamp))
     p["sign"] = make_rsa_sign(p, private_key or MERCHANT_PRIVATE_KEY)
     p["sign_type"] = "RSA2"
+    return p
+
+
+def md5_params(params: dict, secret: str | None = None,
+               timestamp: int | str | None = None) -> dict:
+    """开放 API MD5 签名 helper：补 timestamp → 拼串 → md5(原文+密钥)。"""
+    from app.lib.sign import make_md5_sign
+
+    p = dict(params)
+    p.setdefault("timestamp", str(int(time.time()) if timestamp is None else timestamp))
+    p["sign"] = make_md5_sign(p, secret or MERCHANT_API_SECRET)
+    p["sign_type"] = "MD5"
     return p
 
 
@@ -237,8 +252,9 @@ async def seeded(session):
 
     m = Merchant(
         pid=1001, username="testmch", password=hash_password("test123456"),
-        public_key=MERCHANT_PUBLIC_KEY, status=1,
+        public_key=MERCHANT_PUBLIC_KEY, status=1, rsa2_enable=True,
     )
+    set_api_secret(m, MERCHANT_API_SECRET)
     session.add(m)
     # 平台 RSA 私钥（webhook/回跳签名）
     session.add(Setting(key="platform_rsa_private_key", value=PLATFORM_PRIVATE_KEY))

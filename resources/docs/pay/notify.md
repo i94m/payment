@@ -19,13 +19,14 @@
 | 支付状态 | trade_status | 是 | String | TRADE_SUCCESS | 只有TRADE_SUCCESS是成功 |
 | 业务扩展参数 | param | 否 | String | | 下单时传入原样返回，未传时无该字段 |
 | 时间戳 | timestamp | 是 | String | 1696000000 | Unix秒 |
-| 签名字符串 | sign | 是 | String | Base64 | 平台私钥 RSA2 签名，用**平台公钥**验签 |
-| 签名类型 | sign_type | 是 | String | RSA2 | 固定为 RSA2 |
+| 签名字符串 | sign | 是 | String | 9f2c1a... | MD5 订单用**商户密钥**签名；RSA2 订单用平台私钥签名，商户用**平台公钥**验签 |
+| 签名类型 | sign_type | 是 | String | MD5 | 与下单时的 `sign_type` 一致：`MD5`（默认）/ `RSA2` |
 
 商户侧处理约定：
 
-- 收到通知后，先按 [RSA2签名算法](/sign/rsa.html#验签代码示例平台公钥) 用平台公钥验签
-  （对 body 内参数去掉 `sign`、`sign_type` 后拼串验签），再校验订单金额与状态，自行完成业务入账；
+- 收到通知后，按 [签名算法](/sign/index.html) 验签：body 内参数去掉 `sign`、`sign_type` 后拼串，
+  `sign_type=MD5` 时用商户密钥算 `md5(原文 + 密钥)` 比对，`sign_type=RSA2` 时用平台公钥验签；
+  验签通过后再校验订单金额与状态，自行完成业务入账；
 - **处理成功返回任意 HTTP 2xx 状态码**（200~299）即视为送达；
 - 返回非 2xx（或超时/连接失败）的通知视为失败，平台将按
   **1 / 2 / 5 / 10 / 30 / 60 / 120 分钟** 的阶梯间隔重试，默认最多尝试 6 次（次数由平台配置）；
@@ -54,8 +55,8 @@ OK
   "trade_status": "TRADE_SUCCESS",
   "param": "test_param",
   "timestamp": "1696000000",
-  "sign": "Base64编码的RSA2签名",
-  "sign_type": "RSA2"
+  "sign": "9f2c1a...（32位小写）",
+  "sign_type": "MD5"
 }
 ```
 
@@ -65,19 +66,32 @@ OK
 <?php
 // Webhook 为 POST JSON body
 $body = json_decode(file_get_contents('php://input'), true);
-$platformPublicKey = '平台公钥（商户后台查看）';
+$merchantSecret = '你的MD5密钥（商户后台查看）';
+$platformPublicKey = '平台公钥（商户后台查看，RSA2 订单才需要）';
 
-ksort($body);
-$parts = [];
-foreach ($body as $k => $v) {
-    if ($k === 'sign' || $k === 'sign_type' || $v === '' || $v === null) continue;
-    $parts[] = $k . '=' . $v;
+function getSignContent(array $params): string {
+    ksort($params);
+    $parts = [];
+    foreach ($params as $k => $v) {
+        if ($k === 'sign' || $k === 'sign_type' || $v === '' || $v === null) continue;
+        if (($k === 'money' || $k === 'refund_amount') && is_numeric($v)) {
+            $v = number_format((float)$v, 2, '.', '');
+        }
+        $parts[] = $k . '=' . $v;
+    }
+    return implode('&', $parts);
 }
-$pem = "-----BEGIN PUBLIC KEY-----\n"
-     . chunk_split($platformPublicKey, 64, "\n")
-     . "-----END PUBLIC KEY-----";
-$ok = openssl_verify(implode('&', $parts), base64_decode($body['sign']),
-                     $pem, OPENSSL_ALGO_SHA256) === 1;
+
+$content = getSignContent($body);
+if ($body['sign_type'] === 'MD5') {
+    $ok = md5($content . $merchantSecret) === strtolower($body['sign']);
+} else {
+    $pem = "-----BEGIN PUBLIC KEY-----\n"
+         . chunk_split($platformPublicKey, 64, "\n")
+         . "-----END PUBLIC KEY-----";
+    $ok = openssl_verify($content, base64_decode($body['sign']),
+                         $pem, OPENSSL_ALGO_SHA256) === 1;
+}
 
 if ($ok && $body['trade_status'] === 'TRADE_SUCCESS') {
     // 验签通过：校验金额、入账 …… 处理成功返回 2xx
@@ -88,4 +102,4 @@ if ($ok && $body['trade_status'] === 'TRADE_SUCCESS') {
 }
 ```
 
-其它语言（Python/Node.js）验签函数见 [RSA2签名算法 - 验签代码示例](/sign/rsa.html#验签代码示例平台公钥)。
+其它语言（Python/Java/Node.js）的 MD5 签名与 RSA2 验签函数见 [签名算法](/sign/index.html)。

@@ -6,6 +6,9 @@ export interface MerchantData {
   pid: number
   username: string
   public_key: string
+  api_secret_masked: string    // MD5 签名密钥（掩码，如 abcd****wxyz）
+  has_api_secret: boolean
+  rsa2_enable: boolean         // RSA2 是否对商户开放（默认关闭）
   balance: string
   frozen_balance: string
   status: number
@@ -98,9 +101,13 @@ export const merchantsApi = {
   remove: (id: number) =>
     apiClient.delete(`/merchant/${id}`) as Promise<null>,
 
-  /** 生成 RSA 密钥对（公钥落库，私钥仅返回一次；开放 API 仅 RSA2 签名） */
+  /** 生成 RSA 密钥对（公钥落库，私钥仅返回一次；RSA2 签名需商户开启） */
   generateRsaKey: (id: number) =>
     apiClient.post(`/merchant/${id}/rsakey`) as Promise<{ public_key: string; private_key: string }>,
+
+  /** 重置商户 MD5 签名密钥（旧密钥立即失效） */
+  resetApiSecret: (id: number) =>
+    apiClient.post(`/merchant/${id}/apisecret`) as Promise<{ api_secret: string }>,
 
   /** 平台RSA公钥（由 platform_rsa_private_key 派生，商户用于验证平台通知签名） */
   platformKey: () =>
@@ -109,8 +116,8 @@ export const merchantsApi = {
   adjustBalance: (id: number, data: { amount: string; remark?: string }) =>
     apiClient.post(`/merchant/${id}/balance`, data) as Promise<{ balance: string; record_id: number }>,
 
-  /** setUser 式状态切换：type ∈ user/pay/settle/fixed */
-  setStatus: (id: number, type: "user" | "pay" | "settle" | "fixed", status: number) =>
+  /** setUser 式状态切换：type ∈ user/pay/settle/fixed/rsa2 */
+  setStatus: (id: number, type: "user" | "pay" | "settle" | "fixed" | "rsa2", status: number) =>
     apiClient.post(`/merchant/${id}/status`, { type, status }) as Promise<null>,
 
   /** 随机金额（min==max 固定金额；random_integer=仅整数金额） */

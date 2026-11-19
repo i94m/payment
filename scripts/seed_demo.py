@@ -16,6 +16,7 @@ from sqlmodel import select
 from app.core.database import session_maker
 from app.core.security import hash_password
 from app.models import Channel, Merchant, PaymentType
+from app.services.apikey import get_api_secret, set_api_secret
 from app.services.crypto import encrypt_config
 
 from _demo_key import DEMO_MERCHANT_PUBLIC_KEY
@@ -35,17 +36,31 @@ async def main():
             m = Merchant(
                 pid=1001, username="demo", password=hash_password("demo123456"),
                 status=1, rate=None, public_key=DEMO_MERCHANT_PUBLIC_KEY,
+                # 演示脚本/文档示例用 RSA2：demo 商户开启 RSA2；MD5 密钥创建即生成
+                rsa2_enable=True,
             )
+            set_api_secret(m)
             session.add(m)
             await session.commit()
             await session.refresh(m)
             print("[商户] 已创建 pid=1001 demo/demo123456（演示密钥对见 scripts/_demo_key.py）")
         else:
+            if not get_api_secret(m):
+                set_api_secret(m)
+                session.add(m)
+                await session.commit()
+                print("[商户] 已补配 MD5 签名密钥")
             if not m.public_key:
                 m.public_key = DEMO_MERCHANT_PUBLIC_KEY
                 session.add(m)
                 await session.commit()
                 print("[商户] 已补配演示公钥（原 public_key 为空）")
+            if not m.rsa2_enable:
+                # 演示脚本/e2e 用 RSA2 签名，demo 商户需开启（生产商户按需在面板开启）
+                m.rsa2_enable = True
+                session.add(m)
+                await session.commit()
+                print("[商户] 已开启演示商户 RSA2 签名")
             print(f"[商户] 已存在 pid={m.pid} username={m.username}")
 
         # 支付方式

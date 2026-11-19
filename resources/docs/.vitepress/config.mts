@@ -24,7 +24,7 @@ export default defineConfig({
     nav: [
       { text: "首页", link: "/" },
       { text: "API列表", link: "/pay/api.html" },
-      { text: "签名算法", link: "/sign/rsa.html" },
+      { text: "签名算法", link: "/sign/index.html" },
     ],
 
     sidebar: [
@@ -32,7 +32,7 @@ export default defineConfig({
         text: "开始接入",
         items: [
           { text: "协议规则", link: "/guide/protocol.html" },
-          { text: "RSA2签名算法", link: "/sign/rsa.html" },
+          { text: "签名算法", link: "/sign/index.html" },
         ],
       },
       {

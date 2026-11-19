@@ -1,11 +1,13 @@
-"""下游开放 API 认证依赖（pid + RSA2 签名）。
+"""下游开放 API 认证依赖（pid + sign_type 签名，MD5 默认 / RSA2 可选）。
 
-请求形态：POST/PUT 一律 JSON body（签名在 body 参数内）；GET 用 query 参数。
+请求形态：POST/PUT 接受 JSON body 或 application/x-www-form-urlencoded 表单
+（PHP `http_build_query` 原生表单可直接对接，值天然是字符串）；GET 用 query 参数。
 """
 import json
 import logging
 from dataclasses import dataclass
 from typing import Annotated, Any
+from urllib.parse import parse_qsl
 
 from fastapi import Depends, HTTPException, Request
 from sqlmodel import select
@@ -16,18 +18,28 @@ from app.models import Merchant
 
 _log = logging.getLogger(__name__)
 
+# POST body 允许的两种编码（带参数时浏览器/HTTP 客户端都会显式声明）
+_FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
+
 
 @dataclass
 class ApiAuthResult:
     merchant: Merchant
     params: dict
+    sign_type: str = "MD5"
 
 
 async def _extract_params(request: Request) -> dict[str, Any]:
-    """POST/PUT 取 JSON body（request.body 只能读一次，先取原始字节再解析）；
-    GET 取 query 参数。"""
+    """POST/PUT 取 JSON body（request.body 只能读一次，先取原始字节再解析），
+    同时接受表单提交；GET 取 query 参数。"""
     if request.method in ("POST", "PUT"):
         raw = await request.body()
+        content_type = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if content_type == _FORM_CONTENT_TYPE:
+            form = dict(parse_qsl(raw.decode("utf-8", errors="replace"), keep_blank_values=True))
+            if not form:
+                raise HTTPException(status_code=400, detail={"code": -4, "message": "未传入任何参数"})
+            return form
         try:
             body = json.loads(raw or b"")
         except Exception:
@@ -41,7 +53,7 @@ async def _extract_params(request: Request) -> dict[str, Any]:
 
 async def get_api_user(request: Request, session: SessionDep,
                        cache: CacheDep = None) -> ApiAuthResult:
-    """pid + RSA2 签名认证。失败抛 HTTPException(400, {"code": -x, "message": ...})。"""
+    """pid + 签名认证。失败抛 HTTPException(400, {"code": -x, "message": ...})。"""
     params = await _extract_params(request)
 
     pid = params.get("pid", "")
@@ -61,7 +73,7 @@ async def get_api_user(request: Request, session: SessionDep,
                             detail={"code": -1, "message": "商户不存在或已停用"})
 
     try:
-        verify_api_signature(merchant.public_key, params)
+        sign_type = verify_api_signature(merchant, params)
     except ValueError as e:
         raise HTTPException(status_code=400, detail={"code": -3, "message": str(e)})
 
@@ -79,7 +91,7 @@ async def get_api_user(request: Request, session: SessionDep,
         raise HTTPException(status_code=400,
                             detail={"code": -1, "message": "API支付接口未开放"})
 
-    return ApiAuthResult(merchant=merchant, params=params)
+    return ApiAuthResult(merchant=merchant, params=params, sign_type=sign_type)
 
 
 # 依赖别名

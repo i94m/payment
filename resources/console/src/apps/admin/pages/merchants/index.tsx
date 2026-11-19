@@ -159,6 +159,9 @@ export function MerchantsPage() {
   // RSA 密钥对生成（私钥仅显示一次）
   const [rsagenTarget, setRsagenTarget] = React.useState<MerchantData | null>(null)
   const [rsaResult, setRsaResult] = React.useState<{ username: string; public_key: string; private_key: string } | null>(null)
+  // 重置 MD5 签名密钥（新密钥展示一次，便于交付给商户）
+  const [secretResetTarget, setSecretResetTarget] = React.useState<MerchantData | null>(null)
+  const [secretResult, setSecretResult] = React.useState<{ username: string; api_secret: string } | null>(null)
   // 平台RSA公钥（全局配置，由 platform_rsa_private_key 派生）
   const [platformKey, setPlatformKey] = React.useState("")
   const [advanceOpen, setAdvanceOpen] = React.useState(false)
@@ -579,6 +582,17 @@ export function MerchantsPage() {
     }
   }
 
+  const submitSecretReset = async () => {
+    if (!secretResetTarget) return
+    const res = await merchantsApi.resetApiSecret(secretResetTarget.id)
+    setDetailData((d) => (d && d.id === secretResetTarget.id
+      ? { ...d, api_secret_masked: `${res.api_secret.slice(0, 4)}****${res.api_secret.slice(-4)}`, has_api_secret: true }
+      : d))
+    setSecretResult({ username: secretResetTarget.username, api_secret: res.api_secret })
+    setSecretResetTarget(null)
+    refresh()
+  }
+
   const submitRsaGen = async () => {
     if (!rsagenTarget) return
     // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
@@ -794,6 +808,37 @@ export function MerchantsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setBalanceTarget(null)}>{"取消"}</Button>
             <Button onClick={submitBalance} disabled={!balanceAmount.trim()}>{"确定"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 重置 MD5 签名密钥 */}
+      <ConfirmDialog
+        open={!!secretResetTarget}
+        onOpenChange={(open) => { if (!open) setSecretResetTarget(null) }}
+        title={"重置MD5签名密钥"}
+        description={"重置后旧密钥立即失效，商户所有 MD5 签名的接入需同步更换，确定继续？"}
+        variant="danger"
+        cancelLabel={"取消"}
+        confirmLabel={"确定重置"}
+        onConfirm={submitSecretReset}
+      />
+
+      {/* 新 MD5 密钥（展示一次，便于转交商户） */}
+      <Dialog open={!!secretResult} onOpenChange={(open) => !open && setSecretResult(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{"MD5 签名密钥已重置"} - {secretResult?.username}</DialogTitle>
+            <DialogDescription>
+              {"商户可在「安全设置」中查看同一密钥；如为线下交付，请通过安全渠道发送并提示其立即核对。"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2">
+            <Input readOnly value={secretResult?.api_secret || ""} className="min-w-0 flex-1 font-mono text-xs" />
+            <CopyButton value={secretResult?.api_secret || ""} />
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setSecretResult(null)}>{"关闭"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1076,6 +1121,32 @@ export function MerchantsPage() {
             <p className="text-sm text-muted-foreground">{"暂无数据"}</p>
           ) : (
             <div className="space-y-4">
+              {/* MD5 签名密钥（开放 API 默认算法） */}
+              <div className="grid gap-1.5">
+                <div className="flex items-center justify-between">
+                  <Label>{"MD5 签名密钥（默认）"}</Label>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={detailData.rsa2_enable ? "default" : "secondary"}>
+                      {detailData.rsa2_enable ? "RSA2 已开启" : "RSA2 未开启"}
+                    </Badge>
+                    {hasPermission("merchant.resetkey") && (
+                      <Button size="sm" variant="outline" onClick={() => setSecretResetTarget(detailData)}>
+                        <IconRefresh className="size-4" />
+                        {"重置"}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {detailData.has_api_secret ? (
+                  <Input readOnly value={detailData.api_secret_masked} className="font-mono text-xs" />
+                ) : (
+                  <p className="text-xs text-muted-foreground">{"未生成"}</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {"商户面板「安全设置」可查看明文；重置后旧密钥立即失效，需同步通知商户。"}
+                </p>
+              </div>
+
               {/* 平台公钥（商户用于验证平台通知签名） */}
               <div className="grid gap-1.5">
                 <Label>{"平台公钥"}</Label>

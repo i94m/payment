@@ -1,7 +1,19 @@
-"""签名工具 — RSA2（SHA256WithRSA / PKCS1v15）单算法"""
+"""签名工具 — MD5（默认）与 RSA2（SHA256WithRSA / PKCS1v15）双算法。
+
+两种算法共用同一份签名原文（get_sign_content）：参数类型先经 canon_params 归一，
+服务端验签与文档示例口径一致，避免 `pid=1001` 与 `pid="1001"`、`money=1` 与
+`money=1.00` 拼出不同原文导致对接排障。
+"""
 import base64
+import hashlib
+import hmac
+from decimal import Decimal, InvalidOperation
+
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
+
+# 金额类参数：签名原文统一两位小数（客户端按字符串传、文档示例一律带引号）
+_MONEY_FIELDS = ("money", "refund_amount")
 
 
 def _is_empty(v) -> bool:
@@ -16,15 +28,35 @@ def _is_empty(v) -> bool:
     return False
 
 
-def get_sign_content(data: dict) -> str:
-    """构建签名原文：按 key 排序，排除 sign/sign_type、空值、数组/字典"""
-    keys = sorted(
-        k for k in data
+def _canon_value(key: str, value) -> str:
+    """单个参数值的规范化字符串（签名原文用）。
+
+    - 标量统一 str()：JSON 数字 1001 与字符串 "1001" 拼串一致
+    - money / refund_amount 统一两位小数：1 / "1" / 1.0 / "1.0" 均为 "1.00"
+    """
+    if key in _MONEY_FIELDS:
+        try:
+            return f"{Decimal(str(value)).quantize(Decimal('0.01')):f}"
+        except (InvalidOperation, ValueError, TypeError):
+            pass
+    return str(value)
+
+
+def canon_params(data: dict) -> dict:
+    """签名参数规范化：排除 sign/sign_type、空值与数组/字典，标量转字符串。"""
+    return {
+        k: _canon_value(k, data[k])
+        for k in data
         if k not in ("sign", "sign_type")
         and not _is_empty(data[k])
         and not isinstance(data[k], (list, dict))
-    )
-    return "&".join(f"{k}={data[k]}" for k in keys)
+    }
+
+
+def get_sign_content(data: dict) -> str:
+    """构建签名原文：按 key 排序，排除 sign/sign_type、空值、数组/字典"""
+    canon = canon_params(data)
+    return "&".join(f"{k}={canon[k]}" for k in sorted(canon))
 
 
 def base64_to_pem(data: str, key_type: str = "PUBLIC KEY") -> str:
@@ -125,3 +157,17 @@ def verify_rsa_sign(data: dict, public_key_b64: str, sign: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def make_md5_sign(data: dict, secret: str) -> str:
+    """MD5 签名：md5(签名原文 + 密钥) → 32 位小写 hex（易支付口径，密钥做后缀）。"""
+    raw = get_sign_content(data) + (secret or "")
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()
+
+
+def verify_md5_sign(data: dict, secret: str, sign: str) -> bool:
+    """MD5 验签（常量时间比较；大小写不敏感）。"""
+    if not secret or not sign:
+        return False
+    expect = make_md5_sign(data, secret)
+    return hmac.compare_digest(expect, str(sign).strip().lower())
