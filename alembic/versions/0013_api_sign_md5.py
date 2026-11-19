@@ -1,7 +1,7 @@
 """开放 API 签名：MD5 默认 + RSA2 可选
 
-Revision ID: 0012
-Revises: 0011
+Revision ID: 0013
+Revises: 0012
 Create Date: 2026-11-19 15:10:00.000000
 
 - `merchants.api_secret`：MD5 签名密钥（32 位小写 hex，Fernet 密文），创建商户即生成
@@ -16,8 +16,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = '0012'
-down_revision: Union[str, None] = '0011'
+revision: str = '0013'
+down_revision: Union[str, None] = '0012'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -294,7 +294,8 @@ async def test_deduct_counter_per_merchant_exact(client, seeded, session, engine
     """
     a = await _get_merchant(session)
     b = Merchant(pid=2103, username="deduct-b", password="x", status=1,
-                 balance=dmoney("0"), public_key=MERCHANT_PUBLIC_KEY)
+                 balance=dmoney("0"), public_key=MERCHANT_PUBLIC_KEY,
+                 rsa2_enable=True)
     session.add(b)
     await session.commit()
     await session.refresh(b)
