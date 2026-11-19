@@ -1269,7 +1269,7 @@ export function MerchantsPage() {
         <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{"批量扣量"}</DialogTitle>
-            <DialogDescription>{"作用于全部商户；开启时必须填写频次，否则开了也永不扣"}</DialogDescription>
+            <DialogDescription>{"作用于所有未锁定的商户；开启时必须填写频次，否则开了也永不扣"}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -1306,7 +1306,7 @@ export function MerchantsPage() {
             </div>
             <Alert variant="warning" className="px-3 py-2.5">
               <AlertDescription className="mt-0 text-xs">
-                {"开启：全部商户同时开启并下发该频次与起扣金额（留空按不限金额）；关闭：只写开关位，频次与金额原样保留，可用于紧急停止。每个商户按自己的合格单独立计数，互不影响。"}
+                {"此操作将应用于所有未锁定的商户，锁定的商户不受影响"}
               </AlertDescription>
             </Alert>
           </div>
