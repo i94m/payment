@@ -627,7 +627,7 @@ class AdminMessage(SQLModel, table=True):
 class Counter(SQLModel, table=True):
     """平台计数器（行级 FOR UPDATE 保证原子）。
 
-    目前用于扣量轮询计数（key='deduct_order'）。
+    目前用于扣量轮询计数（key='deduct_order:{merchant_id}'，按商户独立计数）。
     """
     __tablename__ = "counters"
     __table_args__ = _MYSQL_ARGS

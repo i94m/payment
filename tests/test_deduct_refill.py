@@ -2,9 +2,9 @@
 
 与 test_merchant_p3 的基础扣量用例互补，这里覆盖：
 - 商户级配置（merchants.deduct_*，全局 key 已下架）：频次轮询节律、起扣金额边界、
-  商户开关隔离、批量/单商户后台入口
+  商户开关隔离、批量/单商户后台入口；计数按商户独立（A 配 5 与 B 配 8 互不影响）
 - 低于起扣金额不消耗计数；恰好等于起扣金额要扣（>= 边界）
-- Redis INCR 路径 vs DB Counter 回退路径
+- Redis INCR 路径 vs DB Counter 回退路径（两者都按 merchant_id 分行）
 - 充值单不扣量；扣量单重复回调幂等
 - 邀请返佣在扣量时扣发、回补时补发
 - admin 手动补单：待支付直接记账 + 幂等（重复补单不重复入账）+ 过期单受控回补（P0-4）
@@ -14,11 +14,13 @@
 import pytest
 from sqlmodel import select
 
-from app.models import Merchant, MerchantRecord, NotifyLog, Order
+from app.constants.cache_keys import CacheKeys
+from app.models import Counter, Merchant, MerchantRecord, NotifyLog, Order
 from app.services.balance import dmoney
 from app.services.order import _hit_deduct, undo_deduct
 from app.services.settings import set_settings
-from tests.conftest import UPSTREAM_KEY, signed_params, upstream_state
+from tests.conftest import (MERCHANT_PUBLIC_KEY, UPSTREAM_KEY, signed_params,
+                            upstream_state)
 from tests.test_pay_flow import _sign_epay  # noqa: F401
 
 
@@ -26,9 +28,10 @@ async def _get_merchant(session) -> Merchant:
     return (await session.exec(select(Merchant).where(Merchant.pid == 1001))).one()
 
 
-async def _create_order(client, session, out_trade_no: str, money: str = "100.00") -> Order:
+async def _create_order(client, session, out_trade_no: str, money: str = "100.00",
+                        pid: str = "1001") -> Order:
     params = {
-        "pid": "1001", "type": "alipay", "out_trade_no": out_trade_no,
+        "pid": pid, "type": "alipay", "out_trade_no": out_trade_no,
         "notify_url": "https://merchant.example/notify",
         "return_url": "https://merchant.example/return",
         "name": "扣量补单测试", "money": money,
@@ -188,7 +191,7 @@ class _DeductOrder:
 
 @pytest.mark.asyncio
 async def test_deduct_config_is_per_merchant(client, seeded, session, engine):
-    """A 开、B 关：B 的单既不扣也不推动全平台计数；开了但频次 0 永不扣。"""
+    """A 开、B 关：B 的单既不扣也不推进任何计数（计数按商户分行）；开了但频次 0 永不扣。"""
     a = await _get_merchant(session)
     b = Merchant(pid=2103, username="deduct-off", password="x", status=1, balance=dmoney("0"))
     session.add(b)
@@ -201,9 +204,50 @@ async def test_deduct_config_is_per_merchant(client, seeded, session, engine):
     assert await _hit_deduct(session, _DeductOrder(b.id), cache=None) is False  # B 仍不计数
     assert await _hit_deduct(session, _DeductOrder(a.id), cache=None) is True   # A 计数 2 命中
 
+    # 计数行按商户分开：只有 A 自己那一行，B 关着不会凭空建行
+    await session.commit()
+    counters = await _rows(engine, Counter)
+    assert [c.key for c in counters] == [f"deduct_order:{a.id}"]
+
     # 开关开但频次 0：登录/防御口径为「永不扣」（后台已在保存时拦截这种配置）
     await _enable_deduct(session, 0, merchant=a)
     assert await _hit_deduct(session, _DeductOrder(a.id), cache=None) is False
+
+
+@pytest.mark.asyncio
+async def test_deduct_counter_per_merchant_exact(client, seeded, session, engine):
+    """验收口径：A 每 5 笔扣 1、B 每 8 笔扣 1，各 40 笔合格单交替下单。
+
+    每商户一根独立刻度 → A 恰好扣 8 笔、B 恰好扣 5 笔（不是「期望接近」）。
+    """
+    a = await _get_merchant(session)
+    b = Merchant(pid=2103, username="deduct-b", password="x", status=1,
+                 balance=dmoney("0"), public_key=MERCHANT_PUBLIC_KEY)
+    session.add(b)
+    await session.commit()
+    await session.refresh(b)
+    await _enable_deduct(session, 5, merchant=a)
+    await _enable_deduct(session, 8, merchant=b)
+
+    trades = {"a": [], "b": []}
+    for i in range(1, 41):
+        for tag, pid in (("a", "1001"), ("b", "2103")):
+            o = await _create_order(client, session, f"PM-{tag.upper()}-{i}", pid=pid)
+            trades[tag].append(o.trade_no)
+            await _pay_via_callback(client, o)
+
+    # 逐单读回最新状态，统计命中数
+    flags = {}
+    for tag in ("a", "b"):
+        flags[tag] = []
+        for t in trades[tag]:
+            flags[tag].append(bool((await _refetch(engine, t)).is_deducted))
+
+    assert flags["a"].count(True) == 8   # 40 // 5
+    assert flags["b"].count(True) == 5   # 40 // 8
+    # 每根刻度各自循环：第 N、2N … 笔命中，间距固定
+    assert flags["a"] == [i % 5 == 4 for i in range(40)]
+    assert flags["b"] == [i % 8 == 7 for i in range(40)]
 
 
 @pytest.mark.asyncio
@@ -382,31 +426,37 @@ async def test_deducted_duplicate_callback_idempotent(client, seeded, session, e
 # ============================================================
 
 class _FakeRedisCache:
-    """仅实现 incr 的假缓存：走 _hit_deduct 的 Redis 原子计数分支。"""
+    """仅实现 incr 的假缓存：走 _hit_deduct 的 Redis 原子计数分支，并记录每根 key 的值。"""
 
     def __init__(self):
-        self.n = 0
+        self.counts: dict[str, int] = {}
 
     async def incr(self, key: str) -> int:
-        self.n += 1
-        return self.n
+        self.counts[key] = self.counts.get(key, 0) + 1
+        return self.counts[key]
 
 
 @pytest.mark.asyncio
-async def test_deduct_counter_redis_and_db_paths(client, seeded, session):
-    """Redis 路径 n%freq==0 命中；cache=None 回退走 counters 行（命中后清零）。"""
-    await _enable_deduct(session, 2)
+async def test_deduct_counter_redis_and_db_paths(client, seeded, session, engine):
+    """Redis 路径 n%freq==0 命中，key 带 merchant_id；cache=None 回退 counters 行
+    （key 同样带 merchant_id，命中后清零重新累计）。"""
+    m = await _enable_deduct(session, 2)
     o = await _create_order(client, session, "CNT-1")
 
     fake = _FakeRedisCache()
     assert await _hit_deduct(session, o, cache=fake) is False   # n=1
     assert await _hit_deduct(session, o, cache=fake) is True    # n=2
     assert await _hit_deduct(session, o, cache=fake) is False   # n=3
+    # Redis key 按商户隔离，不再有全平台共用刻度
+    assert fake.counts == {CacheKeys.DEDUCT_ORDER_COUNTER.format(merchant_id=m.id): 3}
 
     db_cache = None  # 无缓存（测试环境）：走 counters 行锁路径
     assert await _hit_deduct(session, o, cache=db_cache) is False  # counter=1
     assert await _hit_deduct(session, o, cache=db_cache) is True   # counter=2 命中并清零
     assert await _hit_deduct(session, o, cache=db_cache) is False  # counter=1（重新累计）
+    await session.commit()
+    rows = await _rows(engine, Counter)
+    assert [c.key for c in rows] == [f"deduct_order:{m.id}"]
 
 
 # ============================================================
