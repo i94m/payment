@@ -5,11 +5,11 @@
 """
 from datetime import datetime
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 from sqlmodel import col, select
 
-from app.core.deps import CacheDep, SessionDep
+from app.core.deps import CacheDep, SessionDep, require_agent_enabled
 from app.core.security import AgentUser, issue_token, revoke_token, single_session_default, verify_password
 from app.lib.linktoken import paypage_url
 from app.models import Agent, Merchant
@@ -29,6 +29,15 @@ class LoginRequest(BaseModel):
 class SsoLoginRequest(BaseModel):
     """商户 SSO 代登录：凭 merchant-api/agent/{id}/sso 下发的一次性 token 换取正式 JWT。"""
     token: str
+
+
+async def _agent_feature_enabled(session, cache) -> bool:
+    """站点级下级代理总开关（agent_enable）—— 关闭后代理端不得签发新会话。"""
+    from app.services.settings import get_setting, setting_enabled
+    return setting_enabled(await get_setting(session, "agent_enable", True, cache=cache))
+
+
+_AGENT_CLOSED_MSG = "下级代理功能已关闭，请联系您的上级商户"
 
 
 async def _issue_login(session, cache, request: Request, agent: Agent, name: str = "",
@@ -62,6 +71,9 @@ async def _issue_login(session, cache, request: Request, agent: Agent, name: str
 @router.post("/login")
 async def login(body: LoginRequest, request: Request, session: SessionDep, cache: CacheDep):
     from app.lib.captcha import verify_captcha_code
+    # 功能总开关优先于验证码/密码：关闭后连会话都不签发
+    if not await _agent_feature_enabled(session, cache):
+        return err(-1, _AGENT_CLOSED_MSG)
     captcha_err = await verify_captcha_code(cache, body.captcha_key, body.captcha_code)
     if captcha_err:
         return err(-1, captcha_err)
@@ -86,6 +98,9 @@ async def login(body: LoginRequest, request: Request, session: SessionDep, cache
 
 @router.post("/sso")
 async def sso_login(body: SsoLoginRequest, request: Request, session: SessionDep, cache: CacheDep):
+    # 商户代登录同样受总开关约束（商户端 SSO 接口本身也已被 agent_enable 门控）
+    if not await _agent_feature_enabled(session, cache):
+        return err(-1, _AGENT_CLOSED_MSG)
     token = (body.token or "").strip()
     if not token:
         return err(-1, "登录凭证无效")
@@ -125,7 +140,7 @@ async def logout(auth: AgentUser, session: SessionDep, cache: CacheDep):
     return suc("success")
 
 
-@router.get("/profile")
+@router.get("/profile", dependencies=[Depends(require_agent_enabled)])
 async def profile(auth: AgentUser, session: SessionDep):
     a = auth.user
     m = await session.get(Merchant, a.merchant_id)

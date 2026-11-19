@@ -116,7 +116,9 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
         SettingSpec("api_order_rate_limit", SettingType.INT, 60, SettingGroup.ORDER,
                     "开放API下单限流（次/分钟/来源IP，0=不限）"),
         # ---- 商户端菜单显隐 ----
-        SettingSpec("agent_enable", SettingType.BOOL, True, SettingGroup.SITE, "下级代理开关（商户端「下级代理」菜单整组）"),
+        SettingSpec("agent_enable", SettingType.BOOL, True, SettingGroup.SITE, "下级代理开关",
+                    description="关闭后商户端「下级代理」菜单整组隐藏，代理端不可登录、"
+                                "商户/代理相关接口一律拒绝（历史订单归属与业绩数据保留）"),
         SettingSpec("announce_enable", SettingType.BOOL, True, SettingGroup.SITE, "商户公告开关",
                     description="关闭后商户端用户中心不展示公告，管理端也不提供发布入口；仅可在数据库/接口修改"),
         SettingSpec("site_qq_group", SettingType.STRING, "", SettingGroup.SITE, "产品QQ群链接（商户端菜单外链，留空隐藏）"),
@@ -124,13 +126,14 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
     ]
 }
 
-# 站点配置页可见 key 白名单：站点名称 + 首页趋势图开关 + 扣量 + 结算组（自动结算 / D+1 除外）。
+# 站点配置页可见 key 白名单：站点名称 + 首页趋势图开关 + 下级代理开关 + 扣量 + 结算组
+# （自动结算 / D+1 除外）。
 # 注册开关、api_pay_enable / landing_enable / api_order_rate_limit、过期单回补窗口
 # （late_pay_backfill_hours，固定用默认 24h）等不在页面上暴露——仍由注册表提供默认值、
 # 运行期生效，需要时直接写库；不在页面展示是因为这些口径不需要运维日常调整。
 ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable", "settle_d1_enable"}
 ADMIN_SETTING_KEYS: set[str] = (
-    {"site_name", "dashboard_trend_enable"}
+    {"site_name", "dashboard_trend_enable", "agent_enable"}
     | {k for k in SETTINGS_REGISTRY if k.startswith("deduct_")}
     | {k for k, spec in SETTINGS_REGISTRY.items() if spec.group is SettingGroup.SETTLE}
 ) - ADMIN_SETTING_HIDDEN_KEYS
