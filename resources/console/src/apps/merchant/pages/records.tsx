@@ -14,7 +14,6 @@ const BIZ_TYPE_LABELS: Record<string, string> = {
   settle: "结算",
   settle_reject: "结算驳回",
   refund: "退款",
-  deduct: "扣量",
   agent: "代理分润",
   adjust: "人工调账",
   recharge: "充值",

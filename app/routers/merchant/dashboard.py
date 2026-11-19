@@ -1,6 +1,7 @@
 """商户端概览：今日/昨日/累计 + 近 7 日趋势 + 成功率 + 公告（merchant_id 隔离）。
 
-统计口径：已支付收款单（status=1 且 order_type=0），充值单不计入收入。
+统计口径：已支付收款单（status=1 且 order_type=0 且 is_deducted=0），充值单与扣量单不计入。
+扣量单在商户侧一律显示为未支付，若计入会与订单列表「已支付」汇总对不上账。
 """
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -17,7 +18,7 @@ from app.services.settings import get_setting, setting_enabled
 
 router = APIRouter()
 
-_PAID = (Order.status == 1, Order.order_type == 0)
+_PAID = (Order.status == 1, Order.order_type == 0, col(Order.is_deducted) == False)  # noqa: E712
 
 
 @router.get("")

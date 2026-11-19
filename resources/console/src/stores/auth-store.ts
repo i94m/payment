@@ -64,8 +64,21 @@ function persistTokenAndExpiry(token: string, expiresIn: number) {
 }
 
 export const useAuthStore = create<AuthState>((set, get) => {
-  const initialToken = getStoredToken()
-  const { user: initialUser, permissions: initialPermissions } = getStoredState()
+  let initialToken = getStoredToken()
+  const initialExpiresAt = getStoredExpiresAt()
+  let stored = getStoredState()
+
+  // 本地记录的有效期已过：直接按未登录启动并清掉旧会话。
+  // 否则会拿旧 token 先渲染后台框架、等接口 401 才弹回登录页，同样是「闪一下」。
+  if (initialToken && initialExpiresAt > 0 && initialExpiresAt <= Date.now()) {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(STATE_KEY)
+    localStorage.removeItem(EXPIRES_KEY)
+    initialToken = ""
+    stored = { user: null, permissions: [] }
+  }
+
+  const { user: initialUser, permissions: initialPermissions } = stored
 
   // 登录的公共收尾：持久化 token、置认证位、拉取 profile；
   // profile 失败则清空会话并抛出，交由调用方处理。

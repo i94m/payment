@@ -3,7 +3,7 @@ import { useEffect } from "react"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import { AppLayout } from "@/components/layout/app-layout"
-import { ProtectedRoute } from "@/components/auth/protected-route"
+import { ProtectedRoute, RequireAuth } from "@/components/auth/protected-route"
 import { useAuthStore } from "@/stores/auth-store"
 import { useSiteStore } from "@/stores/site-store"
 import { APP_MODULE } from "@/lib/config"
@@ -74,7 +74,14 @@ function AppRoutes({ routes }: { routes: PermissionRouteObject[] }) {
     // 商户自助注册：公开路由，仅商户端挂载（admin 端落到 404）
     { path: "register", element: APP_MODULE === "merchant" ? <RegisterPage /> : <Error404 /> },
     {
-      element: <LayoutShell><Outlet /></LayoutShell>,
+      // 登录守卫放在布局外层：未登录时后台框架(侧栏/顶栏/内容区)完全不挂载，
+      // 不会先闪一帧后台页面再跳登录页；布局内的 ProtectedRoute 继续负责权限校验。
+      // 上面的 login / sso-login / register 是公开路由，不经过这层守卫。
+      element: (
+        <RequireAuth>
+          <LayoutShell><Outlet /></LayoutShell>
+        </RequireAuth>
+      ),
       children: wrappedRoutes,
     },
   ])

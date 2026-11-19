@@ -58,6 +58,16 @@ async def _refunds_of(session, trade_no) -> list[Refund]:
     return (await session.exec(select(Refund).where(Refund.trade_no == trade_no))).all()
 
 
+async def _enable_deduct(session, frequency: int = 1, enable: bool = True) -> Merchant:
+    """商户级扣量配置（全局 deduct_* key 已下架）。"""
+    m = (await session.exec(select(Merchant))).first()
+    m.deduct_enable = enable
+    m.deduct_frequency = frequency
+    session.add(m)
+    await session.commit()
+    return m
+
+
 async def _merchant_balance(session) -> dmoney:
     m = (await session.exec(select(Merchant).where(Merchant.pid == 1001))).one()
     return dmoney(m.balance)
@@ -165,7 +175,7 @@ async def test_unpaid_order_rejected(client, seeded, session):
 @pytest.mark.asyncio
 async def test_deducted_order_rejected(client, seeded, session):
     """扣量单拒退（对外"未支付"口径不变）。"""
-    await set_settings(session, {"deduct_enable": True, "deduct_frequency": 1})
+    await _enable_deduct(session, 1)
 
     params = {
         "pid": "1001", "type": "alipay", "out_trade_no": "RF-DED",
@@ -191,7 +201,7 @@ async def test_deducted_order_rejected(client, seeded, session):
     assert body["code"] != 0
     assert "未支付" in body["message"]
 
-    await set_settings(session, {"deduct_enable": False, "deduct_frequency": 0})
+    await _enable_deduct(session, 0, enable=False)
 
 
 @pytest.mark.asyncio
