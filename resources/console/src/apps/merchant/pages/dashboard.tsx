@@ -177,9 +177,9 @@ export function DashboardPage() {
           </Card>
         </div>
 
-        {/* Trend Chart（与管理端首页同一张卡片 + 同一开关：settings dashboard_trend_enable 关闭时整块不渲染；
-            标题 + 说明 + 右上角汇总，图表高度共用 TrendChart） */}
-        {overview?.trend_enable !== false && (
+        {/* Trend Chart（与管理端首页同一张卡片 + 同一开关：默认隐藏，settings dashboard_trend_enable 开启后才渲染，
+            避免首屏先展示再消失；标题 + 说明 + 右上角汇总，图表高度共用 TrendChart） */}
+        {overview?.trend_enable === true && (
         <div className="px-4 lg:px-6">
           <Card>
             <CardHeader>

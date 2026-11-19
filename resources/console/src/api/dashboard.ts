@@ -21,7 +21,7 @@ export interface AdminOverview {
   today: { count: number; money: number; profit: number }
   total: { count: number; money: number; merchant_count: number }
   trend: TrendPoint[]
-  /** 首页是否展示「近 7 日收款趋势」卡片（settings: dashboard_trend_enable，默认展示） */
+  /** 首页「近 7 日收款趋势」卡片是否展示（settings: dashboard_trend_enable，默认隐藏，开启后展示） */
   trend_enable?: boolean
   count1: number
   count2: number
@@ -76,7 +76,7 @@ export interface MerchantOverview {
   success_rate: number | null
   rate: string
   trend: TrendPoint[]
-  /** 首页是否展示「近 7 日收款趋势」卡片（settings: dashboard_trend_enable，默认展示；与 admin 端共用） */
+  /** 首页「近 7 日收款趋势」卡片是否展示（settings: dashboard_trend_enable，默认隐藏，开启后展示；与 admin 端共用） */
   trend_enable?: boolean
   announcements: { id: number; content: string; created_at: string }[]
 }
