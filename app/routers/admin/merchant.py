@@ -3,6 +3,7 @@
 - CRUD / 启停 / 删除 / 重置密钥 / 余额调整（必写流水）/ 流水查询
 - 支付/结算独立开关（pay: 0=关 1=开 2=待审核；settle: 0/1）
 - 随机金额（单个/批量，min==max 固定金额；可开启「仅整数金额」）与限制拉单（同 IP 每分钟建单上限）
+- 扣量（商户级三字段：开关 / 频次 / 起扣金额；单个 + 批量开关，批量开必须带频次）
 - 配置锁定（fixed）：免受批量随机金额影响
 - 精细搜索（按字段）+ 状态筛选 + 排序 + 高级搜索（N 天无订单）+ Excel 导出
 - SSO 一键登录商户后台（一次性 token，60 秒有效）
@@ -98,6 +99,9 @@ def _dump_merchant(m: Merchant) -> dict:
         "random_max": str(m.random_max),
         "random_integer": bool(m.random_integer),
         "random_ratelimit": m.random_ratelimit,
+        "deduct_enable": bool(m.deduct_enable),
+        "deduct_frequency": m.deduct_frequency,
+        "deduct_minmoney": str(m.deduct_minmoney),
         "fixed": bool(m.fixed),
         "settle_type": m.settle_type,     # 1支付宝 2微信 3QQ 4银行卡
         "settle_account": m.settle_account or "",
@@ -202,6 +206,8 @@ async def merchant_export(session: SessionDep, request: Request):
             "balance": str(m.balance),
             "frozen_balance": str(m.frozen_balance),
             "rate": str(m.rate) if m.rate is not None else "",
+            "deduct": ("关" if not m.deduct_enable
+                       else f"{m.deduct_frequency}笔" + (f"/满{m.deduct_minmoney}" if m.deduct_minmoney > 0 else "")),
             "email": m.email or "",
             "phone": m.phone or "",
             "qq": m.qq or "",
@@ -216,7 +222,7 @@ async def merchant_export(session: SessionDep, request: Request):
         })
     return export_xlsx(
         rows, f"merchants_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx",
-        columns=["pid", "username", "balance", "frozen_balance", "rate",
+        columns=["pid", "username", "balance", "frozen_balance", "rate", "deduct",
                  "email", "phone", "qq", "url", "settle_account", "settle_name",
                  "status", "pay_status", "settle_status",
                  "created_at", "last_login_at"],
@@ -322,6 +328,10 @@ class UpdateMerchantRequest(BaseModel):
     random_min: str = ""
     random_max: str = ""
     random_ratelimit: Optional[int] = None
+    # 扣量（商户级唯一配置源；无继承语义）
+    deduct_enable: Optional[bool] = None
+    deduct_frequency: Optional[int] = None
+    deduct_minmoney: str = ""
     fixed: Optional[bool] = None
 
 
@@ -336,6 +346,7 @@ async def update_merchant(merchant_id: int, body: UpdateMerchantRequest, session
         new_rate = dmoney(body.rate) if body.rate != "" else None
         new_random_min = dmoney(body.random_min) if body.random_min != "" else None
         new_random_max = dmoney(body.random_max) if body.random_max != "" else None
+        new_deduct_minmoney = dmoney(body.deduct_minmoney) if body.deduct_minmoney != "" else None
     except Exception:
         return err(-1, "金额格式错误")
     password_changed = bool(body.password)
@@ -385,6 +396,22 @@ async def update_merchant(merchant_id: int, body: UpdateMerchantRequest, session
         m.random_max = new_random_max
     if body.random_ratelimit is not None:
         m.random_ratelimit = max(int(body.random_ratelimit), 0)
+    if body.deduct_frequency is not None and body.deduct_frequency < 0:
+        return err(-1, "扣量频次不能为负数")
+    if new_deduct_minmoney is not None and new_deduct_minmoney < 0:
+        return err(-1, "起扣金额不能为负数")
+    # 先算落地值再赋值：开启扣量但频次为 0 = 「开着却永不扣」，运营会误以为生效，保存时直接拦下
+    next_enable = m.deduct_enable if body.deduct_enable is None else body.deduct_enable
+    next_frequency = m.deduct_frequency if body.deduct_frequency is None else int(body.deduct_frequency)
+    touched_deduct = body.deduct_enable is not None or body.deduct_frequency is not None
+    if touched_deduct and next_enable and int(next_frequency or 0) <= 0:
+        return err(-1, "开启扣量必须填写频次（每 N 笔扣 1）")
+    if body.deduct_frequency is not None:
+        m.deduct_frequency = int(body.deduct_frequency)
+    if new_deduct_minmoney is not None:
+        m.deduct_minmoney = new_deduct_minmoney
+    if body.deduct_enable is not None:
+        m.deduct_enable = body.deduct_enable
     if body.fixed is not None:
         m.fixed = body.fixed
     session.add(m)
@@ -668,6 +695,100 @@ async def set_merchant_ratelimit(merchant_id: int, body: SetRatelimitRequest, se
     session.add(m)
     await session.commit()
     return suc("success")
+
+
+# ============================================================
+# 扣量（商户级唯一配置源；没有全局参数，急停 = 批量设 0）
+# ============================================================
+
+class SetDeductRequest(BaseModel):
+    deduct_enable: bool
+    deduct_frequency: Optional[int] = None   # 每 N 笔扣 1，开启时必填；不传 = 保留原值
+    deduct_minmoney: Optional[str] = None    # 起扣金额；不传 = 保留原值，传 0/空 = 不限金额
+
+
+def _apply_deduct(m: Merchant, body: SetDeductRequest) -> str | None:
+    # 未传金额 = 不动（只改开关不该清掉起扣金额）；显式传 0/空 = 不限金额
+    min_money: Decimal | None = None
+    if body.deduct_minmoney is not None:
+        try:
+            min_money = dmoney(body.deduct_minmoney) if body.deduct_minmoney else Decimal("0")
+        except Exception:
+            return "金额格式错误"
+        if min_money < 0:
+            return "起扣金额不能为负数"
+    frequency = None if body.deduct_frequency is None else int(body.deduct_frequency)
+    if frequency is not None and frequency < 0:
+        return "扣量频次不能为负数"
+    # 停用不清配置：不传频次时保留原值，恢复时不用凭记忆重配
+    effective = frequency if frequency is not None else int(m.deduct_frequency or 0)
+    if body.deduct_enable and effective <= 0:
+        # 开着却 frequency=0 会「永不扣」，运营以为生效，必须拦下
+        return "开启扣量必须填写频次（每 N 笔扣 1）"
+    m.deduct_enable = body.deduct_enable
+    if frequency is not None:
+        m.deduct_frequency = frequency
+    if min_money is not None:
+        m.deduct_minmoney = min_money
+    return None
+
+
+@router.post("/{merchant_id}/deduct", dependencies=[Depends(PermissionChecker("merchant.update"))])
+async def set_merchant_deduct(merchant_id: int, body: SetDeductRequest, session: SessionDep):
+    """单商户扣量配置：开关 + 频次 + 起扣金额（起扣按 order.money，单笔 >= 才扣）。"""
+    m = await _get_merchant_or_404(session, merchant_id)
+    if not m:
+        return err(404, "商户不存在")
+    error = _apply_deduct(m, body)
+    if error:
+        return err(-1, error)
+    session.add(m)
+    await session.commit()
+    return suc("success")
+
+
+class SetAllDeductRequest(BaseModel):
+    """批量扣量：开启时同时下发频次与起扣金额（金额留空 = 0，不限金额）。
+
+    关闭不传任何数值：只写开关位，两个配置项原样保留，恢复时不用凭记忆重配。
+    """
+    deduct_enable: bool
+    deduct_frequency: Optional[int] = None
+    deduct_minmoney: Optional[str] = None
+
+
+@router.post("/deduct/set-all", dependencies=[Depends(PermissionChecker("merchant.update"))])
+async def set_all_merchant_deduct(body: SetAllDeductRequest, session: SessionDep):
+    """批量扣量开关：作用于所有未锁定商户，配置锁定的商户不受影响。
+
+    急停（批量关）也不再覆盖锁定商户，锁定的要先去单商户解锁再单独处理。
+    关：只写开关位，频次与起扣金额原样保留，恢复时不用凭记忆重配。
+    开：频次 + 起扣金额一起下发（金额留空按 0 处理，与单商户表单一致）。
+    """
+    frequency = int(body.deduct_frequency or 0)
+    if frequency < 0:
+        return err(-1, "扣量频次不能为负数")
+    if body.deduct_enable and frequency <= 0:
+        return err(-1, "开启扣量必须填写频次（每 N 笔扣 1）")
+    min_money = Decimal("0")
+    if body.deduct_enable:
+        try:
+            min_money = dmoney(body.deduct_minmoney) if body.deduct_minmoney else Decimal("0")
+        except Exception:
+            return err(-1, "金额格式错误")
+        if min_money < 0:
+            return err(-1, "起扣金额不能为负数")
+    merchants = (await session.exec(
+        select(Merchant).where(col(Merchant.fixed) == False)  # noqa: E712
+    )).all()
+    for m in merchants:
+        m.deduct_enable = body.deduct_enable
+        if body.deduct_enable:
+            m.deduct_frequency = frequency
+            m.deduct_minmoney = min_money
+        session.add(m)
+    await session.commit()
+    return suc(f"已应用到 {len(merchants)} 个商户")
 
 
 # ============================================================

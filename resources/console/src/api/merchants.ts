@@ -27,6 +27,9 @@ export interface MerchantData {
   random_max: string
   random_integer: boolean     // 仅整数金额（关闭时支持两位小数）
   random_ratelimit: number
+  deduct_enable: boolean        // 扣量开关（商户级唯一配置源）
+  deduct_frequency: number      // 每 N 笔扣 1
+  deduct_minmoney: string       // 起扣金额（单笔 ≥ 该值才扣，0=不限）
   fixed: boolean
   settle_type: number           // 1=支付宝 2=微信 3=QQ 4=银行卡
   settle_account: string
@@ -131,6 +134,14 @@ export const merchantsApi = {
   /** 限制拉单：同一付款人 IP 每分钟建单上限，0=不限 */
   setRatelimit: (id: number, data: { random_ratelimit: number }) =>
     apiClient.post(`/merchant/${id}/ratelimit`, data) as Promise<null>,
+
+  /** 扣量（商户级）：开关 + 频次 + 起扣金额；开启时频次必填 */
+  setDeduct: (id: number, data: { deduct_enable: boolean; deduct_frequency?: number; deduct_minmoney?: string }) =>
+    apiClient.post(`/merchant/${id}/deduct`, data) as Promise<null>,
+
+  /** 批量扣量：开启时下发频次与起扣金额（金额留空 = 不限）；关闭只写开关位 */
+  setAllDeduct: (data: { deduct_enable: boolean; deduct_frequency?: number; deduct_minmoney?: string }) =>
+    apiClient.post("/merchant/deduct/set-all", data) as Promise<string>,
 
   /** SSO 一键登录商户后台，返回一次性落地 URL */
   sso: (id: number) =>

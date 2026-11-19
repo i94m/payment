@@ -225,6 +225,11 @@ class Merchant(SQLModel, table=True):
     # 仅整数金额：关闭时随机金额支持两位小数
     random_integer: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     random_ratelimit: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))  # 同IP每分钟建单上限 0=不限
+    # 扣量（仅商户级，无全局参数；急停 = 批量把商户设 0）
+    deduct_enable: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))  # 唯一开关
+    deduct_frequency: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))  # 每 N 笔扣 1，0=不扣（防御值，停用请用开关）
+    # 起扣金额：单笔买家实付金额（order.realmoney，NULL 时回退 order.money）≥ 该值才参与扣量，0=不限金额
+    deduct_minmoney: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
     # 固定保护：不受批量随机金额影响
     fixed: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     last_login_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime))
@@ -630,7 +635,7 @@ class AdminMessage(SQLModel, table=True):
 class Counter(SQLModel, table=True):
     """平台计数器（行级 FOR UPDATE 保证原子）。
 
-    目前用于扣量轮询计数（key='deduct_order'）。
+    目前用于扣量轮询计数（key='deduct_order:{merchant_id}'，按商户独立计数）。
     """
     __tablename__ = "counters"
     __table_args__ = _MYSQL_ARGS

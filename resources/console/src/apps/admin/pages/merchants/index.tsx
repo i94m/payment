@@ -32,13 +32,14 @@ import { z } from "zod"
 import {
   IconSearch, IconRefresh, IconPlus, IconEdit,
   IconKey, IconHistory, IconDownload,
-  IconDice, IconAdjustments,
+  IconDice, IconAdjustments, IconPercentage,
   IconTrash, IconLockPassword,
   IconList, IconReceipt,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 import { downloadBlob } from "@/lib/export"
+import { EXPORT_ENABLED } from "@/lib/flags"
 import { toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { CopyButton } from "@/components/ui/copy-button"
@@ -172,6 +173,16 @@ export function MerchantsPage() {
   const [batchRandomMin, setBatchRandomMin] = React.useState("")
   const [batchRandomMax, setBatchRandomMax] = React.useState("")
 
+  // ---- 扣量（商户级；没有全局参数，急停 = 批量设 0）----
+  const [deductTarget, setDeductTarget] = React.useState<MerchantData | null>(null)
+  const [deductEnable, setDeductEnable] = React.useState("0")
+  const [deductFrequency, setDeductFrequency] = React.useState("")
+  const [deductMinmoney, setDeductMinmoney] = React.useState("")
+  const [batchDeductOpen, setBatchDeductOpen] = React.useState(false)
+  const [batchDeductEnable, setBatchDeductEnable] = React.useState("1")
+  const [batchDeductFrequency, setBatchDeductFrequency] = React.useState("")
+  const [batchDeductMinmoney, setBatchDeductMinmoney] = React.useState("")
+
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
     if (keyword2.trim()) params.keyword = keyword2.trim()
@@ -218,6 +229,14 @@ export function MerchantsPage() {
   const openRatelimitDialog = (item: MerchantData) => {
     setRatelimitTarget(item)
     setRatelimitValue(item.random_ratelimit > 0 ? String(item.random_ratelimit) : "")
+  }
+
+  const openDeductDialog = (item: MerchantData) => {
+    setDeductTarget(item)
+    setDeductEnable(item.deduct_enable ? "1" : "0")
+    setDeductFrequency(item.deduct_frequency > 0 ? String(item.deduct_frequency) : "")
+    // 数据库存 Numeric(12,2)，回显去掉 .00 尾零（5.00 → 5）
+    setDeductMinmoney(Number(item.deduct_minmoney) > 0 ? String(Number(item.deduct_minmoney)) : "")
   }
 
   const openSettleDialog = (item: MerchantData) => {
@@ -297,6 +316,19 @@ export function MerchantsPage() {
         cell: ({ row }) => {
           const m = row.original
           const prefix = m.settle_type === 2 ? "WX:" : m.settle_type === 3 ? "QQ:" : ""
+          // 未设置时用小按钮占位，比灰色文字更容易发现可点击
+          if (!m.settle_account) {
+            return (
+              <Button
+                variant="outline"
+                size="xs"
+                title={"点击设置结算账号/姓名"}
+                onClick={() => openSettleDialog(m)}
+              >
+                {"设置账号"}
+              </Button>
+            )
+          }
           return (
             <button
               type="button"
@@ -305,14 +337,10 @@ export function MerchantsPage() {
               onClick={() => openSettleDialog(m)}
             >
               <span className="flex min-w-0 flex-col">
-                {m.settle_account ? (
-                  <span className="truncate">
-                    {prefix && <span className="text-emerald-600">{prefix}</span>}
-                    {m.settle_account}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">未设置</span>
-                )}
+                <span className="truncate">
+                  {prefix && <span className="text-emerald-600">{prefix}</span>}
+                  {m.settle_account}
+                </span>
                 <span className="truncate text-muted-foreground">{m.settle_name || ""}</span>
               </span>
               <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
@@ -328,22 +356,70 @@ export function MerchantsPage() {
         header: () => "随机金额",
         cell: ({ row }) => {
           const m = row.original
+          if (!m.random_enable) {
+            return (
+              <Button
+                variant="outline"
+                size="xs"
+                title={"点击设置随机金额"}
+                onClick={() => openRandomDialog(m)}
+              >
+                {"设置随机金额"}
+              </Button>
+            )
+          }
           // 整数展示；最小=最大时只显示一个数（如 5.00 ~ 5.00 → 5）
-          const label = m.random_enable
-            ? (Number(m.random_min) === Number(m.random_max)
-              ? String(Number(m.random_min))
-              : `${Number(m.random_min)} ~ ${Number(m.random_max)}`)
-            : "未开启"
+          const label = Number(m.random_min) === Number(m.random_max)
+            ? String(Number(m.random_min))
+            : `${Number(m.random_min)} ~ ${Number(m.random_max)}`
           return (
             <button
               type="button"
               title={"点击设置随机金额"}
-              className={`inline-flex items-center gap-1 text-sm hover:underline ${m.random_enable ? "font-bold tabular-nums text-blue-600" : "text-muted-foreground"}`}
+              className="inline-flex items-center gap-1 text-sm font-bold tabular-nums text-blue-600 hover:underline"
               onClick={() => openRandomDialog(m)}
             >
               {label}
               {m.random_integer && (
                 <Badge variant="secondary" className="h-4 px-1 text-[10px]">{"整数"}</Badge>
+              )}
+              <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
+            </button>
+          )
+        },
+        meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
+      },
+      {
+        // 扣量（点击弹出设置）：商户级开关 + 每 N 笔扣 1 + 起扣金额
+        accessorKey: "deduct_enable",
+        enableSorting: false,
+        header: () => "扣量",
+        cell: ({ row }) => {
+          const m = row.original
+          if (!m.deduct_enable) {
+            return (
+              <Button
+                variant="outline"
+                size="xs"
+                title={"点击设置扣量（商户级：开关 + 每 N 笔扣 1 + 起扣金额）"}
+                onClick={() => openDeductDialog(m)}
+              >
+                {"设置扣量"}
+              </Button>
+            )
+          }
+          return (
+            <button
+              type="button"
+              title={"点击设置扣量（商户级：开关 + 每 N 笔扣 1 + 起扣金额）"}
+              className="inline-flex items-center gap-1 text-sm font-bold tabular-nums text-blue-600 hover:underline"
+              onClick={() => openDeductDialog(m)}
+            >
+              {`每 ${m.deduct_frequency} 笔`}
+              {Number(m.deduct_minmoney) > 0 && (
+                <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                  {`满${Number(m.deduct_minmoney)}`}
+                </Badge>
               )}
               <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
             </button>
@@ -358,19 +434,31 @@ export function MerchantsPage() {
         header: () => "限流",
         cell: ({ row }) => {
           const m = row.original
+          if (!(m.random_ratelimit > 0)) {
+            return (
+              <Button
+                variant="outline"
+                size="xs"
+                title={"点击设置建单限流（同一付款 IP 每分钟建单上限，0=不限）"}
+                onClick={() => openRatelimitDialog(m)}
+              >
+                {"设置限流"}
+              </Button>
+            )
+          }
           return (
             <button
               type="button"
               title={"点击设置建单限流（同一付款 IP 每分钟建单上限，0=不限）"}
-              className={`inline-flex items-center gap-1 text-sm hover:underline ${m.random_ratelimit > 0 ? "font-bold tabular-nums text-blue-600" : "text-muted-foreground"}`}
+              className="inline-flex items-center gap-1 text-sm font-bold tabular-nums text-blue-600 hover:underline"
               onClick={() => openRatelimitDialog(m)}
             >
-              {m.random_ratelimit > 0 ? m.random_ratelimit : "不限"}
+              {m.random_ratelimit}
               <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
             </button>
           )
         },
-        meta: { headClassName: "w-[80px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "min-w-[90px] text-center", cellClassName: "text-center" },
       },
       {
         // 用户状态：正常 / 禁用（开关实时切换）
@@ -558,6 +646,62 @@ export function MerchantsPage() {
     }
   }
 
+  const submitDeduct = async () => {
+    if (!deductTarget) return
+    const freq = Number(deductFrequency)
+    if (deductEnable === "1" && (!Number.isInteger(freq) || freq <= 0)) {
+      toast.error("开启扣量必须填写频次（每 N 笔扣 1）"); return
+    }
+    const minmoney = Number(deductMinmoney || 0)
+    if (!Number.isFinite(minmoney) || minmoney < 0) {
+      toast.error("起扣金额不能为负数"); return
+    }
+    if (Math.abs(minmoney * 100 - Math.round(minmoney * 100)) > 1e-6) {
+      toast.error("起扣金额最多两位小数"); return
+    }
+    try {
+      await merchantsApi.setDeduct(deductTarget.id, {
+        deduct_enable: deductEnable === "1",
+        // 关闭时也带上频次：停用不销毁配置，恢复时不用重填
+        ...(Number.isInteger(freq) && freq > 0 ? { deduct_frequency: freq } : {}),
+        deduct_minmoney: String(minmoney),
+      })
+      toast.success("扣量设置已保存")
+      setDeductTarget(null)
+      refresh()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "操作失败"))
+    }
+  }
+
+  const submitBatchDeduct = async () => {
+    const freq = Number(batchDeductFrequency)
+    if (batchDeductEnable === "1" && (!Number.isInteger(freq) || freq <= 0)) {
+      toast.error("开启扣量必须填写频次（每 N 笔扣 1）"); return
+    }
+    const minmoney = Number(batchDeductMinmoney || 0)
+    if (!Number.isFinite(minmoney) || minmoney < 0) {
+      toast.error("起扣金额不能为负数"); return
+    }
+    if (Math.abs(minmoney * 100 - Math.round(minmoney * 100)) > 1e-6) {
+      toast.error("起扣金额最多两位小数"); return
+    }
+    try {
+      const msg = await merchantsApi.setAllDeduct({
+        deduct_enable: batchDeductEnable === "1",
+        // 关闭只写开关位：频次与金额都不下发，原样保留
+        ...(batchDeductEnable === "1"
+          ? { deduct_frequency: freq, deduct_minmoney: String(minmoney) }
+          : {}),
+      })
+      toast.success(String(msg || "批量设置完成"))
+      setBatchDeductOpen(false)
+      refresh()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "操作失败"))
+    }
+  }
+
   const submitSso = async (m: MerchantData) => {
     try {
       const res = await merchantsApi.sso(m.id)
@@ -664,7 +808,7 @@ export function MerchantsPage() {
                 <IconAdjustments className="size-4" />
                 {"高级搜索"}
               </Button>
-              {hasPermission("merchant.export") && (
+              {EXPORT_ENABLED && hasPermission("merchant.export") && (
                 <Button variant="outline" size="sm" onClick={handleExport}>
                   <IconDownload className="size-4" />
                   {"导出 Excel"}
@@ -685,6 +829,19 @@ export function MerchantsPage() {
               >
                 <IconDice className="size-4" />
                 {"批量随机金额"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setBatchDeductEnable("1")
+                  setBatchDeductFrequency("")
+                  setBatchDeductMinmoney("")
+                  setBatchDeductOpen(true)
+                }}
+              >
+                <IconPercentage className="size-4" />
+                {"批量扣量"}
               </Button>
               <Button size="sm" onClick={() => { setEditingId(null); setFormOpen(true) }}>
                 <IconPlus className="size-4" />
@@ -966,6 +1123,59 @@ export function MerchantsPage() {
         </DialogContent>
       </Dialog>
 
+      {/* 扣量（单个）：商户级开关 + 每 N 笔扣 1 + 起扣金额 */}
+      <Dialog open={!!deductTarget} onOpenChange={(open) => !open && setDeductTarget(null)}>
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>{"扣量"} - {deductTarget?.username}</DialogTitle>
+            <DialogDescription>
+              {"开启后按成功单计数轮询抽单：命中单标为已支付，但不入账、不返佣、不通知，商户与代理侧一律显示未支付"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="deduct-enable"
+                checked={deductEnable === "1"}
+                onCheckedChange={(v) => setDeductEnable(v ? "1" : "0")}
+              />
+              <Label htmlFor="deduct-enable" className="cursor-pointer">{"扣量"}</Label>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-2">
+                <Label htmlFor="deduct-frequency">{"频次（每 N 笔扣 1）"}</Label>
+                <Input
+                  id="deduct-frequency"
+                  type="number" min={1} step={1}
+                  value={deductFrequency}
+                  onChange={(e) => setDeductFrequency(e.target.value)}
+                  placeholder={"如 10"}
+                  disabled={deductEnable !== "1"}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="deduct-minmoney">{"起扣金额（元）"}</Label>
+                <Input
+                  id="deduct-minmoney"
+                  type="number" min={0} step={0.01}
+                  value={deductMinmoney}
+                  onChange={(e) => setDeductMinmoney(e.target.value)}
+                  placeholder={"0 = 不限金额"}
+                  disabled={deductEnable !== "1"}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {"单笔订单金额 ≥ 起扣金额才参与扣量（恰好等于也扣）；0 = 不限。比较的是买家实际支付金额。每 N 笔按本商户自己的合格单独立计数，与其他商户互不影响。"}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeductTarget(null)}>{"取消"}</Button>
+            <Button onClick={submitDeduct}>{"确定"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* 限流（单个） */}
       <Dialog open={!!ratelimitTarget} onOpenChange={(open) => !open && setRatelimitTarget(null)}>
         <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
@@ -1096,6 +1306,59 @@ export function MerchantsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setBatchRandomOpen(false)}>{"取消"}</Button>
             <Button onClick={submitBatchRandom}>{"确定"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 批量扣量 */}
+      <Dialog open={batchDeductOpen} onOpenChange={setBatchDeductOpen}>
+        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>{"批量扣量"}</DialogTitle>
+            <DialogDescription>{"作用于所有未锁定的商户；开启时必须填写频次，否则开了也永不扣"}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                id="batch-deduct-enable"
+                checked={batchDeductEnable === "1"}
+                onCheckedChange={(v) => setBatchDeductEnable(v ? "1" : "0")}
+              />
+              <Label htmlFor="batch-deduct-enable" className="cursor-pointer">{"扣量"}</Label>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-2">
+                <Label htmlFor="batch-deduct-frequency">{"频次（每 N 笔扣 1）"}</Label>
+                <Input
+                  id="batch-deduct-frequency"
+                  type="number" min={1} step={1}
+                  value={batchDeductFrequency}
+                  onChange={(e) => setBatchDeductFrequency(e.target.value)}
+                  placeholder={"如 10"}
+                  disabled={batchDeductEnable !== "1"}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="batch-deduct-minmoney">{"起扣金额（元）"}</Label>
+                <Input
+                  id="batch-deduct-minmoney"
+                  type="number" min={0} step={0.01}
+                  value={batchDeductMinmoney}
+                  onChange={(e) => setBatchDeductMinmoney(e.target.value)}
+                  placeholder={"留空 = 不限金额"}
+                  disabled={batchDeductEnable !== "1"}
+                />
+              </div>
+            </div>
+            <Alert variant="warning" className="px-3 py-2.5">
+              <AlertDescription className="mt-0 text-xs">
+                {"此操作将应用于所有未锁定的商户，锁定的商户不受影响"}
+              </AlertDescription>
+            </Alert>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBatchDeductOpen(false)}>{"取消"}</Button>
+            <Button onClick={submitBatchDeduct}>{"确定"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

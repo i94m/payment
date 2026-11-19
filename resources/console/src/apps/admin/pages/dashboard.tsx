@@ -692,9 +692,9 @@ export function DashboardPage() {
             </Card>
           </div>
 
-          {/* 收款趋势（settings: dashboard_trend_enable 控制显隐，默认展示）+ 今日统计 */}
+          {/* 收款趋势（settings: dashboard_trend_enable 控制显隐，默认隐藏，开启后才展示）+ 今日统计 */}
           <div className="grid grid-cols-1 gap-4 px-4 lg:px-6">
-            {overview?.trend_enable !== false && (
+            {overview?.trend_enable === true && (
             <Card className="@container/card">
               <CardHeader>
                 <CardTitle>{"近 7 日收款趋势"}</CardTitle>

@@ -21,6 +21,16 @@ async def _get_merchant(session) -> Merchant:
     return (await session.exec(select(Merchant).where(Merchant.pid == 1001))).one()
 
 
+async def _enable_deduct(session, frequency: int = 0, enable: bool = True) -> Merchant:
+    """商户级扣量配置（全局 deduct_* key 已下架）。"""
+    m = await _get_merchant(session)
+    m.deduct_enable = enable
+    m.deduct_frequency = frequency
+    session.add(m)
+    await session.commit()
+    return m
+
+
 async def _mch_headers(session) -> dict:
     m = await _get_merchant(session)
     from app.core.security import issue_token
@@ -289,7 +299,7 @@ async def test_deduct_disabled_by_default(client, seeded, session):
 
 @pytest.mark.asyncio
 async def test_deduct_hit_masks_and_undo(client, seeded, session):
-    await set_settings(session, {"deduct_enable": True, "deduct_frequency": 2})
+    await _enable_deduct(session, 2)
 
     m = await _get_merchant(session)
     m.balance = dmoney("0")
@@ -346,7 +356,13 @@ async def test_deduct_hit_masks_and_undo(client, seeded, session):
     assert o2.notify_status == 1  # 已排队补发
     assert m.balance == dmoney("196")
 
-    await set_settings(session, {"deduct_enable": False, "deduct_frequency": 0})
+    # 补单流水备注必须中性：该 remark 经 merchant-api/record/list 原样下发给商户
+    recs = (await client.get("/merchant-api/record/list", headers=headers)).json()["data"]["items"]
+    rec = [r for r in recs if r["order_trade_no"] == o2_trade][0]
+    assert rec["remark"] == "订单补入账"
+    assert "扣量" not in rec["remark"]
+
+    await _enable_deduct(session, 0, enable=False)
 
 
 class _FakeRedis:
@@ -389,7 +405,7 @@ async def test_deduct_counter_redis_atomic(client, seeded, session):
 
     app.dependency_overrides[get_cache] = _fake_cache
     try:
-        await set_settings(session, {"deduct_enable": True, "deduct_frequency": 3})
+        await _enable_deduct(session, 3)
         hits = []
         for i in range(1, 7):
             o = await _pay_order(client, session, f"RC{i}")
@@ -405,7 +421,7 @@ async def test_deduct_counter_redis_atomic(client, seeded, session):
             app.dependency_overrides[get_cache] = orig
         else:
             app.dependency_overrides.pop(get_cache, None)
-        await set_settings(session, {"deduct_enable": False, "deduct_frequency": 0})
+        await _enable_deduct(session, 0, enable=False)
 
 
 # ============================================================
