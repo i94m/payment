@@ -31,6 +31,7 @@ import { IconSearch, IconRefresh, IconBell, IconEye, IconDownload, IconLoader2 }
 import apiClient from "@/lib/api-client"
 import { getErrorMessage } from "@/lib/error"
 import { downloadBlob } from "@/lib/export"
+import { EXPORT_ENABLED } from "@/lib/flags"
 import { toIntParam } from "@/lib/form-utils"
 import { toast } from "sonner"
 
@@ -339,16 +340,18 @@ export function OrdersPage() {
               <IconRefresh className="size-4" />
               {"刷新"}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto"
-              disabled={exporting}
-              onClick={exportExcel}
-            >
-              {exporting ? <IconLoader2 className="size-4 animate-spin" /> : <IconDownload className="size-4" />}
-              {"导出Excel"}
-            </Button>
+            {EXPORT_ENABLED && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-auto"
+                disabled={exporting}
+                onClick={exportExcel}
+              >
+                {exporting ? <IconLoader2 className="size-4 animate-spin" /> : <IconDownload className="size-4" />}
+                {"导出Excel"}
+              </Button>
+            )}
           </div>
 
           {/* 当前筛选统计汇总 */}

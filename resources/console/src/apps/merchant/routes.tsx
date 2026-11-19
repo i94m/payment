@@ -14,6 +14,7 @@ const SecurityPage = lazy(() => import("./pages/security").then((m) => ({ defaul
 const PasswordPage = lazy(() => import("./pages/password").then((m) => ({ default: m.PasswordPage })))
 const UserCenterPage = lazy(() => import("@/pages/user-center").then((m) => ({ default: m.UserCenterPage })))
 // 错误页体积小且需在异常时立即可用，保持静态导入
+import { FeatureRoute } from "@/components/auth/feature-route"
 import { Error403 } from "@/pages/errors/403"
 import { Error404 } from "@/pages/errors/404"
 import { Error500 } from "@/pages/errors/500"
@@ -31,8 +32,9 @@ export const routes: PermissionRouteObject[] = [
   { path: "/orders", element: <OrdersPage /> },
   { path: "/settle", element: <SettlePage /> },
   { path: "/records", element: <RecordsPage /> },
-  { path: "/agents", element: <AgentsPage /> },
-  { path: "/agent-performance", element: <AgentPerformancePage /> },
+  // 下级代理整组按 agent_enable 门控：关闭后直访 URL 也按不存在处理（接口同样 403）
+  { path: "/agents", element: <FeatureRoute feature="agent_enable"><AgentsPage /></FeatureRoute> },
+  { path: "/agent-performance", element: <FeatureRoute feature="agent_enable"><AgentPerformancePage /></FeatureRoute> },
   { path: "/paypage", element: <PaypageMchPage /> },
   { path: "/messages", element: <MessagesPage /> },
   { path: "/security", element: <SecurityPage /> },

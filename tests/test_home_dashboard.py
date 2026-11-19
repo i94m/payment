@@ -50,7 +50,8 @@ async def two_channels(session: AsyncSession, seeded):
 
 def _mk_order(merchant_id: int, channel_id: int, type_id: int, *, status: int = 0,
               created_min: int = 0, paid: bool = False, realmoney: str = "10.00",
-              profit: str = "1.00", deducted: bool = False) -> Order:
+              profit: str = "1.00", merchant_income: str | None = None,
+              deducted: bool = False) -> Order:
     now = datetime.now()
     return Order(
         trade_no=f"T{now.strftime('%y%m%d%H%M%S%f')}{merchant_id}{channel_id}{created_min}",
@@ -67,6 +68,7 @@ def _mk_order(merchant_id: int, channel_id: int, type_id: int, *, status: int = 
         paid_at=now if paid else None,
         realmoney=Decimal(realmoney),
         profit=Decimal(profit),
+        merchant_income=Decimal(merchant_income) if merchant_income is not None else None,
         is_deducted=deducted,
     )
 
@@ -183,7 +185,7 @@ async def test_dashboard_stats_fields(client, session, two_channels):
                           status=1, paid=True, created_min=0, realmoney="100.00", profit="10.00"))
     session.add(_mk_order(seeded["merchant"].id, seeded["channel"].id, tid,
                           status=1, paid=True, created_min=1, realmoney="50.00", profit="5.00",
-                          deducted=True))
+                          merchant_income="44.00", deducted=True))
     session.add(_mk_order(seeded["merchant"].id, seeded["channel2"].id, tid,
                           status=0, created_min=2))
     await session.commit()
@@ -204,11 +206,14 @@ async def test_dashboard_stats_fields(client, session, two_channels):
     assert str(tid) in data["paytype"]  # 支付方式/通道名称映射
     assert str(seeded["channel"].id) in data["channel"]
 
-    # 今日收入表：实收合计 150，利润合计 15
+    # 今日收入表：实收合计 150；
+    # 平台留存 = 10 + 5 + 44（扣量单的 merchant_income 未付给商户，要加回利润）= 59
     assert data["order_today"]["all"] == 150.0
-    assert data["order_today"]["profit_all"] == 15.0
+    assert data["order_today"]["profit_all"] == 59.0
     assert data["order_today"]["paytype"][str(tid)] == 150.0
-    assert data["order_today"]["profit_paytype"][str(tid)] == 15.0
+    assert data["order_today"]["profit_paytype"][str(tid)] == 59.0
+    # 今日已支付利润同口径（扣量单补回 merchant_income）
+    assert data["today"]["profit"] == 59.0
     # 今日金额路由的快捷配置可见
     assert "paytype" in data and "channel" in data
     assert len(data["trend"]) == 7

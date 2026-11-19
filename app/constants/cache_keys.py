@@ -25,4 +25,5 @@ class CacheKeys(StrEnum):
     UPLOAD_STS = f"{config.CACHE_PREFIX}upload_sts_{{hash}}"
 
     # 扣量计数器（Redis INCR 原子计数，替代 counters 行锁）
-    DEDUCT_ORDER_COUNTER = f"{config.CACHE_PREFIX}deduct_order_counter"
+    # 按商户独立计数：每个商户一根刻度，互不影响
+    DEDUCT_ORDER_COUNTER = f"{config.CACHE_PREFIX}deduct_order_counter_{{merchant_id}}"

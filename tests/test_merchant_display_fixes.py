@@ -174,6 +174,30 @@ async def test_order_summary_excludes_unpaid_and_refunded(client, seeded, sessio
     assert _m(summary["money"]) == _m("100.00")
 
 
+@pytest.mark.asyncio
+async def test_merchant_dashboard_excludes_deducted(client, seeded, session):
+    """商户首页口径不含扣量单：收款额、成功率分母、趋势都不把它算进去。
+
+    扣量单在商户侧一律显示未支付，若计入今日/累计收款额，商户拿首页数字对
+    订单列表「已支付」汇总就会差出被扣的钱。
+    """
+    headers = await _mch_headers(session)
+    m = await _get_merchant(session)
+    mid = m.id  # _pay_order 末尾会 expire_all，先取 id
+    await _pay_order(client, session, "DSH1")                     # 正常已支付 100
+    await _mk_order(session, mid, status=1, deducted=True, money="50.00")   # 扣量单
+    await _mk_order(session, mid, status=0, paid=None, money="30.00")       # 未支付
+
+    data = (await client.get("/merchant-api/dashboard", headers=headers)).json()["data"]
+    assert data["today"]["count"] == 1
+    assert data["today"]["money"] == 100.0
+    assert data["total"]["count"] == 1
+    # 成功率：近 7 日 1 笔已支付 / 3 笔建单（扣量单与未支付单都在分母）
+    assert data["success_rate"] == round(1 / 3 * 100, 2)
+    today_trend = data["trend"][-1]
+    assert today_trend["count"] == 1 and today_trend["money"] == 100.0
+
+
 # ------------------------------------------------------------
 # B13 0 单成功率
 # ------------------------------------------------------------
