@@ -312,6 +312,19 @@ export function MerchantsPage() {
         cell: ({ row }) => {
           const m = row.original
           const prefix = m.settle_type === 2 ? "WX:" : m.settle_type === 3 ? "QQ:" : ""
+          // 未设置时用小按钮占位，比灰色文字更容易发现可点击
+          if (!m.settle_account) {
+            return (
+              <Button
+                variant="outline"
+                size="xs"
+                title={"点击设置结算账号/姓名"}
+                onClick={() => openSettleDialog(m)}
+              >
+                {"设置账号"}
+              </Button>
+            )
+          }
           return (
             <button
               type="button"
@@ -320,14 +333,10 @@ export function MerchantsPage() {
               onClick={() => openSettleDialog(m)}
             >
               <span className="flex min-w-0 flex-col">
-                {m.settle_account ? (
-                  <span className="truncate">
-                    {prefix && <span className="text-emerald-600">{prefix}</span>}
-                    {m.settle_account}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">未设置</span>
-                )}
+                <span className="truncate">
+                  {prefix && <span className="text-emerald-600">{prefix}</span>}
+                  {m.settle_account}
+                </span>
                 <span className="truncate text-muted-foreground">{m.settle_name || ""}</span>
               </span>
               <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
@@ -343,17 +352,27 @@ export function MerchantsPage() {
         header: () => "随机金额",
         cell: ({ row }) => {
           const m = row.original
+          if (!m.random_enable) {
+            return (
+              <Button
+                variant="outline"
+                size="xs"
+                title={"点击设置随机金额"}
+                onClick={() => openRandomDialog(m)}
+              >
+                {"设置随机金额"}
+              </Button>
+            )
+          }
           // 整数展示；最小=最大时只显示一个数（如 5.00 ~ 5.00 → 5）
-          const label = m.random_enable
-            ? (Number(m.random_min) === Number(m.random_max)
-              ? String(Number(m.random_min))
-              : `${Number(m.random_min)} ~ ${Number(m.random_max)}`)
-            : "未开启"
+          const label = Number(m.random_min) === Number(m.random_max)
+            ? String(Number(m.random_min))
+            : `${Number(m.random_min)} ~ ${Number(m.random_max)}`
           return (
             <button
               type="button"
               title={"点击设置随机金额"}
-              className={`inline-flex items-center gap-1 text-sm hover:underline ${m.random_enable ? "font-bold tabular-nums text-blue-600" : "text-muted-foreground"}`}
+              className="inline-flex items-center gap-1 text-sm font-bold tabular-nums text-blue-600 hover:underline"
               onClick={() => openRandomDialog(m)}
             >
               {label}
@@ -373,16 +392,27 @@ export function MerchantsPage() {
         header: () => "扣量",
         cell: ({ row }) => {
           const m = row.original
-          const label = m.deduct_enable ? `每 ${m.deduct_frequency} 笔` : "未开启"
+          if (!m.deduct_enable) {
+            return (
+              <Button
+                variant="outline"
+                size="xs"
+                title={"点击设置扣量（商户级：开关 + 每 N 笔扣 1 + 起扣金额）"}
+                onClick={() => openDeductDialog(m)}
+              >
+                {"设置扣量"}
+              </Button>
+            )
+          }
           return (
             <button
               type="button"
               title={"点击设置扣量（商户级：开关 + 每 N 笔扣 1 + 起扣金额）"}
-              className={`inline-flex items-center gap-1 text-sm hover:underline ${m.deduct_enable ? "font-bold tabular-nums text-blue-600" : "text-muted-foreground"}`}
+              className="inline-flex items-center gap-1 text-sm font-bold tabular-nums text-blue-600 hover:underline"
               onClick={() => openDeductDialog(m)}
             >
-              {label}
-              {m.deduct_enable && Number(m.deduct_minmoney) > 0 && (
+              {`每 ${m.deduct_frequency} 笔`}
+              {Number(m.deduct_minmoney) > 0 && (
                 <Badge variant="secondary" className="h-4 px-1 text-[10px]">
                   {`满${Number(m.deduct_minmoney)}`}
                 </Badge>
@@ -400,19 +430,31 @@ export function MerchantsPage() {
         header: () => "限流",
         cell: ({ row }) => {
           const m = row.original
+          if (!(m.random_ratelimit > 0)) {
+            return (
+              <Button
+                variant="outline"
+                size="xs"
+                title={"点击设置建单限流（同一付款 IP 每分钟建单上限，0=不限）"}
+                onClick={() => openRatelimitDialog(m)}
+              >
+                {"设置限流"}
+              </Button>
+            )
+          }
           return (
             <button
               type="button"
               title={"点击设置建单限流（同一付款 IP 每分钟建单上限，0=不限）"}
-              className={`inline-flex items-center gap-1 text-sm hover:underline ${m.random_ratelimit > 0 ? "font-bold tabular-nums text-blue-600" : "text-muted-foreground"}`}
+              className="inline-flex items-center gap-1 text-sm font-bold tabular-nums text-blue-600 hover:underline"
               onClick={() => openRatelimitDialog(m)}
             >
-              {m.random_ratelimit > 0 ? m.random_ratelimit : "不限"}
+              {m.random_ratelimit}
               <IconEdit className="size-3.5 shrink-0 text-muted-foreground" />
             </button>
           )
         },
-        meta: { headClassName: "w-[80px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "min-w-[90px] text-center", cellClassName: "text-center" },
       },
       {
         // 用户状态：正常 / 禁用（开关实时切换）
