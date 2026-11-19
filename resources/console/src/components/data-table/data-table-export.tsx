@@ -4,6 +4,7 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { IconDownload } from "@tabler/icons-react"
 import { exportToExcel, type ExportColumn } from "@/lib/export"
+import { EXPORT_ENABLED } from "@/lib/flags"
 import type { Table } from "@tanstack/react-table"
 
 interface DataTableExportProps<TData> {
@@ -39,6 +40,9 @@ export function DataTableExport<TData>({ table, columns, filename = "export", ex
     })
     await exportToExcel(data, filename, columns)
   }
+
+  // 导出已在界面上整体隐藏（见 lib/flags.ts），恢复时改开关即可
+  if (!EXPORT_ENABLED) return null
 
   return (
     <Button variant="outline" size="sm" onClick={handleExport} disabled={loading}>

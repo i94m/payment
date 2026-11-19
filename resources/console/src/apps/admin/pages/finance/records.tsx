@@ -24,6 +24,7 @@ import { IconSearch, IconRefresh, IconDownload } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 import { downloadBlob } from "@/lib/export"
+import { EXPORT_ENABLED } from "@/lib/flags"
 import { digitsOnly, toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { usePermission } from "@/hooks/use-permission"
@@ -272,7 +273,7 @@ export function AdminRecordsPage() {
                 <IconRefresh className="size-4" />
                 {"重置"}
               </Button>
-              {hasPermission("merchant.export") && (
+              {EXPORT_ENABLED && hasPermission("merchant.export") && (
                 <Button variant="outline" size="sm" onClick={handleExport}>
                   <IconDownload className="size-4" />
                   {"导出 Excel"}

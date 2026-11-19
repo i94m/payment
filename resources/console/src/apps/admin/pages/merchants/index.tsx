@@ -39,6 +39,7 @@ import {
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 import { downloadBlob } from "@/lib/export"
+import { EXPORT_ENABLED } from "@/lib/flags"
 import { toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { CopyButton } from "@/components/ui/copy-button"
@@ -793,7 +794,7 @@ export function MerchantsPage() {
                 <IconAdjustments className="size-4" />
                 {"高级搜索"}
               </Button>
-              {hasPermission("merchant.export") && (
+              {EXPORT_ENABLED && hasPermission("merchant.export") && (
                 <Button variant="outline" size="sm" onClick={handleExport}>
                   <IconDownload className="size-4" />
                   {"导出 Excel"}
