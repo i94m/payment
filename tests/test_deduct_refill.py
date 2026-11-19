@@ -3,7 +3,8 @@
 与 test_merchant_p3 的基础扣量用例互补，这里覆盖：
 - 商户级配置（merchants.deduct_*，全局 key 已下架）：频次轮询节律、起扣金额边界、
   商户开关隔离、批量/单商户后台入口；计数按商户独立（A 配 5 与 B 配 8 互不影响）
-- 低于起扣金额不消耗计数；恰好等于起扣金额要扣（>= 边界）
+- 低于起扣金额不消耗计数；恰好等于起扣金额要扣（>= 边界）；门槛比的是买家实付
+  realmoney（随机金额单申报额与实付不同），realmoney 为 NULL 时回退申报额 money
 - Redis INCR 路径 vs DB Counter 回退路径（两者都按 merchant_id 分行）
 - 充值单不扣量；扣量单重复回调幂等
 - 邀请返佣在扣量时扣发、回补时补发
@@ -182,11 +183,82 @@ async def test_deduct_minmoney_boundary_equal_is_deducted(client, seeded, sessio
 
 
 class _DeductOrder:
-    """_hit_deduct 只读 merchant_id 与 money 两个字段。"""
+    """_hit_deduct 只读 merchant_id、money（申报额）、realmoney（实付）三个字段。"""
 
-    def __init__(self, merchant_id: int, money: str = "100.00"):
+    def __init__(self, merchant_id: int, money: str = "100.00",
+                 realmoney: str | None = None):
         self.merchant_id = merchant_id
         self.money = dmoney(money)
+        self.realmoney = dmoney(realmoney) if realmoney is not None else None
+
+
+async def _enable_random_money(session, merchant: Merchant, low: str, high: str) -> Merchant:
+    """开随机金额并把区间固定成 low ~ high（min == max 时 random_money 返回该值）。"""
+    merchant.random_enable = True
+    merchant.random_min = dmoney(low)
+    merchant.random_max = dmoney(high)
+    session.add(merchant)
+    await session.commit()
+    return merchant
+
+
+@pytest.mark.asyncio
+async def test_deduct_minmoney_uses_realmoney_below(client, seeded, session, engine):
+    """随机金额商户：申报 1000、实付 3（< 起扣 100）→ 不扣，且不消耗计数。
+
+    旧口径拿申报额 1000 比门槛，会把这笔真实 3 元的交易判成合格单。
+    """
+    m = await _get_merchant(session)
+    m.balance = dmoney("0")
+    await _enable_random_money(session, m, "3", "3")
+    await _enable_deduct(session, 1, minmoney="100.00", merchant=m)
+
+    o = await _create_order(client, session, "RMN-1", "1000.00")
+    assert o.realmoney == dmoney("3")
+    await _pay_via_callback(client, o, money="3")
+
+    fresh = await _refetch(engine, o.trade_no)
+    assert fresh.status == 1
+    assert fresh.is_deducted is False
+    assert await _rows(engine, Counter) == []              # 豁免单不推进刻度
+    assert await _balance(engine, m.id) == dmoney("2.94")  # 3 × (1 - 2%) 正常入账
+
+
+@pytest.mark.asyncio
+async def test_deduct_minmoney_realmoney_equal_is_deducted(client, seeded, session, engine):
+    """随机金额商户：实付恰好等于起扣金额 → 要扣（>= 边界按实付算）。"""
+    m = await _get_merchant(session)
+    m.balance = dmoney("0")
+    await _enable_random_money(session, m, "100", "100")
+    await _enable_deduct(session, 1, minmoney="100.00", merchant=m)
+
+    o = await _create_order(client, session, "RMN-2", "1000.00")
+    assert o.realmoney == dmoney("100")
+    await _pay_via_callback(client, o, money="100")
+
+    fresh = await _refetch(engine, o.trade_no)
+    assert fresh.is_deducted is True
+    assert await _balance(engine, m.id) == dmoney("0")
+
+
+@pytest.mark.asyncio
+async def test_deduct_minmoney_falls_back_to_money_when_realmoney_null(
+        client, seeded, session, engine):
+    """realmoney 为 NULL（未拉起支付）时回退按申报额 money 判定。"""
+    m = await _enable_deduct(session, 1, minmoney="100.00")
+
+    # 实付未知、申报 100 → 按 money 比门槛，命中
+    assert await _hit_deduct(session, _DeductOrder(m.id, money="100.00"), cache=None) is True
+    # 申报 50 < 门槛 → 不扣、不消耗计数
+    assert await _hit_deduct(session, _DeductOrder(m.id, money="50.00"), cache=None) is False
+    # 有 realmoney 时以其为准：申报 1000 但实付 3 → 不扣
+    assert await _hit_deduct(
+        session, _DeductOrder(m.id, money="1000.00", realmoney="3.00"), cache=None
+    ) is False
+
+    await session.commit()
+    counters = await _rows(engine, Counter)
+    assert [c.key for c in counters] == [f"deduct_order:{m.id}"]
 
 
 @pytest.mark.asyncio

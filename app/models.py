@@ -223,7 +223,7 @@ class Merchant(SQLModel, table=True):
     # 扣量（仅商户级，无全局参数；急停 = 批量把商户设 0）
     deduct_enable: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))  # 唯一开关
     deduct_frequency: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))  # 每 N 笔扣 1，0=不扣（防御值，停用请用开关）
-    # 起扣金额：单笔 order.money（商户申报额，非 realmoney）≥ 该值才参与扣量，0=不限金额
+    # 起扣金额：单笔买家实付金额（order.realmoney，NULL 时回退 order.money）≥ 该值才参与扣量，0=不限金额
     deduct_minmoney: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
     # 固定保护：不受批量随机金额影响
     fixed: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
