@@ -244,6 +244,35 @@ async def test_deduct_admin_endpoints(client, seeded, session, engine):
 
 
 @pytest.mark.asyncio
+async def test_deduct_single_update_keeps_unpassed_fields(client, seeded, session, engine):
+    """单商户接口：只改开关（不带频次/金额）不得清掉已有配置；显式传 0 才是「不限金额」。"""
+    adm = await _admin_headers(session)
+    m = await _get_merchant(session)
+
+    r = await client.post(f"/admin-api/merchant/{m.id}/deduct", headers=adm,
+                          json={"deduct_enable": True, "deduct_frequency": 7,
+                                "deduct_minmoney": "100"})
+    assert r.json()["code"] == 0, r.json()
+
+    # 只改开关：未传 deduct_minmoney / deduct_frequency → 两者都保留
+    r = await client.post(f"/admin-api/merchant/{m.id}/deduct", headers=adm,
+                          json={"deduct_enable": True})
+    assert r.json()["code"] == 0, r.json()
+    fresh = await _refetch_merchant(engine, m.id)
+    assert str(fresh.deduct_minmoney) == "100.00"
+    assert fresh.deduct_frequency == 7
+    assert fresh.deduct_enable is True
+
+    # 显式传 0 = 不限金额（与「未传」区分开）
+    r = await client.post(f"/admin-api/merchant/{m.id}/deduct", headers=adm,
+                          json={"deduct_enable": True, "deduct_minmoney": "0"})
+    assert r.json()["code"] == 0, r.json()
+    fresh = await _refetch_merchant(engine, m.id)
+    assert str(fresh.deduct_minmoney) == "0.00"
+    assert fresh.deduct_frequency == 7  # 频次同样不受影响
+
+
+@pytest.mark.asyncio
 async def test_deduct_recharge_order_not_deducted(client, seeded, session, engine):
     """充值单（order_type=1）不参与扣量，全额入账。"""
     await _enable_deduct(session, 1)

@@ -679,16 +679,19 @@ async def set_merchant_ratelimit(merchant_id: int, body: SetRatelimitRequest, se
 class SetDeductRequest(BaseModel):
     deduct_enable: bool
     deduct_frequency: Optional[int] = None   # 每 N 笔扣 1，开启时必填；不传 = 保留原值
-    deduct_minmoney: str = ""                # 起扣金额，0/空 = 不限金额
+    deduct_minmoney: Optional[str] = None    # 起扣金额；不传 = 保留原值，传 0/空 = 不限金额
 
 
 def _apply_deduct(m: Merchant, body: SetDeductRequest) -> str | None:
-    try:
-        min_money = dmoney(body.deduct_minmoney) if body.deduct_minmoney else Decimal("0")
-    except Exception:
-        return "金额格式错误"
-    if min_money < 0:
-        return "起扣金额不能为负数"
+    # 未传金额 = 不动（只改开关不该清掉起扣金额）；显式传 0/空 = 不限金额
+    min_money: Decimal | None = None
+    if body.deduct_minmoney is not None:
+        try:
+            min_money = dmoney(body.deduct_minmoney) if body.deduct_minmoney else Decimal("0")
+        except Exception:
+            return "金额格式错误"
+        if min_money < 0:
+            return "起扣金额不能为负数"
     frequency = None if body.deduct_frequency is None else int(body.deduct_frequency)
     if frequency is not None and frequency < 0:
         return "扣量频次不能为负数"
@@ -700,7 +703,8 @@ def _apply_deduct(m: Merchant, body: SetDeductRequest) -> str | None:
     m.deduct_enable = body.deduct_enable
     if frequency is not None:
         m.deduct_frequency = frequency
-    m.deduct_minmoney = min_money
+    if min_money is not None:
+        m.deduct_minmoney = min_money
     return None
 
 
