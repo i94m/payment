@@ -12,13 +12,43 @@ from sqlmodel import col, select
 
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import MerchantUser
+from app.lib.linktoken import paypage_url
 from app.models import Announcement, Order
 from app.responses import suc
+from app.services import paytoken
 from app.services.settings import get_setting, setting_enabled
 
 router = APIRouter()
 
 _PAID = (Order.status == 1, Order.order_type == 0, col(Order.is_deducted) == False)  # noqa: E712
+
+
+def _fmt_dt(dt: datetime | None) -> str:
+    return dt.strftime("%Y-%m-%d %H:%M:%S") if dt else ""
+
+
+@router.get("/profile")
+async def profile(session: SessionDep, auth: MerchantUser, cache: CacheDep = None):
+    """商户基础资料 + 专属收款链接（首页「收款信息」卡）。
+
+    链接与「聚合收款」设置页同一口径：/p/{短码}，agent_id=0 的商户直连码，
+    惰性生成后终身复用（不暴露 pid）。paypage_enable 是平台全局开关，
+    关闭时前端提示链接暂不可用。
+    """
+    m = auth.user
+    return suc({
+        "id": m.id,
+        "pid": m.pid,
+        "username": m.username,
+        "email": m.email or "",
+        "phone": m.phone or "",
+        "status": m.status,
+        "rate": str(m.rate) if m.rate is not None else "",
+        "created_at": _fmt_dt(m.created_at),
+        "last_login_at": _fmt_dt(m.last_login_at),
+        "link": paypage_url(await paytoken.get_or_create(session, m.id)),
+        "paypage_enable": bool(await get_setting(session, "paypage_enable", True, cache=cache)),
+    })
 
 
 @router.get("")
