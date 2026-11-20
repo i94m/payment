@@ -30,6 +30,7 @@ export interface MerchantData {
   deduct_enable: boolean        // 扣量开关（商户级唯一配置源）
   deduct_frequency: number      // 每 N 笔扣 1
   deduct_minmoney: string       // 起扣金额（单笔 ≥ 该值才扣，0=不限）
+  channel_code_required: boolean  // 下游 API 下单是否必须携带通道编码（默认开，仅个别豁免时关闭）
   fixed: boolean
   settle_type: number           // 1=支付宝 2=微信 3=QQ 4=银行卡
   settle_account: string
@@ -142,6 +143,10 @@ export const merchantsApi = {
   /** 批量扣量：开启时下发频次与起扣金额（金额留空 = 不限）；关闭只写开关位 */
   setAllDeduct: (data: { deduct_enable: boolean; deduct_frequency?: number; deduct_minmoney?: string }) =>
     apiClient.post("/merchant/deduct/set-all", data) as Promise<string>,
+
+  /** 下游通道编码必传开关（商户级个别豁免，只约束开放 API） */
+  setChannelCodeRequired: (id: number, required: boolean) =>
+    apiClient.post(`/merchant/${id}/channel-code`, { required }) as Promise<null>,
 
   /** SSO 一键登录商户后台，返回一次性落地 URL */
   sso: (id: number) =>

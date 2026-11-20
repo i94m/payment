@@ -3,7 +3,7 @@
 前置：
 - 平台 http://127.0.0.1:8000（APP_ENV=local，万能验证码 0000）
 - 模拟上游 http://127.0.0.1:9000
-- 种子：superadmin/123456，demo/demo123456（pid=1001），epay 通道
+- 种子：superadmin/123456，demo/demo123456（pid=1001），epay 通道，演示编码 `demo`
 - 前端产物 static/console 已构建（现场构建，不入库）；/docs 为独立 VitePress 构建，
   未构建时登录后访问接入文档会 404，故本套件不对其内容做断言
 
@@ -27,6 +27,7 @@ from app.lib.sign import make_rsa_sign
 
 BASE = "http://127.0.0.1:8000"
 MOCK = "http://127.0.0.1:9000"
+DEMO_CHANNEL_CODE = "demo"  # seed_demo.py 建的演示编码（编码必传默认全开）
 
 PASS = []
 FAIL = []
@@ -45,7 +46,8 @@ def check(name: str, fn):
 def api_create_order(money="6.00") -> dict:
     out = "E2E" + time.strftime("%H%M%S")
     params = {
-        "pid": "1001", "type": "alipay", "out_trade_no": out,
+        "pid": "1001", "channel_code": DEMO_CHANNEL_CODE,
+        "type": "alipay", "out_trade_no": out,
         "notify_url": "https://merchant.example/notify",
         "return_url": BASE + "/", "name": "E2E商品", "money": money,
     }

@@ -12,6 +12,7 @@ const MerchantsPage = lazy(() => import("./pages/merchants/index").then((m) => (
 const AdminRecordsPage = lazy(() => import("./pages/finance/records").then((m) => ({ default: m.AdminRecordsPage })))
 const ChannelsPage = lazy(() => import("./pages/pay/channels").then((m) => ({ default: m.ChannelsPage })))
 const PayTypesPage = lazy(() => import("./pages/pay/types").then((m) => ({ default: m.PayTypesPage })))
+const ChannelCodesPage = lazy(() => import("./pages/pay/codes").then((m) => ({ default: m.ChannelCodesPage })))
 const SettlePage = lazy(() => import("./pages/settle/list").then((m) => ({ default: m.SettlePage })))
 const AnnouncesPage = lazy(() => import("./pages/announce/list").then((m) => ({ default: m.AnnouncesPage })))
 const PaySettingsPage = lazy(() => import("./pages/setting/pay").then((m) => ({ default: m.PaySettingsPage })))
@@ -43,6 +44,8 @@ const pageRoutes: PermissionRouteObject[] = [
   { path: "/records", element: <AdminRecordsPage />, permission: "merchant.view" },
   { path: "/pay/channels", element: <ChannelsPage />, permission: "channel.view" },
   { path: "/pay/types", element: <PayTypesPage />, permission: "payment_type.view" },
+  // 下游通道编码：独立菜单（成员 + 权重 + 开关塞进通道页签太难用）
+  { path: "/pay/codes", element: <ChannelCodesPage />, permission: "channel.view" },
   { path: "/settle", element: <SettlePage />, permission: "settle.view" },
   // 公告管理：announce_enable（默认开启，仅库内可改）关闭后无发布入口、直链落到 404
   {

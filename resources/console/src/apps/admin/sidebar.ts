@@ -42,6 +42,8 @@ export function getAdminMenu(): MenuSection[] {
       label: "系统配置",
       items: [
         { title: "支付通道", url: "/pay/channels", icon: IconRoute, permission: "channel.view" },
+        // 下游通道编码：下游下单传 channel_code，限定在该编码绑定的通道内分流
+        { title: "下游通道编码", url: "/pay/codes", icon: IconPlugConnected, permission: "channel.view" },
         { title: "支付方式", url: "/pay/types", icon: IconCreditCard, permission: "payment_type.view" },
         { title: "站点配置", url: "/setting/pay", icon: IconAdjustments, permission: "pay_setting.view" },
         // 管理员账号（RBAC）：仅超管可见/可进（后端该模块全部接口要求超管）

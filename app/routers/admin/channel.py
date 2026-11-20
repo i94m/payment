@@ -18,13 +18,14 @@ from sqlmodel import col, func, select
 
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import AdminUser, PermissionChecker, check_permission
-from app.models import Channel, Order, PaymentType, Plugin
+from app.models import Channel, ChannelCode, ChannelCodeItem, Order, PaymentType, Plugin
 from app.responses import err, paginate, suc
 from app.services.balance import dmoney
+from app.services.channel import code_format_ok, get_channel_code, normalize_channel_code
 from app.services.crypto import decrypt_config, encrypt_config
 from app.services.plugin import PluginRegistry
 from app.services.plugin_interfaces import PluginMeta
-from app.services.order import ORDER_TYPE_TEST
+from app.services.order import ORDER_PENDING, ORDER_TYPE_TEST
 from app.services.plugin_sync import sync_plugins
 import logging
 
@@ -654,6 +655,320 @@ async def channel_delete(channel_id: int, session: SessionDep, request: Request,
     c = await session.get(Channel, channel_id)
     if not c:
         return err(404, "通道不存在")
+    # 被下游通道编码引用时拒绝删除：删掉会让编码静默少一个成员（与插件同步「仍被引用则跳过」同思路）
+    refs = (await session.exec(
+        select(ChannelCode.code)
+        .join(ChannelCodeItem, col(ChannelCodeItem.code_id) == col(ChannelCode.id))
+        .where(col(ChannelCodeItem.channel_id) == channel_id)
+        .order_by(col(ChannelCode.code))
+    )).all()
+    if refs:
+        return err(-1, f"该通道仍被下游通道编码引用（{', '.join(refs)}），请先在编码里解绑")
+    await session.delete(c)
+    await session.commit()
+    return suc("success")
+
+
+# ============================================================
+# 下游通道编码（编码 → 通道绑定）
+# ============================================================
+#
+# 编码是给下游的对外契约：全局唯一命名空间、落库统一小写；
+# mode 是**编码级**策略（与通道自身的 mode 无关）。
+
+CODE_MODES = {0: "随机", 1: "轮询", 2: "权重"}
+
+
+class ChannelCodeItemRequest(BaseModel):
+    channel_id: int
+    weight: int = 1
+    status: int = 1
+    sort: int = 0
+
+
+class ChannelCodeRequest(BaseModel):
+    code: str
+    name: str = ""
+    remark: str = ""
+    mode: int = 0
+    status: int = 1
+    items: list[ChannelCodeItemRequest] = []
+
+
+class ChannelCodeStatusRequest(BaseModel):
+    status: int
+
+
+async def _validate_code_payload(session, body: ChannelCodeRequest,
+                                 exclude_id: int = 0) -> tuple[str, str]:
+    """校验编码主档 + 成员。返回 (归一后的 code, 错误文案)；错误文案为空表示通过。"""
+    code = normalize_channel_code(body.code)
+    if not code:
+        return code, "通道编码不能为空"
+    if not code_format_ok(code):
+        return code, "通道编码仅支持 1~32 位字母、数字、- 和 _"
+    if body.mode not in CODE_MODES:
+        return code, "策略取值不合法"
+    dup = await get_channel_code(session, code)
+    if dup and dup.id != exclude_id:
+        return code, "通道编码已存在"
+    if not body.items:
+        return code, "通道编码至少绑定一个通道"
+    channel_ids = [it.channel_id for it in body.items]
+    if len(set(channel_ids)) != len(channel_ids):
+        return code, "同一个通道不能重复绑定"
+    existing = set((await session.exec(
+        select(col(Channel.id)).where(col(Channel.id).in_(channel_ids))
+    )).all())
+    missing = [cid for cid in channel_ids if cid not in existing]
+    if missing:
+        return code, f"通道不存在：{', '.join(str(c) for c in missing)}"
+    for it in body.items:
+        if it.weight < 0:
+            return code, "权重不能为负数"
+        if it.status not in (0, 1):
+            return code, "成员状态取值不合法"
+    # 权重模式必须至少有一个正权重成员：全零会在抽签时退化（老实现永远选最后一条），
+    # 运营以为按权重分流、实际全量压一条通道，比报错危险
+    if body.mode == 2 and not any(it.weight > 0 for it in body.items):
+        return code, "权重模式下至少一个通道的权重要大于 0"
+    return code, ""
+
+
+async def _replace_code_items(session, code_id: int, items: list[ChannelCodeItemRequest]) -> None:
+    """成员整表覆盖写：没提交的绑定即删除（含其轮询游标）。"""
+    old = (await session.exec(
+        select(ChannelCodeItem).where(col(ChannelCodeItem.code_id) == code_id)
+    )).all()
+    old_map = {it.channel_id: it for it in old}
+    keep = {it.channel_id for it in items}
+    for channel_id, row in old_map.items():
+        if channel_id not in keep:
+            await session.delete(row)
+    for idx, it in enumerate(items):
+        row = old_map.get(it.channel_id)
+        if row is None:
+            row = ChannelCodeItem(code_id=code_id, channel_id=it.channel_id)
+        row.weight = it.weight
+        row.status = it.status
+        row.sort = it.sort if it.sort else idx
+        session.add(row)
+
+
+def _dump_code_item(item: ChannelCodeItem, c: Channel | None) -> dict:
+    return {
+        "channel_id": item.channel_id,
+        "weight": item.weight,
+        "status": item.status,
+        "sort": item.sort,
+        "last_used_at": item.last_used_at,
+        "channel_name": c.name if c else "（通道已删除）",
+        "plugin_name": c.plugin_name if c else "",
+        "payment_type_id": c.payment_type_id if c else 0,
+        "channel_status": c.status if c else 0,
+    }
+
+
+async def _code_today_stats(session) -> dict[int, dict]:
+    """按编码聚合今日/昨日已支付笔数与金额（口径与通道统计一致：排除测试单）。"""
+    now = datetime.now()
+    today_start = datetime.combine(now.date(), time.min)
+    yesterday_start = today_start - timedelta(days=1)
+    stats: dict[int, dict] = {}
+
+    async def _collect(start: datetime, end: datetime, prefix: str):
+        rows = (await session.exec(
+            select(Order.channel_code_id, func.count(), func.coalesce(func.sum(Order.realmoney), 0))
+            .where(col(Order.status) == 1, col(Order.order_type) != ORDER_TYPE_TEST,
+                   col(Order.paid_at) >= start, col(Order.paid_at) < end,
+                   col(Order.channel_code_id) > 0)
+            .group_by(Order.channel_code_id)
+        )).all()
+        for code_id, cnt, total in rows:
+            stats.setdefault(code_id, {})[f"{prefix}_count"] = cnt
+            stats.setdefault(code_id, {})[f"{prefix}_amount"] = str(Decimal(str(total)))
+
+    await _collect(today_start, now, "today")
+    await _collect(yesterday_start, today_start, "yesterday")
+    return stats
+
+
+@router.get("/channel-codes", dependencies=[Depends(PermissionChecker("channel.view"))])
+async def channel_code_list(session: SessionDep, page: int = Query(1, ge=1),
+                            per_page: int = Query(20, ge=1, le=100),
+                            status: Optional[int] = Query(None),
+                            keyword: str = ""):
+    query = select(ChannelCode).order_by(col(ChannelCode.id).desc())
+    if status is not None:
+        query = query.where(col(ChannelCode.status) == status)
+    kw = normalize_channel_code(keyword)
+    if kw:
+        query = query.where(
+            (col(ChannelCode.code).contains(kw)) | (col(ChannelCode.name).contains(keyword.strip()))
+        )
+    count_query = select(func.count()).select_from(query.subquery())
+    total = (await session.exec(count_query)).one()
+    rows = (await session.exec(query.offset((page - 1) * per_page).limit(per_page))).all()
+    stats = await _code_today_stats(session)
+
+    code_ids = [c.id for c in rows]
+    item_map: dict[int, list[ChannelCodeItem]] = {}
+    channel_map: dict[int, Channel] = {}
+    if code_ids:
+        items = (await session.exec(
+            select(ChannelCodeItem).where(col(ChannelCodeItem.code_id).in_(code_ids))
+        )).all()
+        for it in items:
+            item_map.setdefault(it.code_id, []).append(it)
+        ch_ids = {it.channel_id for it in items}
+        if ch_ids:
+            for c in (await session.exec(select(Channel).where(col(Channel.id).in_(ch_ids)))).all():
+                channel_map[c.id] = c
+
+    data = []
+    for c in rows:
+        members = item_map.get(c.id, [])
+        data.append({
+            "id": c.id,
+            "code": c.code,
+            "name": c.name,
+            "remark": c.remark or "",
+            "mode": c.mode,
+            "status": c.status,
+            "item_count": len(members),
+            "active_item_count": sum(1 for it in members if it.status == 1),
+            "members": [
+                _dump_code_item(it, channel_map.get(it.channel_id)) for it in members
+            ],
+            **(stats.get(c.id) or {}),
+            "created_at": c.created_at.strftime("%Y-%m-%d %H:%M:%S") if c.created_at else "",
+        })
+    return suc(paginate(
+        items=data, total=total, page=page, per_page=per_page,
+        has_more_pages=page * per_page < total, has_pages=total > per_page,
+    ))
+
+
+@router.get("/channel-codes/{code_id}", dependencies=[Depends(PermissionChecker("channel.view"))])
+async def channel_code_detail(code_id: int, session: SessionDep):
+    c = await session.get(ChannelCode, code_id)
+    if not c:
+        return err(404, "通道编码不存在")
+    items = (await session.exec(
+        select(ChannelCodeItem).where(col(ChannelCodeItem.code_id) == code_id)
+        .order_by(col(ChannelCodeItem.sort), col(ChannelCodeItem.id))
+    )).all()
+    ch_ids = {it.channel_id for it in items}
+    channels = {}
+    if ch_ids:
+        for ch in (await session.exec(select(Channel).where(col(Channel.id).in_(ch_ids)))).all():
+            channels[ch.id] = ch
+    return suc({
+        "id": c.id,
+        "code": c.code,
+        "name": c.name,
+        "remark": c.remark or "",
+        "mode": c.mode,
+        "status": c.status,
+        "items": [_dump_code_item(it, channels.get(it.channel_id)) for it in items],
+    })
+
+
+@router.post("/channel-codes", dependencies=[Depends(PermissionChecker("channel.create"))])
+async def channel_code_create(body: ChannelCodeRequest, session: SessionDep):
+    code, msg = await _validate_code_payload(session, body)
+    if msg:
+        return err(-1, msg)
+    c = ChannelCode(
+        code=code,
+        name=(body.name or "").strip()[:64] or code,
+        remark=(body.remark or "").strip()[:255] or None,
+        mode=body.mode,
+        status=1 if body.status == 1 else 0,
+    )
+    session.add(c)
+    await session.commit()
+    await session.refresh(c)
+    await _replace_code_items(session, c.id, body.items)
+    await session.commit()
+    return suc({"id": c.id, "code": c.code})
+
+
+@router.put("/channel-codes/{code_id}", dependencies=[Depends(PermissionChecker("channel.update"))])
+async def channel_code_update(code_id: int, body: ChannelCodeRequest, session: SessionDep):
+    c = await session.get(ChannelCode, code_id)
+    if not c:
+        return err(404, "通道编码不存在")
+    code, msg = await _validate_code_payload(session, body, exclude_id=code_id)
+    if msg:
+        return err(-1, msg)
+    c.code = code
+    c.name = (body.name or "").strip()[:64] or code
+    c.remark = (body.remark or "").strip()[:255] or None
+    c.mode = body.mode
+    c.status = 1 if body.status == 1 else 0
+    session.add(c)
+    await _replace_code_items(session, code_id, body.items)
+    await session.commit()
+    return suc({"id": c.id, "code": c.code})
+
+
+@router.put("/channel-codes/{code_id}/status",
+            dependencies=[Depends(PermissionChecker("channel.update"))])
+async def channel_code_set_status(code_id: int, body: ChannelCodeStatusRequest,
+                                  session: SessionDep):
+    """编码总闸：只改开关，不触碰成员与权重。"""
+    c = await session.get(ChannelCode, code_id)
+    if not c:
+        return err(404, "通道编码不存在")
+    c.status = 1 if body.status == 1 else 0
+    session.add(c)
+    await session.commit()
+    return suc({"id": c.id, "status": c.status})
+
+
+@router.put("/channel-codes/{code_id}/items/{channel_id}/status",
+            dependencies=[Depends(PermissionChecker("channel.update"))])
+async def channel_code_item_set_status(code_id: int, channel_id: int,
+                                       body: ChannelCodeStatusRequest, session: SessionDep):
+    """编码内的成员临时开关：只影响本编码的分流，不影响通道全局状态与其它编码。"""
+    item = (await session.exec(
+        select(ChannelCodeItem).where(
+            col(ChannelCodeItem.code_id) == code_id,
+            col(ChannelCodeItem.channel_id) == channel_id,
+        )
+    )).first()
+    if not item:
+        return err(404, "该通道未绑定到此编码")
+    item.status = 1 if body.status == 1 else 0
+    session.add(item)
+    await session.commit()
+    return suc({"code_id": code_id, "channel_id": channel_id, "status": item.status})
+
+
+@router.delete("/channel-codes/{code_id}",
+               dependencies=[Depends(PermissionChecker("channel.delete"))])
+async def channel_code_delete(code_id: int, session: SessionDep):
+    """删除编码与全部绑定。历史订单保留 channel_code 字符串作为留痕，不回改。
+
+    仍有待支付订单引用时拒绝删除：收银台按订单落的 `channel_code_id` 选通道，
+    编码被删会让这些订单在收银台里既看不到支付方式、又误报「不支持当前支付方式」。
+    """
+    c = await session.get(ChannelCode, code_id)
+    if not c:
+        return err(404, "通道编码不存在")
+    pending = (await session.exec(
+        select(func.count()).select_from(Order).where(
+            col(Order.channel_code_id) == code_id,
+            col(Order.status) == ORDER_PENDING,
+        )
+    )).one()
+    if int(pending) > 0:
+        return err(-1, f"该编码仍有 {int(pending)} 笔待支付订单引用，请先处理这些订单，或改为停用编码")
+    for it in (await session.exec(
+        select(ChannelCodeItem).where(col(ChannelCodeItem.code_id) == code_id)
+    )).all():
+        await session.delete(it)
     await session.delete(c)
     await session.commit()
     return suc("success")

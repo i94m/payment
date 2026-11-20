@@ -428,6 +428,25 @@ export function MerchantsPage() {
         meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
       },
       {
+        // 下游通道编码必传：默认全开，关闭即对该商户个别豁免；只约束开放 API 下单
+        // （收银台/收款页/充值不受影响）
+        accessorKey: "channel_code_required",
+        enableSorting: false,
+        header: () => "编码必传",
+        cell: ({ row }) => (
+          <div className="flex items-center justify-center gap-1.5">
+            <Switch
+              checked={row.original.channel_code_required}
+              onCheckedChange={() => toggleChannelCodeRequired(row.original)}
+            />
+            <span className="text-xs text-muted-foreground">
+              {row.original.channel_code_required ? "必传" : "豁免"}
+            </span>
+          </div>
+        ),
+        meta: { headClassName: "w-[110px] text-center", cellClassName: "text-center" },
+      },
+      {
         // 建单限流（点击弹出设置）：同一付款 IP 每分钟建单上限，0=不限
         accessorKey: "random_ratelimit",
         enableSorting: false,
@@ -669,6 +688,18 @@ export function MerchantsPage() {
       toast.success("扣量设置已保存")
       setDeductTarget(null)
       refresh()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "操作失败"))
+    }
+  }
+
+  // 编码必传：行内开关（默认全开，关闭即个别豁免；只约束开放 API 下单）
+  const toggleChannelCodeRequired = async (item: MerchantData) => {
+    const next = !item.channel_code_required
+    try {
+      await merchantsApi.setChannelCodeRequired(item.id, next)
+      updateRow(item.id, { channel_code_required: next })
+      toast.success(next ? "已要求携带通道编码" : "不再强制通道编码")
     } catch (err) {
       toast.error(getErrorMessage(err, "操作失败"))
     }

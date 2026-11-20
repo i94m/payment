@@ -32,6 +32,7 @@
 ```json
 {
   "pid": "1001",
+  "channel_code": "8088",
   "type": "alipay",
   "out_trade_no": "20160806151343349",
   "notify_url": "http://www.pay.com/notify_url.php",
@@ -44,7 +45,7 @@
 签名原文：
 
 ```text
-money=1.00&name=VIP会员&notify_url=http://www.pay.com/notify_url.php&out_trade_no=20160806151343349&pid=1001&timestamp=1696000000&type=alipay
+channel_code=8088&money=1.00&name=VIP会员&notify_url=http://www.pay.com/notify_url.php&out_trade_no=20160806151343349&pid=1001&timestamp=1696000000&type=alipay
 ```
 
 ## MD5（未启用 RSA2 时生效）
@@ -67,6 +68,7 @@ curl -X POST "{site_url}/api/orders" \
   -H "Content-Type: application/json" \
   -d '{
     "pid": "1001",
+    "channel_code": "8088",
     "type": "alipay",
     "out_trade_no": "20160806151343349",
     "notify_url": "http://www.pay.com/notify_url.php",

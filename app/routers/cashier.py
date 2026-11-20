@@ -13,10 +13,10 @@ from sqlmodel import select
 
 from app.core.deps import CacheDep, SessionDep
 from app.core.limiter import rate_limit
-from app.models import Merchant, Order, PaymentType
+from app.models import ChannelCode, Merchant, Order, PaymentType
 from app.responses import err, suc_data
 from app.routers.common.params import parse_bool
-from app.services.channel import list_available_pay_types
+from app.services.channel import code_supports_type, list_available_pay_types
 from app.services.order import (
     ORDER_PAID,
     build_signed_return_url,
@@ -36,6 +36,20 @@ def _is_mobile(request: Request) -> bool:
     return any(k in ua for k in ("mobile", "android", "iphone", "ipad", "windows phone"))
 
 
+async def _check_order_code(session, order) -> str:
+    """订单绑定了通道编码时校验编码仍可用。
+
+    编码被删除（或整体停用）时返回统一文案：不能落到下面「该支付方式未绑定」的分支，
+    否则「配置被删」会被误报成「参数不匹配」，客服和买家都会往错误方向排查。
+    """
+    if not order.channel_code_id:
+        return ""
+    code = await session.get(ChannelCode, order.channel_code_id)
+    if not code or code.status != 1:
+        return "通道编码不存在或不可用"
+    return ""
+
+
 @router.get("/types")
 async def order_pay_types(trade_no: str, session: SessionDep, cache: CacheDep,
                           _rl=rate_limit(times=60)):
@@ -47,7 +61,11 @@ async def order_pay_types(trade_no: str, session: SessionDep, cache: CacheDep,
         return_url = await _signed_return_url(order, session, cache)
         return suc_data({"status": 1, "money": str(order.money), "subject": order.subject,
                          "types": [], "return_url": return_url})
-    types = await list_available_pay_types(session, cache)
+    # 编码被删/停用时明确报错，不要静默返回空支付方式列表
+    code_error = await _check_order_code(session, order)
+    if code_error:
+        return err(-1, code_error)
+    types = await list_available_pay_types(session, cache, code_id=order.channel_code_id)
     data = {
         "status": 0,
         "money": str(order.money),
@@ -95,6 +113,16 @@ async def launch_payment(request: Request, session: SessionDep, cache: CacheDep,
     )).first()
     if not pay_type:
         return err(-1, "当前支付方式暂不可用，请选择其他支付方式")
+
+    # 订单绑定了下游通道编码：编码被删/停用直接报编码不可用，其余情况只允许编码内已绑定的
+    # 支付方式，否则后续必然拉起失败
+    code_error = await _check_order_code(session, order)
+    if code_error:
+        return err(-1, code_error)
+    if order.channel_code_id and not await code_supports_type(
+        session, order.channel_code_id, pay_type.id
+    ):
+        return err(-1, "通道编码不支持当前支付方式")
 
     merchant = await session.get(Merchant, order.merchant_id)
     if not merchant:
