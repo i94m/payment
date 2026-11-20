@@ -32,10 +32,8 @@ import type { ActionItem, FormFieldConfig } from "@/components/data-list/"
 import { z } from "zod"
 import {
   IconSearch, IconRefresh, IconPlus, IconEdit,
-  IconKey, IconHistory, IconDownload,
+  IconKey, IconDownload,
   IconDice, IconAdjustments, IconPercentage,
-  IconTrash, IconLockPassword,
-  IconList, IconReceipt,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
@@ -283,7 +281,7 @@ export function MerchantsPage() {
         cell: ({ row }) => (
           <span className="text-sm font-medium">{row.original.username}</span>
         ),
-        meta: { headClassName: "w-[110px]", sticky: "left" },
+        meta: { headClassName: "w-[120px]", sticky: "left" },
       },
       {
         // 商户号
@@ -292,7 +290,7 @@ export function MerchantsPage() {
         cell: ({ row }) => (
           <span className="text-sm font-bold tabular-nums">{row.original.pid}</span>
         ),
-        meta: { headClassName: "w-[90px]" },
+        meta: { headClassName: "w-[110px]" },
       },
       {
         // 余额（点击弹出充值/扣除）
@@ -307,7 +305,7 @@ export function MerchantsPage() {
             ¥{row.original.balance}
           </button>
         ),
-        meta: { headClassName: "w-[95px] text-right", cellClassName: "text-right" },
+        meta: { headClassName: "w-[110px] text-right", cellClassName: "text-right" },
       },
       {
         // 结算账号/姓名（点击弹出快捷修改；微信/QQ 带类型前缀）
@@ -348,7 +346,7 @@ export function MerchantsPage() {
             </button>
           )
         },
-        meta: { headClassName: "min-w-[130px]" },
+        meta: { headClassName: "w-[240px]" },
       },
       // 随机金额 / 建单限流：暂时隐藏列与设置入口（flags.ts 恢复）
       ...(RANDOM_AMOUNT_ENABLED ? ([{
@@ -389,7 +387,7 @@ export function MerchantsPage() {
             </button>
           )
         },
-        meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[120px] text-center", cellClassName: "text-center" },
       }] as ColumnDef<MerchantData>[]) : []),
       {
         // 扣量（点击弹出设置）：商户级开关 + 每 N 笔扣 1 + 起扣金额
@@ -427,7 +425,7 @@ export function MerchantsPage() {
             </button>
           )
         },
-        meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[120px] text-center", cellClassName: "text-center" },
       },
       // 建单限流：与随机金额同一开关（暂时隐藏设置入口）
       ...(RANDOM_AMOUNT_ENABLED ? ([{
@@ -537,21 +535,23 @@ export function MerchantsPage() {
         },
         meta: { headClassName: "w-[84px] text-center", cellClassName: "text-center" },
       }] as ColumnDef<MerchantData>[]) : []),
+      // 操作列：宽度按按钮数量给足（再窄会让末位按钮换行）；headStyle 同时是
+      // minWidth，窄屏优先保证按钮单行
       actionsColumn([
+        // 行内操作全部平铺展示（不再收进「更多(⋮)」下拉）；文案即按钮，不带图标以控制列宽
         { label: "API密钥", onClick: (item) => openDetail(item) },
         { label: "调整余额", onClick: (item) => { setBalanceTarget(item); setBalanceAmount(""); setBalanceRemark("") } },
         { label: "登录", title: "SSO 一键登录商户后台", onClick: (item) => submitSso(item) },
-        { label: "资金明细", icon: <IconHistory className="size-4" />, placement: "menu", title: "资金流水", onClick: (item) => navigate(`/records?merchant_id=${item.id}`) },
-        { label: "交易订单", icon: <IconList className="size-4" />, placement: "menu", onClick: (item) => navigate(`/trade/orders?merchant_id=${item.id}`) },
-        { label: "结算", icon: <IconReceipt className="size-4" />, placement: "menu", onClick: (item) => navigate(`/settle?merchant_id=${item.id}`) },
-        { label: "重置密码", icon: <IconLockPassword className="size-4" />, placement: "menu", onClick: (item) => { setPwdValue(""); setPwdTarget(item) } },
+        { label: "订单", onClick: (item) => navigate(`/trade/orders?merchant_id=${item.id}`) },
+        { label: "结算", onClick: (item) => navigate(`/settle?merchant_id=${item.id}`) },
+        { label: "重置密码", onClick: (item) => { setPwdValue(""); setPwdTarget(item) } },
         // 编辑弹窗只有状态/支付/结算三个开关，暂时隐藏时也收起入口
         ...(MERCHANT_STATUS_ENABLED ? [{
-          label: "编辑", icon: <IconEdit className="size-4" />, placement: "menu",
+          label: "编辑",
           onClick: (item: MerchantData) => { setEditingId(item.id); setFormOpen(true) },
         }] : []),
-        { label: "删除", icon: <IconTrash className="size-4" />, placement: "menu", variant: "destructive", title: "删除商户", onClick: (item) => setDeleteTarget(item) },
-      ] as ActionItem<MerchantData>[], { width: 240 }),
+        { label: "删除", variant: "destructive", title: "删除商户", onClick: (item) => setDeleteTarget(item) },
+      ] as ActionItem<MerchantData>[], { width: MERCHANT_STATUS_ENABLED ? 500 : 440 }),
     ],
   })
 
