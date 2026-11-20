@@ -56,6 +56,7 @@ curl -X POST "{site_url}/api/orders" \
   -H "Content-Type: application/json" \
   -d '{
     "pid": "1001",
+    "channel_code": "8088",
     "type": "alipay",
     "out_trade_no": "20160806151343349",
     "notify_url": "http://www.pay.com/notify_url.php",

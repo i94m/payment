@@ -29,6 +29,7 @@ from app.lib.sign import make_rsa_sign
 
 CANDIDATE_PORTS = [8000, 8001, 8002]  # compose 端口范围，实例实际分到的口运行期探测
 PID = "1001"
+DEMO_CHANNEL_CODE = "demo"  # seed_demo.py 建的演示编码
 IPS = [f"10.66.{i // 250}.{i % 250 + 1}" for i in range(2000)]
 _counter = itertools.count()
 
@@ -50,7 +51,8 @@ def pct(lat: list[float], p: float) -> float:
 
 async def create_order_params(idx: int) -> dict:
     params = {
-        "pid": PID, "type": "alipay", "out_trade_no": f"LOAD{int(time.time())}{idx}",
+        "pid": PID, "channel_code": DEMO_CHANNEL_CODE,
+        "type": "alipay", "out_trade_no": f"LOAD{int(time.time())}{idx}",
         "notify_url": "https://merchant.example/notify",
         "return_url": "http://127.0.0.1:8000/",
         "name": "压测订单", "money": "10.00",

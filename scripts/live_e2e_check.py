@@ -25,6 +25,7 @@ from app.lib.sign import make_rsa_sign
 BASE = os.environ.get("E2E_BASE", "http://127.0.0.1:8000")
 MOCK = os.environ.get("E2E_MOCK", "http://127.0.0.1:9000")
 PID = "1001"
+DEMO_CHANNEL_CODE = "demo"  # seed_demo.py 建的演示编码
 
 PASS, FAIL = [], []
 
@@ -75,7 +76,8 @@ def get_raw(path: str, headers: dict | None = None, follow=True):
 
 def create_order(out_trade_no: str, money: str = "10.00", sign_val: str | None = None):
     params = signed_params({
-        "pid": PID, "type": "alipay", "out_trade_no": out_trade_no,
+        "pid": PID, "channel_code": DEMO_CHANNEL_CODE,
+        "type": "alipay", "out_trade_no": out_trade_no,
         "notify_url": "https://merchant.example/notify",
         "return_url": BASE + "/",
         "name": "全流程实测", "money": money,

@@ -15,7 +15,7 @@ from sqlmodel import select
 
 from app.core.database import session_maker
 from app.core.security import hash_password
-from app.models import Channel, Merchant, PaymentType
+from app.models import Channel, ChannelCode, ChannelCodeItem, Merchant, PaymentType
 from app.services.apikey import get_api_secret, set_api_secret
 from app.services.crypto import encrypt_config
 
@@ -38,8 +38,6 @@ async def main():
                 status=1, rate=None, public_key=DEMO_MERCHANT_PUBLIC_KEY,
                 # 演示脚本/文档示例用 RSA2：demo 商户开启 RSA2；MD5 密钥创建即生成
                 rsa2_enable=True,
-                # 演示库未预置通道编码，demo 商户豁免「编码必传」，否则 demo.py 无法下单
-                channel_code_required=False,
             )
             set_api_secret(m)
             session.add(m)
@@ -99,6 +97,24 @@ async def main():
             print(f"[通道] 已创建 id={ch.id} 模拟上游 {DEMO_APPURL}")
         else:
             print(f"[通道] 已存在 id={ch.id}")
+
+        # 演示编码：新系统「编码必传」默认全开，demo 商户绑定一个演示编码，
+        # demo.py / e2e 脚本下单时携带 channel_code=demo
+        code = (await session.exec(
+            select(ChannelCode).where(ChannelCode.code == "demo")
+        )).first()
+        if not code:
+            code = ChannelCode(code="demo", name="演示编码", mode=0, status=1,
+                               remark="本地演示/冒烟脚本使用")
+            session.add(code)
+            await session.commit()
+            await session.refresh(code)
+            session.add(ChannelCodeItem(code_id=code.id, channel_id=ch.id,
+                                        weight=1, status=1, sort=0))
+            await session.commit()
+            print(f"[编码] 已创建 channel_code=demo（绑定通道 id={ch.id}）")
+        else:
+            print("[编码] 已存在 channel_code=demo")
 
     print("\n演示环境就绪。")
 

@@ -16,6 +16,7 @@ from app.lib.sign import make_rsa_sign
 
 PLATFORM = "http://127.0.0.1:8000"
 PID = "1001"
+DEMO_CHANNEL_CODE = "demo"  # seed_demo.py 建的演示编码
 OUT_TRADE_NO = "DEMO" + time.strftime("%H%M%S")
 
 
@@ -31,6 +32,7 @@ def main():
     money = sys.argv[1] if len(sys.argv) > 1 else "10.00"
     params = signed_params({
         "pid": PID,
+        "channel_code": DEMO_CHANNEL_CODE,  # 编码必传默认全开（seed_demo.py 建好的演示编码）
         "type": "alipay",
         "out_trade_no": OUT_TRADE_NO,
         "notify_url": "https://merchant.example/notify",  # 演示用占位
