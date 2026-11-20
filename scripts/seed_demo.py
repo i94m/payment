@@ -38,6 +38,8 @@ async def main():
                 status=1, rate=None, public_key=DEMO_MERCHANT_PUBLIC_KEY,
                 # 演示脚本/文档示例用 RSA2：demo 商户开启 RSA2；MD5 密钥创建即生成
                 rsa2_enable=True,
+                # 演示库未预置通道编码，demo 商户豁免「编码必传」，否则 demo.py 无法下单
+                channel_code_required=False,
             )
             set_api_secret(m)
             session.add(m)

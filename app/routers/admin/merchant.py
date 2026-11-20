@@ -296,8 +296,6 @@ async def create_merchant(body: CreateMerchantRequest, session: SessionDep):
             status=body.status,
             pay_status=body.pay_status,
             settle_status=body.settle_status,
-            # 下游通道编码：新商户默认必传（老商户升级时保持 0，由批量开关过渡）
-            channel_code_required=True,
         )
         # 开放 API 默认 MD5：创建即生成密钥（面板可查看/重置）
         set_api_secret(m)
@@ -798,7 +796,7 @@ async def set_all_merchant_deduct(body: SetAllDeductRequest, session: SessionDep
 
 
 # ============================================================
-# 下游通道编码必传开关（商户级；新建商户默认开，存量商户批量过渡）
+# 下游通道编码必传开关（商户级；默认全开，只做个别豁免）
 # ============================================================
 
 class SetChannelCodeRequiredRequest(BaseModel):
@@ -810,7 +808,7 @@ class SetChannelCodeRequiredRequest(BaseModel):
 async def set_merchant_channel_code(merchant_id: int,
                                     body: SetChannelCodeRequiredRequest,
                                     session: SessionDep):
-    """单商户「下游下单必须携带通道编码」开关。
+    """单商户「下游下单必须携带通道编码」开关（个别豁免用；默认全开）。
 
     只约束开放 API 下单；平台自己的收银台/收款页/余额充值不受影响。
     """
@@ -821,25 +819,6 @@ async def set_merchant_channel_code(merchant_id: int,
     session.add(m)
     await session.commit()
     return suc({"id": m.id, "channel_code_required": bool(m.channel_code_required)})
-
-
-@router.post("/channel-code/set-all",
-             dependencies=[Depends(PermissionChecker("merchant.update"))])
-async def set_all_merchant_channel_code(body: SetChannelCodeRequiredRequest,
-                                        session: SessionDep):
-    """批量开关（存量下游过渡期用）：作用于全部商户，系统测试商户除外。
-
-    与扣量的批量开关不同，这里不区分「锁定商户」——编码必传是接入契约，
-    没有按商户锁定配置的语义。
-    """
-    merchants = (await session.exec(
-        select(Merchant).where(col(Merchant.pid) != TEST_MERCHANT_PID)
-    )).all()
-    for m in merchants:
-        m.channel_code_required = bool(body.required)
-        session.add(m)
-    await session.commit()
-    return suc(f"已应用到 {len(merchants)} 个商户")
 
 
 # ============================================================

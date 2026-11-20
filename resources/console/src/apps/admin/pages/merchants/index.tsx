@@ -182,9 +182,6 @@ export function MerchantsPage() {
   const [batchDeductEnable, setBatchDeductEnable] = React.useState("1")
   const [batchDeductFrequency, setBatchDeductFrequency] = React.useState("")
   const [batchDeductMinmoney, setBatchDeductMinmoney] = React.useState("")
-  // ---- 下游通道编码必传（商户级；新建商户默认开，存量商户批量过渡）----
-  const [batchCodeRequiredOpen, setBatchCodeRequiredOpen] = React.useState(false)
-  const [batchCodeRequired, setBatchCodeRequired] = React.useState("1")
 
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
@@ -431,7 +428,8 @@ export function MerchantsPage() {
         meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
       },
       {
-        // 下游通道编码必传：只约束开放 API 下单（收银台/收款页/充值不受影响）
+        // 下游通道编码必传：默认全开，关闭即对该商户个别豁免；只约束开放 API 下单
+        // （收银台/收款页/充值不受影响）
         accessorKey: "channel_code_required",
         enableSorting: false,
         header: () => "编码必传",
@@ -442,7 +440,7 @@ export function MerchantsPage() {
               onCheckedChange={() => toggleChannelCodeRequired(row.original)}
             />
             <span className="text-xs text-muted-foreground">
-              {row.original.channel_code_required ? "必传" : "可选"}
+              {row.original.channel_code_required ? "必传" : "豁免"}
             </span>
           </div>
         ),
@@ -695,24 +693,13 @@ export function MerchantsPage() {
     }
   }
 
-  // 编码必传：行内开关（只约束开放 API 下单）
+  // 编码必传：行内开关（默认全开，关闭即个别豁免；只约束开放 API 下单）
   const toggleChannelCodeRequired = async (item: MerchantData) => {
     const next = !item.channel_code_required
     try {
       await merchantsApi.setChannelCodeRequired(item.id, next)
       updateRow(item.id, { channel_code_required: next })
       toast.success(next ? "已要求携带通道编码" : "不再强制通道编码")
-    } catch (err) {
-      toast.error(getErrorMessage(err, "操作失败"))
-    }
-  }
-
-  const submitBatchCodeRequired = async () => {
-    try {
-      const msg = await merchantsApi.setAllChannelCodeRequired(batchCodeRequired === "1")
-      setBatchCodeRequiredOpen(false)
-      refresh()
-      toast.success(msg || "已应用")
     } catch (err) {
       toast.error(getErrorMessage(err, "操作失败"))
     }
@@ -886,17 +873,6 @@ export function MerchantsPage() {
               >
                 <IconPercentage className="size-4" />
                 {"批量扣量"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setBatchCodeRequired("1")
-                  setBatchCodeRequiredOpen(true)
-                }}
-              >
-                <IconAdjustments className="size-4" />
-                {"批量编码必传"}
               </Button>
               <Button size="sm" onClick={() => { setEditingId(null); setFormOpen(true) }}>
                 <IconPlus className="size-4" />
@@ -1174,32 +1150,6 @@ export function MerchantsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setRandomTarget(null)}>{"取消"}</Button>
             <Button onClick={submitRandom}>{"确定"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 批量编码必传：存量下游过渡期一次性开启/关闭 */}
-      <Dialog open={batchCodeRequiredOpen} onOpenChange={setBatchCodeRequiredOpen}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>{"批量编码必传"}</DialogTitle>
-            <DialogDescription>
-              {"控制下游通过开放 API 下单时是否必须携带通道编码。只影响 /api/orders，平台收银台、收款页与余额充值不受影响。系统测试商户除外。"}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center gap-2">
-            <Switch
-              id="batch-code-required"
-              checked={batchCodeRequired === "1"}
-              onCheckedChange={(v) => setBatchCodeRequired(v ? "1" : "0")}
-            />
-            <Label htmlFor="batch-code-required" className="cursor-pointer">
-              {"必须携带通道编码"}
-            </Label>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBatchCodeRequiredOpen(false)}>{"取消"}</Button>
-            <Button onClick={submitBatchCodeRequired}>{"确定"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -155,8 +155,8 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
     agent_id:   归属代理（须为该商户名下启用代理，0=无）。
     request_host: 来源域名（支付域名白名单 enforcement，空=不校验）。
     require_channel_code: 是否执行「商户必须传通道编码」校验。**只有下游开放 API 传 True**：
-        这个开关是给下游对接方的契约，平台自己的收银台/收款页/余额充值不受影响
-        （否则新商户一上线就连自己的收款链接都拉不起来）。
+        这个开关是给下游对接方的契约（默认对所有商户开启，商户级可个别豁免），
+        平台自己的收银台/收款页/余额充值不受影响。
     """
     pid = params.get("pid", "")
     out_trade_no = str(params.get("out_trade_no", "") or "").strip()

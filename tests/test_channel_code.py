@@ -389,32 +389,32 @@ async def test_admin_code_unique_and_format(client, session, two_channels):
     assert "通道" in empty.json()["message"]
 
 
-async def test_merchant_required_switch_and_batch(client, session, seeded):
-    """商户级必传开关：单个切换 + 批量开启（存量下游过渡期用）。"""
+async def test_merchant_required_switch_single(client, session, seeded):
+    """编码必传默认开启；商户级开关只做个别豁免（建单/注册入口不再显式置位）。"""
     headers = await _admin_headers(session)
     merchant = seeded["merchant"]
+    # 通用夹具显式豁免；模型默认值本身必须是「必传」
     assert merchant.channel_code_required is False
+    assert Merchant(pid=9999, username="defaults").channel_code_required is True
 
+    # 关闭 → 开放 API 不再要求编码
     r = await client.post(f"/admin-api/merchant/{merchant.id}/channel-code",
-                          json={"required": True}, headers=headers)
-    assert r.json()["code"] == 0, r.text
-    await session.refresh(merchant)
-    assert merchant.channel_code_required is True
-
-    # 批量关→开
-    r = await client.post("/admin-api/merchant/channel-code/set-all",
                           json={"required": False}, headers=headers)
     assert r.json()["code"] == 0, r.text
     await session.refresh(merchant)
     assert merchant.channel_code_required is False
 
-    r = await client.post("/admin-api/merchant/channel-code/set-all",
+    # 重新开启（默认口径）→ 未带编码被拒
+    r = await client.post(f"/admin-api/merchant/{merchant.id}/channel-code",
                           json={"required": True}, headers=headers)
     assert r.json()["code"] == 0, r.text
     await session.refresh(merchant)
     assert merchant.channel_code_required is True
+    data = await _post_order(client, "CC-DEFAULT-ON")
+    assert data["code"] == -1
+    assert data["message"] == "缺少通道编码"
 
-    # 新商户默认必传
+    # 后台建商户不写这个字段，默认即必传
     r = await client.post("/admin-api/merchant", json={
         "username": "newmch", "password": "newmch123456",
     }, headers=headers)

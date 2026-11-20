@@ -253,6 +253,9 @@ async def seeded(session):
     m = Merchant(
         pid=1001, username="testmch", password=hash_password("test123456"),
         public_key=MERCHANT_PUBLIC_KEY, status=1, rsa2_enable=True,
+        # 通用夹具按「已豁免编码必传」建商户：绝大多数用例走不带 channel_code 的老路径；
+        # 编码必传相关行为由 test_channel_code.py 显式开启
+        channel_code_required=False,
     )
     set_api_secret(m, MERCHANT_API_SECRET)
     session.add(m)

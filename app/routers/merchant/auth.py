@@ -289,8 +289,6 @@ async def register(body: RegisterRequest, request: Request, session: SessionDep,
             status=1,
             # 注册审核：待审核商户可登录但不可收款
             pay_status=2 if review else 1,
-            # 下游通道编码：新商户默认必传（存量商户升级时保持 0，由批量开关过渡）
-            channel_code_required=True,
         )
         set_api_secret(m)  # 开放 API 默认 MD5：注册即生成密钥
         session.add(m)

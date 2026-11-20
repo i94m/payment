@@ -7,32 +7,13 @@ Create Date: 2026-11-20 09:00:00.000000
 - `channel_codes`：编码主档（全局唯一命名空间；mode 是编码级策略）
 - `channel_code_items`：编码 → 通道绑定（权重/本编码内临时开关/轮询游标）
 - `orders.channel_code` / `orders.channel_code_id` + 索引 (channel_code_id, created_at)
-- `merchants.channel_code_required`（下游下单是否必传编码；存量商户默认 0）
+- `merchants.channel_code_required`（下游下单必须携带编码；默认 1，商户级开关只做个别豁免）
 
-**量级与锁表评估（orders 是全站最大的表）**
+`orders` 加列先试 `ALGORITHM=INSTANT`（MySQL 8.0.12+ 只改数据字典），不支持时回落
+普通 ADD COLUMN；建索引用 `ALGORITHM=INPLACE LOCK=NONE`，不阻塞读写。
 
-三类 DDL 的代价完全不同，本迁移按代价从低到高分别处理：
-
-1. 两张新表：纯 CREATE TABLE，不碰存量数据。
-2. `orders` 加两列：MySQL 8.0.12+ 走 `ALGORITHM=INSTANT`（只改数据字典，毫秒级，
-   不重建表、不持写锁）；5.7 与 8.0.12 以下不支持 INSTANT，退化为 COPY（重建整表，
-   持写锁）。`_add_column()` 先试 INSTANT，失败才回落普通 ADD COLUMN 并打日志。
-3. `orders` 加二级索引：`ALGORITHM=INPLACE LOCK=NONE`（在线建索引，DML 不阻塞，
-   只是 IO/CPU 开销）；老版本/特殊引擎回落到普通 CREATE INDEX。
-
-实测（本机 docker，`orders` 造 100 万行 = 144MB 数据 + 198MB 索引）：
-
-| DDL | MySQL 8.0 | MySQL 5.7.44（QEMU 模拟，偏保守） |
-|---|---|---|
-| 加 2 列 | INSTANT 0.08~0.11s | 不支持 INSTANT（error 1800）→ COPY **55.8s**，全程持写锁 |
-| 建 `(channel_code_id, created_at)` 索引 | INPLACE LOCK=NONE **0.88s** | INPLACE LOCK=NONE **10.5s**（不阻塞读写） |
-
-存量库最坏情况（MySQL 5.7 + 大表）第 2 步是整表 COPY，这是本迁移唯一的长时间操作。
-两步上线路径（已实测可重入）：低峰期先手工跑一次只加列的 DDL（列已存在时本迁移会跳过，
-见 `_column_exists`），随后正常发布只落后面的建索引（在线）。具体行数与耗时结论见 PR 描述。
-
-`orders.channel_code` 可空、`channel_code_id` 默认 0：历史订单不写编码，语义是「未指定编码」，
-与「编码被删除」区分开（删除编码时只解绑，不删历史留痕）。
+`orders.channel_code` 可空、`channel_code_id` 默认 0：未指定编码的订单（平台收银台、
+余额充值等内部入口）不写编码，与「编码被删除」区分开（删除编码时只解绑，不删历史留痕）。
 """
 from typing import Sequence, Union
 
@@ -45,24 +26,6 @@ revision: str = '0014'
 down_revision: Union[str, None] = '0013'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
-
-
-def _column_exists(bind, table: str, column: str) -> bool:
-    """MySQL 走 information_schema；其它方言（sqlite 单机/测试）走 PRAGMA。
-
-    两步上线时列可能已被提前加好，这一步保证迁移可重入。
-    """
-    if bind.dialect.name == "mysql":
-        row = bind.execute(
-            sa.text(
-                "SELECT 1 FROM information_schema.columns "
-                "WHERE table_schema = DATABASE() AND table_name = :t AND column_name = :c"
-            ),
-            {"t": table, "c": column},
-        ).first()
-        return row is not None
-    rows = bind.execute(sa.text(f"PRAGMA table_info({table})")).fetchall()
-    return any(r[1] == column for r in rows)
 
 
 def _index_exists(bind, table: str, index: str) -> bool:
@@ -82,11 +45,8 @@ def _index_exists(bind, table: str, index: str) -> bool:
 
 
 def _add_column(table: str, column: sa.Column) -> None:
-    """加列：MySQL 优先 INSTANT，失败回落普通 ADD COLUMN（见模块 docstring 的评估）。"""
+    """加列：MySQL 优先 INSTANT，失败回落普通 ADD COLUMN。"""
     bind = op.get_bind()
-    if _column_exists(bind, table, column.name):
-        print(f"[0014] {table}.{column.name} 已存在，跳过加列")
-        return
     if bind.dialect.name == "mysql":
         from sqlalchemy.schema import CreateColumn
 
@@ -151,9 +111,8 @@ def upgrade() -> None:
 
     _add_column(
         'merchants',
-        sa.Column('channel_code_required', sa.Boolean(), server_default=sa.text('0'), nullable=False),
+        sa.Column('channel_code_required', sa.Boolean(), server_default=sa.text('1'), nullable=False),
     )
-    # 存量商户不强制（默认 0 即语义本身，无需回填）：老下游零改造
     _add_column('orders', sa.Column('channel_code', sa.String(length=32), nullable=True))
     _add_column(
         'orders',
