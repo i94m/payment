@@ -13,6 +13,8 @@ interface UseServerPaginationOptions<T> {
   perPage?: number
   onError?: (err: unknown) => void
   filters?: Record<string, unknown>
+  /** 初始搜索词（如列表页从别处跳转带 ?trade_no=xx）：首屏请求即带上，不必等用户再点查询 */
+  initialKeyword?: string
 }
 
 export function useServerPagination<T>({
@@ -20,6 +22,7 @@ export function useServerPagination<T>({
   perPage = 10,
   onError,
   filters,
+  initialKeyword = "",
 }: UseServerPaginationOptions<T>) {
   const [data, setData] = React.useState<T[]>([])
   const [total, setTotal] = React.useState(0)
@@ -28,10 +31,10 @@ export function useServerPagination<T>({
   const [pageSize, setPageSize] = React.useState(perPage)
   // `keyword` is the DRAFT value bound to the search input — typing must NOT
   // trigger a request. `appliedKeyword` is the committed value sent in requests.
-  const keywordRef = React.useRef("")
-  const appliedKeywordRef = React.useRef("")
-  const [keyword, setKeywordState] = React.useState("")
-  const [appliedKeyword, setAppliedKeyword] = React.useState("")
+  const keywordRef = React.useRef(initialKeyword)
+  const appliedKeywordRef = React.useRef(initialKeyword)
+  const [keyword, setKeywordState] = React.useState(initialKeyword)
+  const [appliedKeyword, setAppliedKeyword] = React.useState(initialKeyword)
   const [sorting, setSortingState] = React.useState<SortingState>([])
   const [loading, setLoading] = React.useState(true)
   const [statistics, setStatistics] = React.useState<StatisticItem[] | undefined>(undefined)

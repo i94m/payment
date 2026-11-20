@@ -1,8 +1,8 @@
 """商户端订单查询（merchant_id 数据隔离）+ 统计汇总 + Excel 导出 + 手动重发通知。
 
-列表默认仅展示收款单（order_type=0），余额充值单在资金流水/充值入口体现。
-扣量单（is_deducted）对商户侧一律显示为未支付：状态遮蔽、无完成时间、不计入统计
-（商户面板口径）。
+列表默认展示正式收款单与测试单（order_type=0/2，测试单默认可见），余额充值单
+在资金流水/充值入口体现、不进订单列表。扣量单（is_deducted）对商户侧一律显示为
+未支付：状态遮蔽、无完成时间、不计入统计（商户面板口径）。
 """
 from decimal import Decimal
 
@@ -38,7 +38,7 @@ def _dump_order(o: Order, type_names: dict[str, str] | None = None,
     return {
         "trade_no": o.trade_no,
         "out_trade_no": o.out_trade_no,
-        # 0=普通收款 2=测试单（商户列表默认只看普通收款，测试单手动筛）
+        # 0=普通收款 2=测试单（商户列表默认含两者，测试单可单独筛）
         "order_type": o.order_type,
         "type": type_code,
         "type_name": (type_names or {}).get(type_code, type_code),
@@ -63,11 +63,17 @@ def _build_conditions(auth: MerchantUser, body: dict, for_summary: bool = False)
     列表场景保留扣量单但状态筛选按「商户视角」处理：筛 1=已支付 时排除扣量单，
     筛 0=未支付 时把扣量单（商户视角的未支付）也纳入。
 
-    订单类型：默认只看普通收款单（order_type=0）；order_type=2 时只看测试单。
-    充值单在资金流水/充值入口体现，不在订单列表出现。
+    订单类型：默认 0/2（正式收款 + 测试单，测试单默认可见）；order_type=0 只看正式收款，
+    order_type=2 只看测试单。充值单在资金流水/充值入口体现，不在订单列表出现。
     """
-    order_type = 2 if str(body.get("order_type", "") or "") == "2" else 0
-    conditions = [Order.merchant_id == auth.user.id, Order.order_type == order_type]
+    ot = str(body.get("order_type", "") or "").strip()
+    conditions = [Order.merchant_id == auth.user.id]
+    if ot == "2":
+        conditions.append(Order.order_type == 2)
+    elif ot == "0":
+        conditions.append(Order.order_type == 0)
+    else:
+        conditions.append(col(Order.order_type).in_([0, 2]))
     if body.get("trade_no"):
         conditions.append(Order.trade_no == body["trade_no"])
     if body.get("out_trade_no"):

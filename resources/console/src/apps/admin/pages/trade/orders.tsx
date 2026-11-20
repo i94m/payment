@@ -58,12 +58,16 @@ export function OrdersPage() {
   const canRefill = hasPermission("order.refill")
   const canNotify = hasPermission("order.notify")
 
-  const [tradeNo, setTradeNo] = React.useState(searchParams.get("trade_no") || "")
+  // 平台订单号统一走搜索框（keyword）：从别处跳转带 ?trade_no=xx 时作为首屏搜索词，
+  // 输入框可见、可编辑，避免 URL 参数与实际筛选条件各存一份（重置后还残留）。
+  const initialTradeNo = React.useMemo(
+    () => searchParams.get("trade_no") || "", [searchParams],
+  )
   const [outTradeNo, setOutTradeNo] = React.useState("")
   const [merchantId, setMerchantId] = React.useState(searchParams.get("merchant_id") || "")
   const [channelId] = React.useState(searchParams.get("channel_id") || "")
   const [typeCode] = React.useState(searchParams.get("type") || "")
-  // 订单类型：""=默认（不含测试单）/ "0" 正式收款 / "1" 余额充值 / "2" 测试单 / "all" 全部
+  // 订单类型：""=全部类型（默认）/ "0" 正式收款 / "1" 余额充值 / "2" 测试单
   const [orderType, setOrderType] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState("")
   const [notifyFilter, setNotifyFilter] = React.useState("")
@@ -77,7 +81,6 @@ export function OrdersPage() {
 
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
-    if (tradeNo.trim()) params.trade_no = tradeNo.trim()
     if (outTradeNo.trim()) params.out_trade_no = outTradeNo.trim()
     // 数字型过滤统一走 toIntParam：非法值（如 URL 里带 channel_id=abc）不再序列化成 NaN 打到后端
     const mid = toIntParam(merchantId)
@@ -92,7 +95,7 @@ export function OrdersPage() {
       params.addtime = `${format(startDate, "yyyy-MM-dd")},${format(endDate, "yyyy-MM-dd")}`
     }
     return params
-  }, [tradeNo, outTradeNo, merchantId, typeCode, orderType, statusFilter, notifyFilter, startDate, endDate])
+  }, [outTradeNo, merchantId, typeCode, orderType, statusFilter, notifyFilter, startDate, endDate])
 
   // 日期区间是成对参数：只选一端会被后端静默忽略，这里显式提示而不是「查了没反应」
   const applyFilterParams = () => {
@@ -104,13 +107,13 @@ export function OrdersPage() {
   }
 
   const handleReset = () => {
-    setTradeNo(""); setOutTradeNo(""); setMerchantId(""); setOrderType("")
+    setKeyword(""); setOutTradeNo(""); setMerchantId(""); setOrderType("")
     setStatusFilter(""); setNotifyFilter(""); setStartDate(undefined); setEndDate(undefined)
     applyFilters()
   }
 
   const {
-    table, total, loading, error, keyword, setKeyword, applyFilters, refresh,
+    table, total, loading, error, keyword, appliedKeyword, setKeyword, applyFilters, refresh,
   } = useDataList<OrderData>({
     // useServerPagination 统一注入 keyword；后端 /order/list 只认 trade_no，此处做映射
     fetchFn: async (params) => {
@@ -122,6 +125,7 @@ export function OrdersPage() {
       return res
     },
     filters: filterParams,
+    initialKeyword: initialTradeNo,
     columns: [
       {
         accessorKey: "trade_no",
@@ -235,7 +239,7 @@ export function OrdersPage() {
   const handleExport = async () => {
     try {
       const params: Record<string, string> = {}
-      if (tradeNo.trim()) params.trade_no = tradeNo.trim()
+      if (appliedKeyword) params.trade_no = appliedKeyword
       if (outTradeNo.trim()) params.out_trade_no = outTradeNo.trim()
       const mid = toIntParam(merchantId)
       if (mid !== undefined) params.merchant_id = String(mid)
@@ -294,16 +298,15 @@ export function OrdersPage() {
               value={merchantId}
               onChange={(e) => setMerchantId(digitsOnly(e.target.value))}
             />
-            <Select value={orderType || "_default"} onValueChange={(v) => setOrderType(v === "_default" ? "" : v)}>
+            <Select value={orderType || "_all"} onValueChange={(v) => setOrderType(v === "_all" ? "" : v)}>
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"订单类型"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_default">{"业务订单（不含测试）"}</SelectItem>
+                <SelectItem value="_all">{"全部类型"}</SelectItem>
                 <SelectItem value="0">{"正式收款"}</SelectItem>
                 <SelectItem value="1">{"余额充值"}</SelectItem>
                 <SelectItem value="2">{"测试单"}</SelectItem>
-                <SelectItem value="all">{"全部类型"}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>

@@ -2,7 +2,7 @@
 
 - 通道测试不需要任何站点配置项（测试商户自动创建，无需配测试商户 PID）
 - 通道测试会落测试单（order_type=2）：可查、可回调查看状态，但不进资金/统计
-- 商户端「测试支付」同样落测试单，订单记录可筛选，不入账
+- 商户端「测试支付」同样落测试单，订单记录默认可见（也可筛），不入账
 - 通道列表「调试日志」开关走独立接口，只改 debug_log，不重写费率/限额
 - 插件 inputs 返回前端渲染口径的 label（插件 meta 里叫 title），且易支付
   不再暴露 appswitch 字段
@@ -104,14 +104,22 @@ async def test_channel_testpay_creates_test_order_and_isolated(client, seeded, s
     assert data["today"]["count"] == 0
     assert data["count2"] == 1       # 商户数（不含系统测试商户）
 
-    # 测试单在管理端订单列表里显式标记类型，默认列表也可见（联调要能点进去看）
+    # 测试单在管理端订单列表里显式标记类型，默认（不筛类型）也能看到（联调要能点进去看）
+    r = await client.post("/admin-api/order/list", json={}, headers=headers)
+    items = r.json()["data"]["items"]
+    assert len(items) == 1 and items[0]["order_type"] == 2
+
     r = await client.post("/admin-api/order/list", json={"order_type": "2",
                                                          "trade_no": trade_no},
                           headers=headers)
     items = r.json()["data"]["items"]
     assert len(items) == 1 and items[0]["order_type"] == 2
 
-    # 按平台订单号精确查询不受「默认不含测试单」影响（「查看订单」按钮直达）
+    # 显式只看正式收款时不掺测试单
+    r = await client.post("/admin-api/order/list", json={"order_type": "0"}, headers=headers)
+    assert r.json()["data"]["total"] == 0
+
+    # 按平台订单号精确查询（「查看订单」按钮直达）
     r = await client.post("/admin-api/order/list", json={"trade_no": trade_no},
                           headers=headers)
     items = r.json()["data"]["items"]
@@ -141,14 +149,19 @@ async def test_merchant_testpay_visible_in_order_list(client, seeded, session):
     await session.refresh(order)
     assert order.status == 1
 
-    # 订单记录：默认只列正式收款，显式筛「测试单」才出现
+    # 订单记录：默认全部类型（含测试单）即可看到；显式筛「测试单」同样可查
     r = await client.post("/merchant-api/order/list", json={}, headers=headers)
-    assert r.json()["data"]["total"] == 0
+    assert r.json()["data"]["total"] == 1
+    assert r.json()["data"]["items"][0]["trade_no"] == trade_no
     r = await client.post("/merchant-api/order/list", json={"order_type": "2"}, headers=headers)
     data = r.json()["data"]
     assert data["total"] == 1
     assert data["items"][0]["trade_no"] == trade_no
     assert data["items"][0]["order_type"] == 2
+
+    # 显式只看正式收款时不掺测试单
+    r = await client.post("/merchant-api/order/list", json={"order_type": "0"}, headers=headers)
+    assert r.json()["data"]["total"] == 0
 
     # 不入余额/流水
     await session.refresh(merchant)

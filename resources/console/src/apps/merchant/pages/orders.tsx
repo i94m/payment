@@ -78,7 +78,7 @@ function NotifyStatusCell({ status, notifyStatus }: { status: number; notifyStat
 }
 
 export function OrdersPage() {
-  // 测试支付页跳转过来时带 ?order_type=2，直接落到测试单列表
+  // 测试支付页跳转过来时带 ?order_type=2，直接落到测试单列表；默认全部类型（含测试单）
   const [searchParams] = useSearchParams()
   const [outTradeNo, setOutTradeNo] = React.useState("")
   const [orderType, setOrderType] = React.useState(searchParams.get("order_type") === "2" ? "2" : "")
@@ -94,7 +94,7 @@ export function OrdersPage() {
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
     if (outTradeNo.trim()) params.out_trade_no = outTradeNo.trim()
-    if (orderType === "2") params.order_type = "2"
+    if (orderType) params.order_type = orderType
     const status = toIntParam(statusFilter)
     if (status !== undefined) params.status = status
     if (startDate && endDate) {
@@ -296,12 +296,13 @@ export function OrdersPage() {
               onChange={(e) => setOutTradeNo(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSearch() }}
             />
-            <Select value={orderType || "_normal"} onValueChange={(v) => setOrderType(v === "_normal" ? "" : v)}>
+            <Select value={orderType || "_all"} onValueChange={(v) => setOrderType(v === "_all" ? "" : v)}>
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"订单类型"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_normal">{"正式收款"}</SelectItem>
+                <SelectItem value="_all">{"全部类型"}</SelectItem>
+                <SelectItem value="0">{"正式收款"}</SelectItem>
                 <SelectItem value="2">{"测试单"}</SelectItem>
               </SelectContent>
             </Select>

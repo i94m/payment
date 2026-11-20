@@ -51,8 +51,8 @@ export interface OrderListParams {
   status?: number | ""
   type?: string
   /**
-   * 订单类型：""（默认，不含测试单）/ "0" 正式收款 / "1" 余额充值 / "2" 测试单 / "all" 全部。
-   * 商户端只认 "" 与 "2"。
+   * 订单类型：""（默认，全部类型，含测试单）/ "0" 正式收款 / "1" 余额充值 / "2" 测试单。
+   * 商户端只认 ""（正式收款 + 测试单）、"0" 与 "2"。
    */
   order_type?: string
   notify_status?: number | ""

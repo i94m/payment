@@ -22,6 +22,8 @@ interface UseDataListOptions<T> {
   perPage?: number
   onError?: (err: unknown) => void
   filters?: Record<string, unknown>
+  /** 初始搜索词：列表页从别处带参跳转（如 ?trade_no=xx）时首屏即生效 */
+  initialKeyword?: string
 }
 
 export function useDataList<T>({
@@ -30,6 +32,7 @@ export function useDataList<T>({
   perPage = 10,
   onError,
   filters,
+  initialKeyword,
 }: UseDataListOptions<T>) {
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({})
   const [deleteId, setDeleteId] = React.useState<number | null>(null)
@@ -60,6 +63,7 @@ export function useDataList<T>({
       perPage,
       onError,
       filters,
+      initialKeyword,
     })
 
   const table = useReactTable({

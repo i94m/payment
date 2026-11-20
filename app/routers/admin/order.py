@@ -67,16 +67,10 @@ def _dump_order(order: Order, merchant_username: str = "", type_name: str = "",
 
 def _build_query(body: dict):
     query = select(Order).order_by(col(Order.id).desc())
-    # 订单类型：默认排除测试单（测试单是联调用的，日常浏览不掺进来）；
-    # 显式传 0/1/2 按类型筛，传 all 表示不筛（全部类型）。
-    # 按平台订单号精确查询时不套默认排除 —— 搜到具体单号就应该能打开详情（测试单也一样）。
+    # 订单类型：默认不筛类型（全部类型都返回，测试单默认可见）；显式传 0/1/2 按类型筛。
     ot = str(body.get("order_type", "") or "").strip()
-    if ot == "all":
-        pass
-    elif ot in ("0", "1", "2"):
+    if ot in ("0", "1", "2"):
         query = query.where(Order.order_type == int(ot))
-    elif not body.get("trade_no"):
-        query = query.where(col(Order.order_type) != 2)
     if body.get("trade_no"):
         query = query.where(Order.trade_no == body["trade_no"])
     if body.get("out_trade_no"):
