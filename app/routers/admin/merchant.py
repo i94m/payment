@@ -103,6 +103,8 @@ def _dump_merchant(m: Merchant) -> dict:
         "deduct_enable": bool(m.deduct_enable),
         "deduct_frequency": m.deduct_frequency,
         "deduct_minmoney": str(m.deduct_minmoney),
+        # 下游通道编码：是否强制开放 API 下单必须携带 channel_code
+        "channel_code_required": bool(m.channel_code_required),
         "fixed": bool(m.fixed),
         "settle_type": m.settle_type,     # 1支付宝 2微信 3QQ 4银行卡
         "settle_account": m.settle_account or "",
@@ -790,6 +792,51 @@ async def set_all_merchant_deduct(body: SetAllDeductRequest, session: SessionDep
         if body.deduct_enable:
             m.deduct_frequency = frequency
             m.deduct_minmoney = min_money
+        session.add(m)
+    await session.commit()
+    return suc(f"已应用到 {len(merchants)} 个商户")
+
+
+# ============================================================
+# 下游通道编码必传开关（商户级；新建商户默认开，存量商户批量过渡）
+# ============================================================
+
+class SetChannelCodeRequiredRequest(BaseModel):
+    required: bool
+
+
+@router.post("/{merchant_id}/channel-code",
+             dependencies=[Depends(PermissionChecker("merchant.update"))])
+async def set_merchant_channel_code(merchant_id: int,
+                                    body: SetChannelCodeRequiredRequest,
+                                    session: SessionDep):
+    """单商户「下游下单必须携带通道编码」开关。
+
+    只约束开放 API 下单；平台自己的收银台/收款页/余额充值不受影响。
+    """
+    m = await _get_merchant_or_404(session, merchant_id)
+    if not m:
+        return err(404, "商户不存在")
+    m.channel_code_required = bool(body.required)
+    session.add(m)
+    await session.commit()
+    return suc({"id": m.id, "channel_code_required": bool(m.channel_code_required)})
+
+
+@router.post("/channel-code/set-all",
+             dependencies=[Depends(PermissionChecker("merchant.update"))])
+async def set_all_merchant_channel_code(body: SetChannelCodeRequiredRequest,
+                                        session: SessionDep):
+    """批量开关（存量下游过渡期用）：作用于全部商户，系统测试商户除外。
+
+    与扣量的批量开关不同，这里不区分「锁定商户」——编码必传是接入契约，
+    没有按商户锁定配置的语义。
+    """
+    merchants = (await session.exec(
+        select(Merchant).where(col(Merchant.pid) != TEST_MERCHANT_PID)
+    )).all()
+    for m in merchants:
+        m.channel_code_required = bool(body.required)
         session.add(m)
     await session.commit()
     return suc(f"已应用到 {len(merchants)} 个商户")

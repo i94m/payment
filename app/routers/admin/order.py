@@ -42,6 +42,9 @@ def _dump_order(order: Order, merchant_username: str = "", type_name: str = "",
         "type_name": type_name,
         "type_icon": type_icon,
         "channel_id": order.channel_id,
+        # 下游通道编码：下单时下游传的编码（留痕，编码改名/删除后仍是当时的值）
+        "channel_code": order.channel_code or "",
+        "channel_code_id": order.channel_code_id,
         "plugin_name": order.plugin_name or "",
         "subject": order.subject,
         "money": str(order.money),
@@ -81,6 +84,11 @@ def _build_query(body: dict):
     if body.get("channel_id"):
         # 通道列表「订单」快捷跳转：/trade/orders?channel_id=xx
         query = query.where(Order.channel_id == parse_int(body["channel_id"], "channel_id"))
+    if body.get("channel_code_id"):
+        # 下游通道编码列表「订单」快捷跳转：/trade/orders?channel_code_id=xx
+        query = query.where(Order.channel_code_id == parse_int(body["channel_code_id"], "channel_code_id"))
+    if body.get("channel_code"):
+        query = query.where(Order.channel_code == str(body["channel_code"]).strip().lower())
     if body.get("status") is not None and body.get("status") != "":
         query = query.where(Order.status == parse_int(body["status"], "status"))
     if body.get("type"):

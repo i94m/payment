@@ -271,3 +271,175 @@ async def test_cashier_types_filtered_by_code(client, session, two_channels):
     await session.commit()
     r = await client.get(f"/cashier/types?trade_no={order.trade_no}")
     assert r.json()["data"]["types"] == []
+# ============================================================
+# 后台：保存校验与通道删除保护
+# ============================================================
+
+async def test_admin_rejects_all_zero_weights(client, session, two_channels):
+    """硬断言：权重模式全零权重 → 保存被拒（否则会退化成永远选最后一条）。"""
+    headers = await _admin_headers(session)
+    seeded = two_channels
+    body = {
+        "code": "8088", "name": "编码8088", "remark": "", "mode": 2, "status": 1,
+        "items": [
+            {"channel_id": seeded["channel"].id, "weight": 0, "status": 1},
+            {"channel_id": seeded["channel2"].id, "weight": 0, "status": 1},
+        ],
+    }
+    r = await client.post("/admin-api/pay/channel-codes", json=body, headers=headers)
+    assert r.status_code == 400
+    assert r.json()["code"] == -1
+    assert "权重" in r.json()["message"]
+    assert (await session.exec(select(ChannelCode))).first() is None
+
+    # 至少一个正权重即可保存
+    body["items"][1]["weight"] = 3
+    r = await client.post("/admin-api/pay/channel-codes", json=body, headers=headers)
+    assert r.json()["code"] == 0, r.text
+    assert (await session.exec(select(ChannelCode))).first() is not None
+
+
+async def test_admin_channel_delete_blocked_when_referenced(client, session, two_channels):
+    headers = await _admin_headers(session)
+    seeded = two_channels
+    await _mk_code(session, [(seeded["channel"], 1, 1)], code="8088")
+
+    r = await client.delete(f"/admin-api/pay/channels/{seeded['channel'].id}", headers=headers)
+    assert r.status_code == 400
+    assert r.json()["code"] == -1
+    assert "通道编码" in r.json()["message"]
+    # 通道还在
+    assert await session.get(Channel, seeded["channel"].id) is not None
+
+    # 未被引用的通道照旧可删
+    r = await client.delete(f"/admin-api/pay/channels/{seeded['channel2'].id}", headers=headers)
+    assert r.json()["code"] == 0
+
+
+async def test_admin_code_crud_and_status_toggles(client, session, two_channels):
+    """编码主档/成员整表覆盖写 + 两个轻量开关。"""
+    headers = await _admin_headers(session)
+    seeded = two_channels
+    body = {
+        "code": "8088", "name": "下游A", "remark": "备注", "mode": 1, "status": 1,
+        "items": [{"channel_id": seeded["channel"].id, "weight": 1, "status": 1}],
+    }
+    r = await client.post("/admin-api/pay/channel-codes", json=body, headers=headers)
+    assert r.json()["code"] == 0, r.text
+    code_id = r.json()["data"]["id"]
+
+    # 编码统一小写：下游大小写不敏感
+    r = await client.post("/admin-api/pay/channel-codes",
+                          json={**body, "code": "ABCD"}, headers=headers)
+    assert r.json()["data"]["code"] == "abcd"
+
+    # 列表/详情
+    r = await client.get("/admin-api/pay/channel-codes", headers=headers)
+    assert r.json()["data"]["total"] == 2
+    r = await client.get(f"/admin-api/pay/channel-codes/{code_id}", headers=headers)
+    detail = r.json()["data"]
+    assert [it["channel_id"] for it in detail["items"]] == [seeded["channel"].id]
+
+    # 成员整表覆盖写：换成 channel2
+    r = await client.put(f"/admin-api/pay/channel-codes/{code_id}", json={
+        **body, "items": [{"channel_id": seeded["channel2"].id, "weight": 2, "status": 0}],
+    }, headers=headers)
+    assert r.json()["code"] == 0, r.text
+    r = await client.get(f"/admin-api/pay/channel-codes/{code_id}", headers=headers)
+    assert [it["channel_id"] for it in r.json()["data"]["items"]] == [seeded["channel2"].id]
+
+    # 轻量开关：编码停用 / 成员启停
+    r = await client.put(f"/admin-api/pay/channel-codes/{code_id}/status",
+                         json={"status": 0}, headers=headers)
+    assert r.json()["data"]["status"] == 0
+    r = await client.put(
+        f"/admin-api/pay/channel-codes/{code_id}/items/{seeded['channel2'].id}/status",
+        json={"status": 1}, headers=headers,
+    )
+    assert r.json()["data"]["status"] == 1
+    r = await client.get(f"/admin-api/pay/channel-codes/{code_id}", headers=headers)
+    assert r.json()["data"]["items"][0]["status"] == 1
+
+    # 删除后编码消失，历史订单留痕不受影响
+    r = await client.delete(f"/admin-api/pay/channel-codes/{code_id}", headers=headers)
+    assert r.json()["code"] == 0
+    assert await session.get(ChannelCode, code_id) is None
+
+
+async def test_admin_code_unique_and_format(client, session, two_channels):
+    headers = await _admin_headers(session)
+    seeded = two_channels
+    body = {
+        "code": "8088", "name": "下游A", "remark": "", "mode": 0, "status": 1,
+        "items": [{"channel_id": seeded["channel"].id, "weight": 1, "status": 1}],
+    }
+    assert (await client.post("/admin-api/pay/channel-codes", json=body,
+                              headers=headers)).json()["code"] == 0
+    dup = await client.post("/admin-api/pay/channel-codes", json=body, headers=headers)
+    assert dup.json()["code"] == -1
+    assert "已存在" in dup.json()["message"]
+
+    bad = await client.post("/admin-api/pay/channel-codes",
+                            json={**body, "code": "有中文"}, headers=headers)
+    assert bad.json()["code"] == -1
+
+    empty = await client.post("/admin-api/pay/channel-codes",
+                              json={**body, "code": "9001", "items": []}, headers=headers)
+    assert empty.json()["code"] == -1
+    assert "通道" in empty.json()["message"]
+
+
+async def test_merchant_required_switch_and_batch(client, session, seeded):
+    """商户级必传开关：单个切换 + 批量开启（存量下游过渡期用）。"""
+    headers = await _admin_headers(session)
+    merchant = seeded["merchant"]
+    assert merchant.channel_code_required is False
+
+    r = await client.post(f"/admin-api/merchant/{merchant.id}/channel-code",
+                          json={"required": True}, headers=headers)
+    assert r.json()["code"] == 0, r.text
+    await session.refresh(merchant)
+    assert merchant.channel_code_required is True
+
+    # 批量关→开
+    r = await client.post("/admin-api/merchant/channel-code/set-all",
+                          json={"required": False}, headers=headers)
+    assert r.json()["code"] == 0, r.text
+    await session.refresh(merchant)
+    assert merchant.channel_code_required is False
+
+    r = await client.post("/admin-api/merchant/channel-code/set-all",
+                          json={"required": True}, headers=headers)
+    assert r.json()["code"] == 0, r.text
+    await session.refresh(merchant)
+    assert merchant.channel_code_required is True
+
+    # 新商户默认必传
+    r = await client.post("/admin-api/merchant", json={
+        "username": "newmch", "password": "newmch123456",
+    }, headers=headers)
+    assert r.json()["code"] == 0, r.text
+    created = (await session.exec(
+        select(Merchant).where(Merchant.username == "newmch")
+    )).one()
+    assert created.channel_code_required is True
+
+
+async def test_admin_order_list_channel_code_filter(client, session, two_channels):
+    """后台订单列表按编码筛选 + 返回编码字段。"""
+    headers = await _admin_headers(session)
+    seeded = two_channels
+    cc = await _mk_code(session, [(seeded["channel"], 1, 1)], code="8088")
+    data = await _post_order(client, "CC-LIST", channel_code="8088")
+    assert data["code"] == 0, data
+
+    r = await client.post("/admin-api/order/list",
+                          json={"channel_code_id": cc.id}, headers=headers)
+    body = r.json()
+    assert body["code"] == 0, body
+    assert body["data"]["total"] == 1
+    assert body["data"]["items"][0]["channel_code"] == "8088"
+
+    r = await client.post("/admin-api/order/list",
+                          json={"channel_code_id": 999999}, headers=headers)
+    assert r.json()["data"]["total"] == 0
