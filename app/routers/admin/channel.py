@@ -25,7 +25,7 @@ from app.services.channel import code_format_ok, get_channel_code, normalize_cha
 from app.services.crypto import decrypt_config, encrypt_config
 from app.services.plugin import PluginRegistry
 from app.services.plugin_interfaces import PluginMeta
-from app.services.order import ORDER_TYPE_TEST
+from app.services.order import ORDER_PENDING, ORDER_TYPE_TEST
 from app.services.plugin_sync import sync_plugins
 import logging
 
@@ -949,10 +949,22 @@ async def channel_code_item_set_status(code_id: int, channel_id: int,
 @router.delete("/channel-codes/{code_id}",
                dependencies=[Depends(PermissionChecker("channel.delete"))])
 async def channel_code_delete(code_id: int, session: SessionDep):
-    """删除编码与全部绑定。历史订单保留 channel_code 字符串作为留痕，不回改。"""
+    """删除编码与全部绑定。历史订单保留 channel_code 字符串作为留痕，不回改。
+
+    仍有待支付订单引用时拒绝删除：收银台按订单落的 `channel_code_id` 选通道，
+    编码被删会让这些订单在收银台里既看不到支付方式、又误报「不支持当前支付方式」。
+    """
     c = await session.get(ChannelCode, code_id)
     if not c:
         return err(404, "通道编码不存在")
+    pending = (await session.exec(
+        select(func.count()).select_from(Order).where(
+            col(Order.channel_code_id) == code_id,
+            col(Order.status) == ORDER_PENDING,
+        )
+    )).one()
+    if int(pending) > 0:
+        return err(-1, f"该编码仍有 {int(pending)} 笔待支付订单引用，请先处理这些订单，或改为停用编码")
     for it in (await session.exec(
         select(ChannelCodeItem).where(col(ChannelCodeItem.code_id) == code_id)
     )).all():

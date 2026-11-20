@@ -271,6 +271,38 @@ async def test_cashier_types_filtered_by_code(client, session, two_channels):
     await session.commit()
     r = await client.get(f"/cashier/types?trade_no={order.trade_no}")
     assert r.json()["data"]["types"] == []
+
+
+async def test_cashier_reports_missing_or_disabled_code(client, session, two_channels):
+    """编码被删/停用后，收银台报「编码不存在或不可用」，不能误报成「不支持该支付方式」。"""
+    seeded = two_channels
+    cc = await _mk_code(session, [(seeded["channel"], 1, 1)], code="8088")
+    data = await _post_order(client, "CC-GONE", channel_code="8088")
+    assert data["code"] == 0, data
+    order = await _order_by_out_trade_no(session, "CC-GONE")
+
+    # 停用：收银台两种入口都按编码不可用报错（不静默返回空列表）
+    cc.status = 0
+    session.add(cc)
+    await session.commit()
+    r = await client.get(f"/cashier/types?trade_no={order.trade_no}")
+    assert r.json()["code"] == -1
+    assert r.json()["message"] == "通道编码不存在或不可用"
+    r = await client.post("/cashier/pay", json={"trade_no": order.trade_no, "type": "alipay"})
+    assert r.json()["code"] == -1
+    assert r.json()["message"] == "通道编码不存在或不可用"
+
+    # 删除（绕过后台的待支付保护，模拟编码已被移走）：文案保持一致
+    for it in (await session.exec(
+        select(ChannelCodeItem).where(ChannelCodeItem.code_id == cc.id)
+    )).all():
+        await session.delete(it)
+    await session.delete(cc)
+    await session.commit()
+    r = await client.get(f"/cashier/types?trade_no={order.trade_no}")
+    assert r.json()["message"] == "通道编码不存在或不可用"
+    r = await client.post("/cashier/pay", json={"trade_no": order.trade_no, "type": "alipay"})
+    assert r.json()["message"] == "通道编码不存在或不可用"
 # ============================================================
 # 后台：保存校验与通道删除保护
 # ============================================================
@@ -314,6 +346,32 @@ async def test_admin_channel_delete_blocked_when_referenced(client, session, two
     # 未被引用的通道照旧可删
     r = await client.delete(f"/admin-api/pay/channels/{seeded['channel2'].id}", headers=headers)
     assert r.json()["code"] == 0
+
+
+async def test_admin_code_delete_blocked_by_pending_order(client, session, two_channels):
+    """编码仍有待支付订单引用时拒绝删除（否则收银台按已删编码选通道会全空/误报）。"""
+    headers = await _admin_headers(session)
+    seeded = two_channels
+    cc = await _mk_code(session, [(seeded["channel"], 1, 1)], code="8088")
+    data = await _post_order(client, "CC-DEL-PENDING", channel_code="8088")
+    assert data["code"] == 0, data
+
+    r = await client.delete(f"/admin-api/pay/channel-codes/{cc.id}", headers=headers)
+    assert r.status_code == 400
+    assert r.json()["code"] == -1
+    assert "待支付" in r.json()["message"]
+    assert await session.get(ChannelCode, cc.id) is not None
+
+    # 待支付订单处理掉之后可删
+    order = await _order_by_out_trade_no(session, "CC-DEL-PENDING")
+    order.status = 1
+    session.add(order)
+    await session.commit()
+    code_id = cc.id
+    r = await client.delete(f"/admin-api/pay/channel-codes/{code_id}", headers=headers)
+    assert r.json()["code"] == 0, r.text
+    session.expire_all()
+    assert await session.get(ChannelCode, code_id) is None
 
 
 async def test_admin_code_crud_and_status_toggles(client, session, two_channels):
