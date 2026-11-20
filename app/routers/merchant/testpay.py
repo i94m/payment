@@ -1,10 +1,10 @@
-"""商户端测试支付（对齐老 epay 商户后台的「测试支付」）。
+"""商户端测试支付：与管理端「通道测试」同一套逻辑，商户侧全程无感。
 
 链路与正常收款一致：建单 → 通道路由选路 → 上游下单 → 回调验签 → 订单置已支付，
 所以能一次验证「插件协议 / 通道凭证 / 回调处理」三件事。
 
-与正常收款的唯一区别是订单类型 order_type=2（测试单）：
-- 订单记录里可筛「测试单」看到这笔单及支付状态，可核对回调是否真的回来了
+订单与通道测试一样挂在系统测试商户名下（order_type=2）：测试单不进商户自己的
+订单记录/资金明细/统计，商户面板上不出现任何测试单痕迹。
 - 不入余额/分润/结算/邀请返现，不投递商户通知，不进任何统计口径
 - 不占通道日限额与限速窗口（测试不该把通道测到自动关闭）
 """
@@ -48,13 +48,19 @@ class TestPayRequest(BaseModel):
 @router.post("/submit", dependencies=[rate_limit(times=20)])
 async def submit_testpay(body: TestPayRequest, request: Request, session: SessionDep,
                          cache: CacheDep, auth: MerchantUser):
-    """发起一笔测试支付，返回上游支付信息（链接/二维码/HTML）。"""
+    """发起一笔测试支付，返回上游支付信息（链接/二维码/HTML）。
+
+    与管理端通道测试一致：测试单挂在内置「系统测试」商户名下（order_type=2），
+    商户自己的订单记录/资金/统计完全不受影响。
+    """
+    from app.services.test_pay import get_test_merchant
+
     try:
         amount = dmoney(body.amount)
     except Exception:
         return err(-1, "金额格式错误")
     if amount < dmoney(TEST_PAY_MIN) or amount > dmoney(TEST_PAY_MAX):
-        return err(-1, f"测试金额需在 {TEST_PAY_MIN} ~ {TEST_PAY_MAX} 元之间")
+        return err(-1, f"金额需在 {TEST_PAY_MIN} ~ {TEST_PAY_MAX} 元之间")
 
     pt = (await session.exec(
         select(PaymentType).where(PaymentType.code == body.type, col(PaymentType.status) == 1)
@@ -65,19 +71,20 @@ async def submit_testpay(body: TestPayRequest, request: Request, session: Sessio
     settings = await get_all_settings(session, cache)
     site = (settings.get("site_url") or str(request.base_url)).rstrip("/")
 
+    merchant = await get_test_merchant(session)
     order = await create_test_order(
         session,
-        merchant=auth.user,
+        merchant=merchant,
         payment_type=pt,
         money=amount,
         subject=body.name or "支付测试",
         client_ip=request.client.host if request.client else "",
-        # 支付完成回跳商户端订单记录（回调会追加 ?trade_no=）
-        return_url=f"{site}/merchant/#/orders",
+        # 支付完成回跳商户端首页（订单不属于该商户，不回订单记录）
+        return_url=f"{site}/merchant/#/",
         cache=cache,
     )
     flow = await process_payment(
-        order, auth.user, session, cache,
+        order, merchant, session, cache,
         notify_base=site, return_base=site, site_url=site,
     )
     if not flow.ok:

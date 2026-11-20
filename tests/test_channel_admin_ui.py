@@ -2,7 +2,7 @@
 
 - 通道测试不需要任何站点配置项（测试商户自动创建，无需配测试商户 PID）
 - 通道测试会落测试单（order_type=2）：可查、可回调查看状态，但不进资金/统计
-- 商户端「测试支付」同样落测试单，订单记录默认可见（也可筛），不入账
+- 商户端「测试支付」走与管理端通道测试同一逻辑（挂系统测试商户），商户侧无感
 - 通道列表「调试日志」开关走独立接口，只改 debug_log，不重写费率/限额
 - 插件 inputs 返回前端渲染口径的 label（插件 meta 里叫 title），且易支付
   不再暴露 appswitch 字段
@@ -127,8 +127,8 @@ async def test_channel_testpay_creates_test_order_and_isolated(client, seeded, s
 
 
 @pytest.mark.asyncio
-async def test_merchant_testpay_visible_in_order_list(client, seeded, session):
-    """商户端测试支付：落自己名下的测试单，订单记录可筛选查看，不入账。"""
+async def test_merchant_testpay_goes_to_system_test_merchant(client, seeded, session):
+    """商户端测试支付：与管理端通道测试同逻辑，测试单挂系统测试商户，商户侧全程无感。"""
     headers = await _merchant_headers(session)
     merchant = seeded["merchant"]
 
@@ -139,9 +139,13 @@ async def test_merchant_testpay_visible_in_order_list(client, seeded, session):
     body = r.json()
     assert body["code"] == 0, body
     trade_no = body["data"]["trade_no"]
+    assert trade_no.startswith("TEST")
 
     order = (await session.exec(select(Order).where(Order.trade_no == trade_no))).one()
-    assert order.order_type == 2 and order.merchant_id == merchant.id
+    assert order.order_type == 2
+    owner = await session.get(Merchant, order.merchant_id)
+    assert owner.pid == 100000  # 内置系统测试商户，不是发起测试的商户
+    assert order.merchant_id != merchant.id
 
     resp = await client.post(f"/callbacks/epay/{trade_no}",
                              params=_notify_params(order, money="2.00"))
@@ -149,19 +153,10 @@ async def test_merchant_testpay_visible_in_order_list(client, seeded, session):
     await session.refresh(order)
     assert order.status == 1
 
-    # 订单记录：默认全部类型（含测试单）即可看到；显式筛「测试单」同样可查
-    r = await client.post("/merchant-api/order/list", json={}, headers=headers)
-    assert r.json()["data"]["total"] == 1
-    assert r.json()["data"]["items"][0]["trade_no"] == trade_no
-    r = await client.post("/merchant-api/order/list", json={"order_type": "2"}, headers=headers)
-    data = r.json()["data"]
-    assert data["total"] == 1
-    assert data["items"][0]["trade_no"] == trade_no
-    assert data["items"][0]["order_type"] == 2
-
-    # 显式只看正式收款时不掺测试单
-    r = await client.post("/merchant-api/order/list", json={"order_type": "0"}, headers=headers)
-    assert r.json()["data"]["total"] == 0
+    # 商户自己的订单记录里看不到这笔测试单（默认 / 全部类型 / 筛测试单都没有）
+    for body in ({}, {"order_type": "all"}, {"order_type": "2"}):
+        r = await client.post("/merchant-api/order/list", json=body, headers=headers)
+        assert r.json()["data"]["total"] == 0, body
 
     # 不入余额/流水
     await session.refresh(merchant)
@@ -169,6 +164,14 @@ async def test_merchant_testpay_visible_in_order_list(client, seeded, session):
     records = (await session.exec(select(MerchantRecord).where(
         MerchantRecord.order_trade_no == trade_no))).all()
     assert records == []
+
+    # 管理端订单列表能看到这笔测试单（挂在系统测试商户名下）
+    admin_headers = await _admin_headers(session)
+    r = await client.post("/admin-api/order/list",
+                          json={"order_type": "2", "trade_no": trade_no},
+                          headers=admin_headers)
+    items = r.json()["data"]["items"]
+    assert len(items) == 1 and items[0]["merchant_username"] == "系统测试"
 
 
 @pytest.mark.asyncio

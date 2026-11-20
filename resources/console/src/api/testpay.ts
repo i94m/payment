@@ -9,7 +9,7 @@ export interface TestPayType {
 }
 
 export interface TestPayResult {
-  /** 测试单号（order_type=2，可在订单记录「测试单」筛选项里查到） */
+  /** 本次支付落库的订单号（order_type=2，挂在系统测试商户名下，不进商户自己的订单记录） */
   trade_no: string
   /** 插件返回的支付动作：jump / qrcode / scheme / html */
   pay_type: string

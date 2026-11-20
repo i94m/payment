@@ -1,32 +1,29 @@
 "use client"
 
 import * as React from "react"
-import { Link } from "react-router-dom"
 import { testPayApi } from "@/api"
 import type { TestPayResult, TestPayType } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import { Field, FieldDescription, FieldError, FieldLabel, RequiredMark } from "@/components/ui/field"
-import { CopyableInput } from "@/components/ui/copy-button"
 import { PayIcon } from "@/components/pay-icon"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { numStr } from "@/lib/form-schema"
 import { getErrorMessage } from "@/lib/error"
-import { IconFlask, IconExternalLink, IconListDetails } from "@tabler/icons-react"
+import { IconFlask, IconExternalLink } from "@tabler/icons-react"
 import { toast } from "sonner"
 
 // 金额范围与后端 /testpay/submit 口径一致
 const testSchema = z.object({
   type: z.string().min(1, "请选择支付方式").default(""),
   name: z.string().default("支付测试"),
-  amount: numStr("测试金额", { min: 0.01, max: 1000 }),
+  amount: numStr("支付金额", { min: 0.01, max: 1000 }),
 })
 
 type TestForm = z.input<typeof testSchema>
@@ -67,9 +64,9 @@ export function TestPayPage() {
       const url = /^https?:\/\//.test(data.pay_info || "") ? data.pay_info : ""
       if (url && data.pay_type !== "html") {
         window.open(url, "_blank")
-        toast.success("测试单已创建，已打开支付页")
+        toast.success("支付页已打开")
       } else {
-        toast.success("测试单已创建")
+        toast.success("支付信息已生成")
       }
     } catch (err) {
       toast.error(getErrorMessage(err, "测试支付失败"))
@@ -92,16 +89,16 @@ export function TestPayPage() {
             {"测试支付"}
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {"用一笔真实订单验证通道路由、上游下单和回调处理：测试单会出现在订单记录里（默认全部类型即可看到，也可筛「测试单」），但不计入余额、结算和任何统计。"}
+            {"发起一笔真实支付，验证支付通道是否可用。"}
           </p>
         </div>
 
         <div className="px-4 lg:px-6 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">{"发起测试"}</CardTitle>
+              <CardTitle className="text-base">{"发起支付"}</CardTitle>
               <CardDescription>
-                {"支付完成后回到「订单记录 → 测试单」，状态变为已支付即说明回调链路正常。"}
+                {"支付页会在新窗口打开，支付完成后自动返回。"}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -113,6 +110,7 @@ export function TestPayPage() {
                     <Field data-invalid={fieldState.invalid}>
                       <FieldLabel>{"支付方式"}<RequiredMark /></FieldLabel>
                       <Select
+                        key={typesLoading ? "loading" : "ready"}
                         value={field.value}
                         onValueChange={field.onChange}
                         disabled={typesLoading || types.length === 0}
@@ -154,7 +152,7 @@ export function TestPayPage() {
                   control={form.control}
                   render={({ field, fieldState }) => (
                     <Field data-invalid={fieldState.invalid}>
-                      <FieldLabel htmlFor={field.name}>{"测试金额"}<RequiredMark /></FieldLabel>
+                      <FieldLabel htmlFor={field.name}>{"支付金额"}<RequiredMark /></FieldLabel>
                       <Input
                         id={field.name}
                         type="number" min="0.01" max="1000" step="0.01"
@@ -162,13 +160,13 @@ export function TestPayPage() {
                         onChange={(e) => field.onChange(e.target.value)}
                         aria-invalid={fieldState.invalid || undefined}
                       />
-                      <FieldDescription>{"0.01 ~ 1000 元。会真实向上游发起一笔支付，测试单不产生任何资金流水。"}</FieldDescription>
+                      <FieldDescription>{"0.01 ~ 1000 元。"}</FieldDescription>
                       {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
                     </Field>
                   )}
                 />
                 <Button type="submit" disabled={submitting || types.length === 0}>
-                  {submitting ? "发起中…" : "发起测试支付"}
+                  {submitting ? "发起中…" : "发起支付"}
                 </Button>
               </form>
             </CardContent>
@@ -177,17 +175,10 @@ export function TestPayPage() {
           {result && (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  {"测试单已创建"}
-                  <Badge variant="secondary">{"测试单"}</Badge>
-                </CardTitle>
+                <CardTitle className="text-base">{"支付信息已生成"}</CardTitle>
                 <CardDescription>{`支付动作：${result.pay_type}`}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Field>
-                  <FieldLabel>{"测试单号"}</FieldLabel>
-                  <CopyableInput value={result.trade_no} className="w-full font-mono text-xs" />
-                </Field>
                 {payUrl && (
                   <Button asChild variant="outline">
                     <a href={payUrl} target="_blank" rel="noreferrer">
@@ -204,14 +195,6 @@ export function TestPayPage() {
                     </pre>
                   </Field>
                 )}
-                <div className="flex items-center gap-2">
-                  <Button asChild variant="outline" size="sm">
-                    <Link to="/orders?order_type=2">
-                      <IconListDetails className="size-4" />
-                      {"在订单记录中查看测试单"}
-                    </Link>
-                  </Button>
-                </div>
               </CardContent>
             </Card>
           )}

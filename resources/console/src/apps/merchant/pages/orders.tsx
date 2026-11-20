@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Link, useSearchParams } from "react-router-dom"
+import { useSearchParams } from "react-router-dom"
 import { ordersApi } from "@/api"
 import type { OrderData } from "@/api"
 import { format } from "date-fns"
@@ -330,13 +330,6 @@ export function OrdersPage() {
               onChange={setEndDate}
             />
           </div>
-
-          {orderType === "2" && (
-            <p className="text-xs text-muted-foreground">
-              {"测试单仅用于联调验证：不计入余额、结算与任何统计，也不投递商户通知。"}
-              <Link className="ml-1 underline underline-offset-2" to="/testpay">{"发起测试支付"}</Link>
-            </p>
-          )}
 
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={handleSearch}>
