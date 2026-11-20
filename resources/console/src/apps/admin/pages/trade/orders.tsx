@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { ordersApi } from "@/api"
-import type { OrderData } from "@/api"
+import { ordersApi, payApi } from "@/api"
+import type { ChannelCodeData, OrderData } from "@/api"
 import { format } from "date-fns"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -66,6 +66,9 @@ export function OrdersPage() {
   const [outTradeNo, setOutTradeNo] = React.useState("")
   const [merchantId, setMerchantId] = React.useState(searchParams.get("merchant_id") || "")
   const [channelId] = React.useState(searchParams.get("channel_id") || "")
+  // 下游通道编码筛选：编码列表「订单」快捷跳转带 ?channel_code_id=xx
+  const [channelCodeId, setChannelCodeId] = React.useState(searchParams.get("channel_code_id") || "")
+  const [channelCodes, setChannelCodes] = React.useState<ChannelCodeData[]>([])
   const [typeCode] = React.useState(searchParams.get("type") || "")
   // 订单类型：""=全部类型（默认）/ "0" 正式收款 / "1" 余额充值 / "2" 测试单
   const [orderType, setOrderType] = React.useState("")
@@ -87,6 +90,8 @@ export function OrdersPage() {
     if (mid !== undefined) params.merchant_id = mid
     const cid = toIntParam(channelId)
     if (cid !== undefined) params.channel_id = cid
+    const codeId = toIntParam(channelCodeId)
+    if (codeId !== undefined) params.channel_code_id = codeId
     if (typeCode.trim()) params.type = typeCode.trim()
     if (orderType) params.order_type = orderType
     if (statusFilter !== "") params.status = Number(statusFilter)
@@ -95,7 +100,8 @@ export function OrdersPage() {
       params.addtime = `${format(startDate, "yyyy-MM-dd")},${format(endDate, "yyyy-MM-dd")}`
     }
     return params
-  }, [outTradeNo, merchantId, typeCode, orderType, statusFilter, notifyFilter, startDate, endDate])
+  }, [outTradeNo, merchantId, channelId, channelCodeId, typeCode, orderType,
+      statusFilter, notifyFilter, startDate, endDate])
 
   // 日期区间是成对参数：只选一端会被后端静默忽略，这里显式提示而不是「查了没反应」
   const applyFilterParams = () => {
@@ -106,8 +112,15 @@ export function OrdersPage() {
     applyFilters()
   }
 
+  // 编码下拉：筛选/展示编码名用（加载失败不阻断订单列表，编码列仍显示留痕字符串）
+  React.useEffect(() => {
+    payApi.channelCodes({ page: 1, per_page: 100 })
+      .then((res) => setChannelCodes(res.items))
+      .catch(() => {})
+  }, [])
+
   const handleReset = () => {
-    setKeyword(""); setOutTradeNo(""); setMerchantId(""); setOrderType("")
+    setKeyword(""); setOutTradeNo(""); setMerchantId(""); setOrderType(""); setChannelCodeId("")
     setStatusFilter(""); setNotifyFilter(""); setStartDate(undefined); setEndDate(undefined)
     applyFilters()
   }
@@ -166,6 +179,17 @@ export function OrdersPage() {
           </span>
         ),
         meta: { headClassName: "w-[80px]" },
+      },
+      {
+        accessorKey: "channel_code",
+        enableSorting: false,
+        header: () => "通道编码",
+        cell: ({ row }) => (
+          row.original.channel_code
+            ? <span className="font-mono text-xs">{row.original.channel_code}</span>
+            : <span className="text-sm text-muted-foreground">—</span>
+        ),
+        meta: { headClassName: "w-[90px]" },
       },
       {
         accessorKey: "subject",
@@ -275,7 +299,7 @@ export function OrdersPage() {
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         <FilterCard>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3 items-end">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3 items-end">
             <div className="col-span-1">
               <Input
                 placeholder={"平台订单号"}
@@ -307,6 +331,20 @@ export function OrdersPage() {
                 <SelectItem value="0">{"正式收款"}</SelectItem>
                 <SelectItem value="1">{"余额充值"}</SelectItem>
                 <SelectItem value="2">{"测试单"}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={channelCodeId || "_all"}
+                    onValueChange={(v) => setChannelCodeId(v === "_all" ? "" : v)}>
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue placeholder={"通道编码"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">{"全部编码"}</SelectItem>
+                {channelCodes.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name && c.name !== c.code ? `${c.code}（${c.name}）` : c.code}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
@@ -441,23 +479,23 @@ function OrderDetailTable({ order }: { order: OrderData }) {
       ],
       [
         { label: "通道插件", value: order.plugin_name },
-        { label: "买家账号", value: order.buyer_id, wrap: true },
+        { label: "通道编码", value: order.channel_code || "", mono: true },
       ],
       [
         { label: "上游订单号", value: order.api_trade_no, mono: true, wrap: true },
         { label: "商户订单号", value: order.out_trade_no, mono: true, wrap: true },
       ],
       [
+        { label: "买家账号", value: order.buyer_id, wrap: true },
         { label: "客户端 IP", value: order.client_ip, mono: true },
+      ],
+      [
         { label: "通知次数", value: String(order.notify_count ?? 0) },
-      ],
-      [
         { label: "创建时间", value: order.created_at },
-        { label: "支付时间", value: order.paid_at },
       ],
       [
+        { label: "支付时间", value: order.paid_at },
         { label: "过期时间", value: order.expire_at },
-        { label: "通知地址", value: order.notify_url, mono: true, wrap: true },
       ],
       [
         { label: "回跳地址", value: order.return_url, mono: true, wrap: true },

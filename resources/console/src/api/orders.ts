@@ -17,6 +17,9 @@ export interface OrderData {
   /** 支付方式图标 URL（后台配置；为空时前端按 type 取内置图标库兜底） */
   type_icon?: string
   channel_id?: number
+  /** 下游通道编码（下单时下游传的值，留痕；空=未指定编码） */
+  channel_code?: string
+  channel_code_id?: number
   plugin_name?: string
   subject: string
   money: string
@@ -58,6 +61,9 @@ export interface OrderListParams {
   notify_status?: number | ""
   /** "start,end"（YYYY-MM-DD） */
   addtime?: string
+  /** 下游通道编码筛选（admin）：按编码 ID */
+  channel_code_id?: number
+  channel_code?: string
 }
 
 export const ordersApi = {

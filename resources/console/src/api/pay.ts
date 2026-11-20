@@ -149,6 +149,59 @@ export interface ChannelPayload {
   config: Record<string, string>
 }
 
+// ============ 下游通道编码 ============
+
+export interface ChannelCodeItemData {
+  channel_id: number
+  weight: number
+  /** 本编码内的临时开关：0=停用（只影响本编码） */
+  status: number
+  sort: number
+  last_used_at: number
+  channel_name: string
+  plugin_name: string
+  payment_type_id: number
+  /** 通道自身的全局状态（0=全局停用，编码内开关救不活） */
+  channel_status: number
+}
+
+export interface ChannelCodeData {
+  id: number
+  code: string
+  name: string
+  remark: string
+  /** 0=随机 1=轮询 2=权重 */
+  mode: number
+  status: number
+  item_count: number
+  active_item_count: number
+  members: ChannelCodeItemData[]
+  today_count?: number
+  today_amount?: string
+  yesterday_count?: number
+  yesterday_amount?: string
+  created_at: string
+}
+
+export interface ChannelCodeDetailData {
+  id: number
+  code: string
+  name: string
+  remark: string
+  mode: number
+  status: number
+  items: ChannelCodeItemData[]
+}
+
+export interface ChannelCodePayload {
+  code: string
+  name: string
+  remark: string
+  mode: number
+  status: number
+  items: { channel_id: number; weight: number; status: number; sort?: number }[]
+}
+
 export const payApi = {
   plugins: () => apiClient.get("/pay/plugins") as Promise<PluginData[]>,
 
@@ -206,4 +259,29 @@ export const payApi = {
 
   testChannelPay: (id: number, data: { name: string; amount: string }) =>
     apiClient.post(`/pay/channels/${id}/testpay`, data) as Promise<ChannelTestPayResult>,
+
+  // ============ 下游通道编码 ============
+
+  channelCodes: (params?: { page?: number; per_page?: number; keyword?: string; status?: number }) =>
+    apiClient.get("/pay/channel-codes", { params }) as Promise<PaginatedResponse<ChannelCodeData>>,
+
+  channelCodeDetail: (id: number) =>
+    apiClient.get(`/pay/channel-codes/${id}`) as Promise<ChannelCodeDetailData>,
+
+  createChannelCode: (data: ChannelCodePayload) =>
+    apiClient.post("/pay/channel-codes", data) as Promise<{ id: number; code: string }>,
+
+  updateChannelCode: (id: number, data: ChannelCodePayload) =>
+    apiClient.put(`/pay/channel-codes/${id}`, data) as Promise<{ id: number; code: string }>,
+
+  deleteChannelCode: (id: number) => apiClient.delete(`/pay/channel-codes/${id}`),
+
+  /** 编码总闸：只改开关，不触碰成员与权重 */
+  setChannelCodeStatus: (id: number, status: number) =>
+    apiClient.put(`/pay/channel-codes/${id}/status`, { status }) as Promise<{ id: number; status: number }>,
+
+  /** 编码内成员临时开关：只影响本编码，不动通道全局状态 */
+  setChannelCodeItemStatus: (id: number, channelId: number, status: number) =>
+    apiClient.put(`/pay/channel-codes/${id}/items/${channelId}/status`,
+      { status }) as Promise<{ status: number }>,
 }

@@ -97,6 +97,8 @@ MENU_TREE: list[dict] = [
     {"key": "merchant.view", "name": "商户管理", "path": "/merchants", "icon": "icon-user"},
     {"key": "merchant.view", "name": "资金明细", "path": "/records", "icon": "icon-file"},
     {"key": "channel.view", "name": "支付通道", "path": "/pay/channels", "icon": "icon-swap"},
+    # 下游通道编码：复用 channel.* 权限（不新增权限树节点，避免升级要求跑 permission sync）
+    {"key": "channel.view", "name": "下游通道编码", "path": "/pay/codes", "icon": "icon-link"},
     {"key": "payment_type.view", "name": "支付方式", "path": "/pay/types", "icon": "icon-cloud"},
     {"key": "settle.view", "name": "结算管理", "path": "/settle", "icon": "icon-thumb-up"},
     {"key": "announce.view", "name": "公告管理", "path": "/announces", "icon": "icon-speaker"},
