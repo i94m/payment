@@ -12,6 +12,7 @@ URL地址：`{site_url}/api/orders`
 |---|---|---|---|---|---|
 | 商户ID | pid | 是 | Int | 1001 | |
 | 支付方式 | type | 是 | String | alipay | [支付方式列表](/appendix/paytype.html) |
+| 通道编码 | channel_code | 否 | String | 8088 | 平台分配的下游通道编码：本单只在该编码绑定的通道内分流，大小写不敏感；平台开启「编码必传」后为必填（详见 [协议规则](/guide/protocol.html)） |
 | 商户订单号 | out_trade_no | 是 | String | 20160806151343349 | 同一商户下唯一，最长64字符，重复请求幂等返回原订单 |
 | 异步通知地址 | notify_url | 否 | String | http://www.pay.com/notify_url.php | 服务器异步通知地址，缺省时使用商户后台配置的默认通知地址 |
 | 跳转通知地址 | return_url | 否 | String | http://www.pay.com/return_url.php | 页面跳转通知地址，缺省时使用商户后台配置的默认回跳地址 |
