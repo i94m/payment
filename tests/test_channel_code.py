@@ -18,7 +18,6 @@ from app.models import (
     Channel,
     ChannelCode,
     ChannelCodeItem,
-    Merchant,
     Order,
     PaymentType,
     SystemAdmin,
@@ -130,25 +129,22 @@ async def test_code_requires_binding_for_payment_type(client, session, two_chann
     assert await _order_by_out_trade_no(session, "CC-WX") is None
 
 
-async def test_required_switch_only_affects_open_api(client, session, seeded):
-    """商户开了必传：开放 API 不传报错；平台内部入口（收款页等）不受影响。"""
-    merchant = seeded["merchant"]
-    merchant.channel_code_required = True
-    session.add(merchant)
-    await session.commit()
+async def test_channel_code_is_optional(client, session, seeded):
+    """编码必传已去掉：开放 API 不带 channel_code 也能建单，按默认路由分流。"""
+    data = await _post_order(client, "CC-OPTIONAL")
+    assert data["code"] == 0, data
+    order = await _order_by_out_trade_no(session, "CC-OPTIONAL")
+    assert order.channel_code is None
+    assert order.channel_code_id == 0
 
-    data = await _post_order(client, "CC-REQUIRED")
-    assert data["code"] == -1
-    assert data["message"] == "缺少通道编码"
-
-    # 仓库内其它入口（paypage / 余额充值）建单不带 channel_code，也不传 require_channel_code
+    # 平台内部入口（paypage / 余额充值）本就不传编码，行为保持不变
     from app.services.order import create_order
-    order = await create_order(
+    internal = await create_order(
         {"pid": "1001", "out_trade_no": "CC-INTERNAL", "name": "收款页",
          "money": "10.00", "type": "alipay"},
         session,
     )
-    assert order.id and order.channel_code is None
+    assert internal.id and internal.channel_code is None
 
 
 async def test_code_success_persists_trace(client, session, two_channels):
@@ -464,42 +460,6 @@ async def test_admin_code_unique_and_format(client, session, two_channels):
                               json={**body, "code": "9001", "items": []}, headers=headers)
     assert empty.json()["code"] == -1
     assert "通道" in empty.json()["message"]
-
-
-async def test_merchant_required_switch_single(client, session, seeded):
-    """编码必传默认开启；商户级开关只做个别豁免（建单/注册入口不再显式置位）。"""
-    headers = await _admin_headers(session)
-    merchant = seeded["merchant"]
-    # 通用夹具显式豁免；模型默认值本身必须是「必传」
-    assert merchant.channel_code_required is False
-    assert Merchant(pid=9999, username="defaults").channel_code_required is True
-
-    # 关闭 → 开放 API 不再要求编码
-    r = await client.post(f"/admin-api/merchant/{merchant.id}/channel-code",
-                          json={"required": False}, headers=headers)
-    assert r.json()["code"] == 0, r.text
-    await session.refresh(merchant)
-    assert merchant.channel_code_required is False
-
-    # 重新开启（默认口径）→ 未带编码被拒
-    r = await client.post(f"/admin-api/merchant/{merchant.id}/channel-code",
-                          json={"required": True}, headers=headers)
-    assert r.json()["code"] == 0, r.text
-    await session.refresh(merchant)
-    assert merchant.channel_code_required is True
-    data = await _post_order(client, "CC-DEFAULT-ON")
-    assert data["code"] == -1
-    assert data["message"] == "缺少通道编码"
-
-    # 后台建商户不写这个字段，默认即必传
-    r = await client.post("/admin-api/merchant", json={
-        "username": "newmch", "password": "newmch123456",
-    }, headers=headers)
-    assert r.json()["code"] == 0, r.text
-    created = (await session.exec(
-        select(Merchant).where(Merchant.username == "newmch")
-    )).one()
-    assert created.channel_code_required is True
 
 
 async def test_admin_order_list_channel_code_filter(client, session, two_channels):
