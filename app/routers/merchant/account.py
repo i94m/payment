@@ -1,4 +1,4 @@
-"""商户端账户/安全：资料、改密、API 密钥（MD5 默认 / RSA2 可选）。"""
+"""商户端账户/安全：资料、改密、API 密钥（MD5 与 RSA2 二选一，由 RSA2 开关切换）。"""
 from typing import Optional
 
 from cryptography.hazmat.primitives import serialization
@@ -46,8 +46,8 @@ async def change_password(body: ChangePasswordRequest, auth: MerchantUser, sessi
 async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
     """查看 API 密钥信息。
 
-    - api_secret：MD5 签名密钥（默认算法；本人可反复查看/复制/重置）
-    - rsa2_enable / public_key：RSA2 是否开启及商户公钥
+    - api_secret：MD5 签名密钥（未开启 RSA2 时生效；本人可反复查看/复制/重置）
+    - rsa2_enable / public_key：RSA2 是否开启及商户公钥（开启后 MD5 失效）
     - platform_public_key：平台公钥（验 RSA2 通知签名用）
     """
     m = auth.user
@@ -82,7 +82,7 @@ class Rsa2SwitchRequest(BaseModel):
 
 @router.post("/rsa2")
 async def toggle_rsa2(body: Rsa2SwitchRequest, auth: MerchantUser, session: SessionDep):
-    """开启/关闭 RSA2 签名（开启需先配置公钥）。"""
+    """开启/关闭 RSA2 签名（开启需先配置公钥；开启后 MD5 签名立即失效）。"""
     m = auth.user
     if body.enable and not (m.public_key or "").strip():
         return err(-1, "请先配置RSA公钥后再开启RSA2签名")
@@ -98,46 +98,34 @@ class SignDebugRequest(BaseModel):
 
 @router.post("/sign-debug")
 async def sign_debug(body: SignDebugRequest, auth: MerchantUser, session: SessionDep):
-    """签名自检：回显签名原文与当前已开通算法的期望签名。
+    """签名自检：回显签名原文与当前生效算法的期望签名。
 
-    RSA2 的签名只能由商户私钥生成（平台不保存私钥），这里只返回拼串；
+    同一时间只有一种算法生效，只返回该算法的结果，避免拿已停用算法的签名排查。
+    RSA2 的签名只能由商户私钥生成（平台不保存私钥），自检只返回拼串；
     MD5 可直接给出期望值，便于一次定位「拼串错」还是「密钥错」。
     """
     m = auth.user
     params = {k: v for k, v in (body.params or {}).items() if k not in ("sign", "sign_type")}
     content = get_sign_content(params)
-    data: dict = {"sign_content": content, "algorithms": {}}
-    secret = await ensure_api_secret(session, m)
-    data["algorithms"]["MD5"] = {"sign": make_md5_sign(params, secret)}
+    data: dict = {
+        "sign_content": content,
+        "active_sign_type": "RSA2" if m.rsa2_enable else "MD5",
+        "algorithms": {},
+    }
     if m.rsa2_enable:
         data["algorithms"]["RSA2"] = {"note": "请用你的商户私钥对签名原文做 SHA256WithRSA 签名（Base64）"}
-    return suc(data)
-
-
-class PublicKeyRequest(BaseModel):
-    public_key: str
-
-
-@router.post("/publickey")
-async def set_publickey(body: PublicKeyRequest, auth: MerchantUser, session: SessionDep):
-    """保存商户 RSA 公钥（API 调用验签用）。传空即清除公钥。"""
-    m = auth.user
-    if body.public_key.strip():
-        m.public_key = body.public_key.strip()
     else:
-        m.public_key = None
-        m.rsa2_enable = False  # 清空公钥即失去验签能力，同关开启开关
-    session.add(m)
-    await session.commit()
-    return suc({"public_key": pem_to_flat(m.public_key or ""), "rsa2_enable": bool(m.rsa2_enable)})
+        secret = await ensure_api_secret(session, m)
+        data["algorithms"]["MD5"] = {"sign": make_md5_sign(params, secret)}
+    return suc(data)
 
 
 @router.post("/rsa/generate")
 async def generate_rsa_pair(auth: MerchantUser, session: SessionDep):
-    """一键生成 RSA 密钥对并自动保存公钥。
+    """一键生成 RSA 密钥对并保存公钥。
 
     平台生成 RSA-2048 密钥对：公钥直接落库（API 立即可用），
-    私钥仅此一次返回给商户下载保存（平台不保存）。
+    私钥仅此一次返回给商户保存（平台不保存）。
     """
     m = auth.user
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)

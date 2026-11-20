@@ -36,6 +36,18 @@ def _signed(payload: dict, secret: str = MERCHANT_API_SECRET, sign_type: str = "
     return p
 
 
+async def _use_md5_mode(session) -> None:
+    """seeded 商户默认开启 RSA2；MD5 用例先切回 MD5（同一时间只有一种算法生效）。"""
+    from sqlmodel import select
+
+    from app.models import Merchant
+
+    m = (await session.exec(select(Merchant).where(Merchant.pid == 1001))).one()
+    m.rsa2_enable = False
+    session.add(m)
+    await session.commit()
+
+
 # ---- verify_api_signature ----
 
 def test_valid_md5_signature_passes():
@@ -157,7 +169,8 @@ async def test_replay_rejected():
 # ---- E2E ----
 
 @pytest.mark.asyncio
-async def test_md5_order_created_and_sign_type_stored(client, seeded):
+async def test_md5_order_created_and_sign_type_stored(client, seeded, session):
+    await _use_md5_mode(session)
     resp = await client.post("/api/orders", json=md5_params({
         "pid": "1001", "type": "alipay", "out_trade_no": "MD5E2E1",
         "notify_url": "https://merchant.example/notify",
@@ -180,7 +193,8 @@ async def test_md5_order_created_and_sign_type_stored(client, seeded):
 
 
 @pytest.mark.asyncio
-async def test_md5_form_encoded_request_accepted(client, seeded):
+async def test_md5_form_encoded_request_accepted(client, seeded, session):
+    await _use_md5_mode(session)
     params = md5_params({
         "pid": "1001", "type": "alipay", "out_trade_no": "MD5FORM1",
         "name": "表单商品", "money": "2.00",
@@ -188,6 +202,19 @@ async def test_md5_form_encoded_request_accepted(client, seeded):
     resp = await client.post("/api/orders", data=params)
     body = resp.json()
     assert body["code"] == 0, body
+
+
+@pytest.mark.asyncio
+async def test_md5_request_rejected_when_rsa2_enabled(client, seeded):
+    """seeded 商户默认开启 RSA2：MD5 签名立即失效。"""
+    resp = await client.post("/api/orders", json=md5_params({
+        "pid": "1001", "type": "alipay", "out_trade_no": "MD5WHENRSA2",
+        "name": "测试商品", "money": "1.00",
+    }))
+    body = resp.json()
+    assert resp.status_code == 400
+    assert body["code"] == -3
+    assert "已启用RSA2签名" in body["message"]
 
 
 @pytest.mark.asyncio
@@ -260,7 +287,8 @@ async def test_apikey_shows_secret_and_rsa2_state(client, seeded, session):
 
 
 @pytest.mark.asyncio
-async def test_sign_debug_returns_content_and_md5(client, seeded, session):
+async def test_sign_debug_returns_content_and_active_algorithm(client, seeded, session):
+    # seeded 默认开启 RSA2：只返回 RSA2 的说明，不展示已停用的 MD5 期望值
     resp = await client.post("/merchant-api/account/sign-debug",
                              json={"params": {"pid": "1001", "money": "1.00", "type": "alipay"}},
                              headers=await _merchant_headers(session))
@@ -268,6 +296,17 @@ async def test_sign_debug_returns_content_and_md5(client, seeded, session):
     assert body["code"] == 0, body
     data = body["data"]
     assert data["sign_content"] == "money=1.00&pid=1001&type=alipay"
+    assert data["active_sign_type"] == "RSA2"
+    assert "MD5" not in data["algorithms"]
+    assert data["algorithms"]["RSA2"]["note"]
+
+    # 切回 MD5 后返回 MD5 期望值
+    await _use_md5_mode(session)
+    resp = await client.post("/merchant-api/account/sign-debug",
+                             json={"params": {"pid": "1001", "money": "1.00", "type": "alipay"}},
+                             headers=await _merchant_headers(session))
+    data = resp.json()["data"]
+    assert data["active_sign_type"] == "MD5"
     assert data["algorithms"]["MD5"]["sign"] == make_md5_sign(
         {"pid": "1001", "money": "1.00", "type": "alipay"}, MERCHANT_API_SECRET)
 
@@ -288,7 +327,15 @@ async def test_rsa2_toggle_off_rejects_rsa2_request(client, seeded, session):
     assert resp.status_code == 400
     assert "未开启RSA2签名" in body["message"]
 
-    # 恢复开启，RSA2 立即恢复可用
+    # 关闭后 MD5 立即生效
+    resp = await client.post("/api/orders", json=md5_params({**params, "out_trade_no": "RSAOFFMD5"}))
+    assert resp.json()["code"] == 0, resp.json()
+
+    # 恢复开启，RSA2 立即恢复可用，MD5 同步失效
     await client.post("/merchant-api/account/rsa2", json={"enable": True}, headers=headers)
     resp = await client.post("/api/orders", json=signed_params({**params, "out_trade_no": "RSAOFF2"}))
     assert resp.json()["code"] == 0, resp.json()
+    resp = await client.post("/api/orders", json=md5_params({**params, "out_trade_no": "RSAONMD5"}))
+    body = resp.json()
+    assert resp.status_code == 400
+    assert "已启用RSA2签名" in body["message"]

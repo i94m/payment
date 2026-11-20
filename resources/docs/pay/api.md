@@ -20,7 +20,7 @@ URL地址：`{site_url}/api/orders`
 | 业务扩展参数 | param | 否 | String | 没有请留空 | 支付后原样返回，最长500字符 |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝（防重放） |
 | 签名字符串 | sign | 是 | String | 9f2c1a...（MD5） | 签名算法[点此查看](/sign/index.html) |
-| 签名类型 | sign_type | 是 | String | MD5 | `MD5`（默认）或 `RSA2`（需商户后台开启） |
+| 签名类型 | sign_type | 是 | String | MD5 | `MD5` 或 `RSA2`，须与商户当前生效算法一致（启用 RSA2 后只能用 RSA2） |
 
 返回结果（json）：
 

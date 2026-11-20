@@ -153,10 +153,11 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
     notify_url = str(params.get("notify_url", "") or "").strip()
     return_url = str(params.get("return_url", "") or "").strip()
     param = str(params.get("param", "") or "").strip()
-    # 本单签名算法：通知/回跳按单签名（内部入口未传时按默认 MD5）
+    # 本单签名算法：开放 API 必传（验签已确定）；内部入口未传时按商户当前生效算法补，
+    # 保证通知/回跳与商户的签名方式一致
     sign_type = str(params.get("sign_type") or "").strip().upper()
     if sign_type not in ("MD5", "RSA2"):
-        sign_type = "MD5"
+        sign_type = ""
 
     if not pid:
         raise ValueError("商户ID不能为空")
@@ -184,6 +185,10 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
         raise ValueError("商户支付权限已关闭")
     if merchant.pay_status == 2:
         raise ValueError("商户支付权限待审核，暂不能支付")
+
+    # 内部入口未显式传算法：跟商户当前生效的签名方式一致（MD5 / RSA2 二选一）
+    if not sign_type:
+        sign_type = "RSA2" if merchant.rsa2_enable else "MD5"
 
     # 支付域名白名单：配置了白名单时来源域名必须命中
     if not _host_allowed(merchant.allowed_domains, request_host):
@@ -949,9 +954,10 @@ async def clawback_invite_rebate(
 def build_webhook_payload(order: Order, merchant: Merchant, platform_rsa_key: str = "") -> dict:
     """构建 Webhook JSON body：业务参数 + timestamp + sign + sign_type。
 
-    - 订单为 MD5 单（默认）：用商户 api_secret 做 `md5(原文 + 密钥)`，商户用同一把密钥验签
-    - 订单为 RSA2 单：平台私钥签名，商户用平台公钥验签（与原行为一致）
-    签名算法取订单落库的 sign_type，不受商户之后开关状态影响（历史订单照常可验）。
+    - 订单为 MD5 单：用商户 api_secret 做 `md5(原文 + 密钥)`，商户用同一把密钥验签
+    - 订单为 RSA2 单：平台私钥签名，商户用平台公钥验签
+    签名算法取订单落库的 sign_type（开放 API 为请求所用算法，内部入口为商户当时生效算法），
+    不受商户之后开关状态影响（历史订单照常可验）。
     money 为申报金额固定两位小数（fmt_money）；param 空则省略键。
     """
     data = {

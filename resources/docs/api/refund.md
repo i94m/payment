@@ -20,7 +20,7 @@ URL地址：`{site_url}/api/orders/{trade_no}/refund`
 | 退款原因 | reason | 否 | String | 用户申请 | |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝（防重放） |
 | 签名字符串 | sign | 是 | String | 9f2c1a...（MD5） | 签名算法[点此查看](/sign/index.html) |
-| 签名类型 | sign_type | 是 | String | MD5 | `MD5`（默认）或 `RSA2`（需商户后台开启） |
+| 签名类型 | sign_type | 是 | String | MD5 | `MD5` 或 `RSA2`，须与商户当前生效算法一致（启用 RSA2 后只能用 RSA2） |
 
 退款规则：
 
@@ -101,7 +101,7 @@ URL地址：`{site_url}/api/refunds/{refund_no}`
 | 商户退款号 | out_refund_no | 否 | String | R20260926001 | 兜底查询：refund_no 未命中时按它查询 |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝 |
 | 签名字符串 | sign | 是 | String | 9f2c1a...（MD5） | 签名算法[点此查看](/sign/index.html) |
-| 签名类型 | sign_type | 是 | String | MD5 | `MD5`（默认）或 `RSA2`（需商户后台开启） |
+| 签名类型 | sign_type | 是 | String | MD5 | `MD5` 或 `RSA2`，须与商户当前生效算法一致（启用 RSA2 后只能用 RSA2） |
 
 返回字段与申请退款一致（查不到退款单时 `code` 非 0）。示例：
 

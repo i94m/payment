@@ -1,6 +1,8 @@
-"""下游商户开放 API 签名校验（MD5 默认 / RSA2 可选，同一套接口）。
+"""下游商户开放 API 签名校验（同一套接口，同一时间只有一种算法生效）。
 
-- `sign_type` 必填：`MD5`（默认，商户创建即生成密钥）或 `RSA2`（商户面板开启 + 配置公钥）
+- `sign_type` 必填：`MD5` 或 `RSA2`，取值必须与商户当前开关一致
+  - 未开启 RSA2（默认）：只接受 `MD5`（商户创建即生成密钥）
+  - 已开启 RSA2：只接受 `RSA2`，MD5 立即失效（需先配置商户公钥）
 - MD5：`md5(签名原文 + api_secret)`，32 位小写 hex（易支付口径，密钥后缀）
 - RSA2：SHA256WithRSA + Base64，商户私钥签名 / 平台存管公钥验签
 - 签名原文：get_sign_content（key 升序、排除 sign/sign_type/空值/数组/字典，
@@ -32,9 +34,10 @@ def normalize_sign_type(raw) -> str:
 
 
 def verify_api_signature(merchant, params: dict) -> str:
-    """校验商户请求签名，返回本单使用的签名算法（MD5/RSA2）。失败抛 ValueError。
+    """校验商户请求签名，返回本次使用的签名算法（MD5/RSA2）。失败抛 ValueError。
 
-    顺序：sign 非空 → sign_type 合法 → 算法已开通 → timestamp → 验签。
+    算法由商户开关独占决定：未开启 RSA2 只接受 MD5，开启后只接受 RSA2。
+    顺序：sign 非空 → sign_type 合法 → 算法与开关一致 → 凭据齐全 → timestamp → 验签。
     参数类错误先报，不做无意义的 RSA 运算。
     """
     sign = str(params.get("sign", "") or "")
@@ -44,15 +47,17 @@ def verify_api_signature(merchant, params: dict) -> str:
     sign_type = normalize_sign_type(params.get("sign_type"))
 
     secret = ""
-    if sign_type == "MD5":
+    if merchant.rsa2_enable:
+        if sign_type != "RSA2":
+            raise ValueError("商户已启用RSA2签名，请使用sign_type=RSA2")
+        if not merchant.public_key:
+            raise ValueError("商户未配置RSA公钥，请先在商户面板生成密钥")
+    else:
+        if sign_type != "MD5":
+            raise ValueError("商户未开启RSA2签名，请使用sign_type=MD5")
         secret = get_api_secret(merchant)
         if not secret:
             raise ValueError("商户未配置MD5密钥，请先在商户面板生成")
-    else:
-        if not merchant.rsa2_enable:
-            raise ValueError("商户未开启RSA2签名，请先在商户面板开启并配置公钥")
-        if not merchant.public_key:
-            raise ValueError("商户未配置RSA公钥，请先在商户面板生成密钥")
 
     timestamp = str(params.get("timestamp", "") or "")
     if not timestamp:

@@ -107,6 +107,16 @@ def test_tampered_body_rejected():
         verify_api_signature(_merchant(pub), params)
 
 
+def test_md5_rejected_when_rsa2_enabled():
+    """开启 RSA2 后算法独占：MD5 请求直接拒绝。"""
+    _, pub = _gen_keypair()
+    params = {
+        "pid": "1001", "sign_type": "MD5", "timestamp": str(int(time.time())), "sign": "x",
+    }
+    with pytest.raises(ValueError, match="已启用RSA2签名"):
+        verify_api_signature(_merchant(pub), params)
+
+
 def test_missing_public_key_rejected():
     priv, _ = _gen_keypair()
     params = _signed({"pid": "1001"}, priv)
@@ -168,22 +178,7 @@ async def test_ensure_platform_rsa_key_keeps_existing(session):
     assert str(row.value) == priv  # 不覆盖
 
 
-# ---- 商户端公钥管理 ----
-
-@pytest.mark.asyncio
-async def test_merchant_publickey_set_and_clear(session, seeded):
-    from app.routers.merchant.account import PublicKeyRequest, set_publickey
-
-    m = seeded["merchant"]
-    auth = SimpleNamespace(user=m)
-
-    await set_publickey(PublicKeyRequest(public_key="MCH-PUB-1"), auth, session)
-    assert m.public_key == "MCH-PUB-1"
-
-    # 清空公钥
-    await set_publickey(PublicKeyRequest(public_key="  "), auth, session)
-    assert m.public_key is None
-
+# ---- 商户端密钥对生成 ----
 
 @pytest.mark.asyncio
 async def test_rsa_generate_saves_public_key(client, session):

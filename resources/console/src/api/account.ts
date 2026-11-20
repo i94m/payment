@@ -4,12 +4,13 @@ export interface ApiKeyData {
   pid: number
   api_secret: string // MD5 签名密钥（默认算法，32 位小写 hex）
   public_key: string // 商户 RSA 公钥（未配置为空串）
-  rsa2_enable: boolean // RSA2 是否开启（默认关闭）
+  rsa2_enable: boolean // 是否启用 RSA2（默认关闭；启用后 MD5 失效）
   platform_public_key: string // 平台公钥（由平台私钥派生，未配置为空串）
 }
 
 export interface SignDebugResult {
   sign_content: string
+  active_sign_type: "MD5" | "RSA2" // 当前生效算法（只返回该算法的期望签名）
   algorithms: Record<string, { sign?: string; note?: string }>
 }
 
@@ -27,10 +28,6 @@ export interface SettingItem {
 export const accountApi = {
   // ---- 商户端密钥/安全 ----
   apiKey: () => apiClient.get("/account/apikey") as Promise<ApiKeyData>,
-
-  // 保存商户 RSA 公钥（RSA2 验签用）；传空即清除公钥
-  setPublicKey: (public_key: string) =>
-    apiClient.post("/account/publickey", { public_key }) as Promise<{ public_key: string }>,
 
   // ---- admin 支付设置（KV） ----
   paySettings: () => apiClient.get("/setting") as Promise<{ items: SettingItem[] }>,

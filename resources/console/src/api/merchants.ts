@@ -8,7 +8,7 @@ export interface MerchantData {
   public_key: string
   api_secret_masked: string    // MD5 签名密钥（掩码，如 abcd****wxyz）
   has_api_secret: boolean
-  rsa2_enable: boolean         // RSA2 是否对商户开放（默认关闭）
+  rsa2_enable: boolean         // 是否启用 RSA2（默认关闭；启用后 MD5 失效）
   balance: string
   frozen_balance: string
   status: number

@@ -6,8 +6,11 @@ import type { ApiKeyData, SignDebugResult } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
+import { Skeleton } from "@/components/ui/skeleton"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { CopyableText, CopyButton } from "@/components/ui/copy-button"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -15,8 +18,9 @@ import {
 import { ConfirmDialog } from "@/components/data-list/confirm-dialog"
 import { PanelError } from "@/components/data-list"
 import { getErrorMessage } from "@/lib/error"
+import { cn } from "@/lib/utils"
 import {
-  IconEye, IconEyeOff, IconKey, IconRefresh, IconShieldCheck, IconWand,
+  IconEye, IconEyeOff, IconKey, IconRefresh, IconShieldCheck,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 
@@ -29,40 +33,87 @@ const DEBUG_PLACEHOLDER = `{
   "timestamp": "1763558400"
 }`
 
+/** 签名方式选项卡片：选中态高亮，未生效算法只保留切换入口。 */
+function SignOption({
+  value, title, description, active, hint,
+}: {
+  value: string
+  title: string
+  description: string
+  active: boolean
+  hint?: string
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors",
+        active ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50",
+      )}
+    >
+      <RadioGroupItem value={value} id={`sign-${value}`} className="mt-0.5" />
+      <div className="grid gap-0.5">
+        <span className="flex items-center gap-2 text-sm font-medium">
+          {title}
+          {active && (
+            <Badge
+              variant="outline"
+              className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+            >
+              {"当前生效"}
+            </Badge>
+          )}
+        </span>
+        <span className="text-xs text-muted-foreground">{description}</span>
+        {hint && <span className="text-xs text-amber-600 dark:text-amber-500">{hint}</span>}
+      </div>
+    </label>
+  )
+}
+
 export function SecurityPage() {
 
   const [apiKey, setApiKey] = React.useState<ApiKeyData | null>(null)
+  const [loading, setLoading] = React.useState(true)
+  const [loadError, setLoadError] = React.useState<string | null>(null)
+
   // MD5 密钥默认掩码，点眼睛查看明文
   const [showSecret, setShowSecret] = React.useState(false)
   // 重置 MD5 密钥二次确认
   const [secretResetOpen, setSecretResetOpen] = React.useState(false)
-  // RSA2 开关请求中（防连点）
-  const [rsa2Busy, setRsa2Busy] = React.useState(false)
-  // 重置密钥对二次确认（首次生成无旧密钥可失效，直接生成）
-  const [rsaResetOpen, setRsaResetOpen] = React.useState(false)
+  // 切换签名方式请求中（防连点）
+  const [switchBusy, setSwitchBusy] = React.useState(false)
+
+  // 启用 RSA2：已生成过密钥对则直接确认，否则先生成密钥对（私钥仅显示一次）
+  const [confirmEnableOpen, setConfirmEnableOpen] = React.useState(false)
+  const [confirmGenerateOpen, setConfirmGenerateOpen] = React.useState(false)
+  const [confirmDisableOpen, setConfirmDisableOpen] = React.useState(false)
+
   // 生成的 RSA 密钥对（私钥仅显示一次）
   const [rsaPair, setRsaPair] = React.useState<{ public_key: string; private_key: string } | null>(null)
-  // 商户公钥手动编辑（支持 OpenSSL/代码生成的密钥对上传）
-  const [pubEdit, setPubEdit] = React.useState("")
+  // 生成密钥对后是否继续启用 RSA2（首次启用流程）
+  const [enableAfterKey, setEnableAfterKey] = React.useState(false)
+  // 重置密钥对二次确认
+  const [rsaResetOpen, setRsaResetOpen] = React.useState(false)
+
   // 签名自检
   const [debugOpen, setDebugOpen] = React.useState(false)
   const [debugInput, setDebugInput] = React.useState(DEBUG_PLACEHOLDER)
   const [debugResult, setDebugResult] = React.useState<SignDebugResult | null>(null)
   const [debugBusy, setDebugBusy] = React.useState(false)
-  const [loadError, setLoadError] = React.useState<string | null>(null)
 
   const load = React.useCallback(() => {
     accountApi.apiKey()
       .then((res) => {
         setApiKey(res)
-        setPubEdit(res.public_key || "")
         setLoadError(null)
       })
       .catch((err) => setLoadError(getErrorMessage(err, "接口密钥加载失败")))
+      .finally(() => setLoading(false))
   }, [])
 
   React.useEffect(() => { load() }, [load])
 
+  const rsa2 = !!apiKey?.rsa2_enable
   const secret = apiKey?.api_secret || ""
   const maskedSecret = secret
     ? `${secret.slice(0, 4)}${"*".repeat(Math.max(secret.length - 8, 8))}${secret.slice(-4)}`
@@ -80,45 +131,76 @@ export function SecurityPage() {
     }
   }
 
-  const doToggleRsa2 = async (enable: boolean) => {
-    setRsa2Busy(true)
-    try {
-      await securityApi.toggleRsa2(enable)
-      setApiKey((d) => (d ? { ...d, rsa2_enable: enable } : d))
-      toast.success(enable ? "已开启 RSA2 签名" : "已关闭 RSA2 签名")
-    } catch (err) {
-      toast.error(getErrorMessage(err, "操作失败"))
-    } finally {
-      setRsa2Busy(false)
+  /** 选择签名方式：MD5 直接确认停用 RSA2；RSA2 需要公钥，未配置时先进配置弹窗 */
+  const selectSignType = (next: string) => {
+    if (switchBusy || !apiKey || next === (rsa2 ? "RSA2" : "MD5")) return
+    if (next === "RSA2") {
+      if (apiKey.public_key) {
+        setConfirmEnableOpen(true)
+      } else {
+        setConfirmGenerateOpen(true)
+      }
+      return
     }
+    setConfirmDisableOpen(true)
   }
 
-  const doGenerateRsa = async () => {
+  const doEnableRsa2 = async () => {
+    setSwitchBusy(true)
     try {
-      const pair = await securityApi.generateRsaPair()
-      // 后端生成即保存公钥（API 立即可用）；私钥仅显示一次，弹窗供商户完整复制
-      toast.success("密钥对已生成并保存")
-      setRsaPair(pair)
+      await securityApi.toggleRsa2(true)
+      toast.success("已启用 RSA2 签名，MD5 签名已停用")
       load()
     } catch (err) {
       toast.error(getErrorMessage(err, "操作失败"))
+    } finally {
+      setSwitchBusy(false)
     }
   }
 
-  /** 已配置公钥时点「重置RSA密钥对」先确认，确认后才生成替换；首次生成直接执行 */
-  const generateRsa = () => {
-    if (apiKey?.public_key) {
-      setRsaResetOpen(true)
+  const doDisableRsa2 = async () => {
+    setSwitchBusy(true)
+    try {
+      await securityApi.toggleRsa2(false)
+      toast.success("已切回 MD5 签名，RSA2 请求将被拒绝")
+      load()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "操作失败"))
+    } finally {
+      setSwitchBusy(false)
+    }
+  }
+
+  /** 未生成过密钥对时：生成后弹私钥（仅显示一次），保存后继续启用 */
+  const doGenerateAndEnable = async () => {
+    const pair = await securityApi.generateRsaPair()
+    setRsaPair(pair)
+    setEnableAfterKey(true)
+  }
+
+  /** 私钥弹窗确认：首次启用流程在此完成启用；重置流程仅关闭弹窗 */
+  const confirmPrivateKeySaved = async () => {
+    if (!enableAfterKey) {
+      setRsaPair(null)
       return
     }
-    void doGenerateRsa()
+    try {
+      await securityApi.toggleRsa2(true)
+      setRsaPair(null)
+      setEnableAfterKey(false)
+      toast.success("已启用 RSA2 签名，MD5 签名已停用")
+      load()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "启用RSA2失败"))
+    }
   }
 
-  /** 保存商户公钥（手动上传，OpenSSL/代码生成场景）；清空保存即清除公钥 */
-  const savePublicKey = async () => {
+  /** 重置 RSA 密钥对：替换后 RSA2 仍保持开启 */
+  const doResetRsa = async () => {
     try {
-      await accountApi.setPublicKey(pubEdit.trim())
-      toast.success(pubEdit.trim() ? "商户公钥已保存" : "商户公钥已清除")
+      const pair = await securityApi.generateRsaPair()
+      setEnableAfterKey(false)
+      setRsaPair(pair)
       load()
     } catch (err) {
       toast.error(getErrorMessage(err, "操作失败"))
@@ -150,142 +232,166 @@ export function SecurityPage() {
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6 w-full max-w-3xl">
-        {/* 密钥 */}
         <div className="px-4 lg:px-6">
           <h2 className="flex items-center gap-2 text-lg font-semibold">
-            <IconKey className="size-4 text-primary" />
-            {"接口密钥"}
+            <IconKey className="size-5 text-primary" />
+            {"API 信息"}
           </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {"开放 API 的接入凭据与签名方式，修改后需同步接入方。"}
+          </p>
         </div>
-        <div className="px-4 lg:px-6 space-y-4">
+
+        <div className="space-y-4 px-4 lg:px-6">
           {loadError && <PanelError error={loadError} onRetry={() => { setLoadError(null); load() }} />}
-          <div className="grid gap-1.5">
-            <Label>{"商户ID (pid)"}</Label>
-            <CopyableText value={String(apiKey?.pid ?? "")} className="font-mono break-all" />
-          </div>
 
-          {/* 默认算法：MD5 */}
-          <div className="grid gap-4 border-t pt-4">
-            <div>
-              <h4 className="text-sm font-medium">{"MD5 密钥（默认签名方式）"}</h4>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {"开放 API 默认使用 MD5 签名：sign = md5(签名原文 + 密钥)，32 位小写。所有接口只需 pid + 密钥即可对接。"}
-              </p>
-            </div>
-
-            <div className="grid gap-1.5">
-              <Label>{"MD5 密钥"}</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  readOnly
-                  value={showSecret ? secret : maskedSecret}
-                  placeholder="加载中"
-                  className="min-w-0 flex-1 font-mono text-xs"
-                />
-                <Button
-                  size="icon"
-                  variant="outline"
-                  aria-label={showSecret ? "隐藏密钥" : "显示密钥"}
-                  onClick={() => setShowSecret((v) => !v)}
-                >
-                  {showSecret ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
-                </Button>
-                <CopyButton value={secret} />
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {"密钥泄漏等于他人可代你下单/退款，请只在服务端使用；无需可随时重置。"}
-                </p>
-                <Button size="sm" variant="outline" onClick={() => setSecretResetOpen(true)}>
-                  <IconRefresh className="size-4" />
-                  {"重置密钥"}
-                </Button>
-              </div>
-            </div>
-
-            <Button size="sm" variant="outline" className="justify-self-start" onClick={() => setDebugOpen(true)}>
-              <IconShieldCheck className="size-4" />
-              {"签名自检"}
-            </Button>
-          </div>
-
-          {/* 可选算法：RSA2 */}
-          <div className="grid gap-4 border-t pt-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h4 className="text-sm font-medium">{"RSA2 签名（可选）"}</h4>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {
-                    "需要抗抵赖（争议取证）时开启：使用你的私钥签名，平台只保存公钥。" +
-                    "开启后接入方可在 sign_type=RSA2 时调用；MD5 始终可用。"
-                  }
-                </p>
-              </div>
-              <Switch
-                checked={!!apiKey?.rsa2_enable}
-                disabled={rsa2Busy || !apiKey || (!apiKey.rsa2_enable && !apiKey.public_key)}
-                onCheckedChange={(v) => void doToggleRsa2(v)}
-              />
-            </div>
-
-            {apiKey?.rsa2_enable && (
-              <div className="grid gap-1.5">
-                <div className="flex items-center justify-between">
-                  <Label>{"平台公钥"}</Label>
-                  {!!apiKey.platform_public_key && <CopyButton value={apiKey.platform_public_key} />}
+          {loading && !apiKey ? (
+            <Skeleton className="h-80 w-full rounded-xl" />
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>{"接入信息"}</CardTitle>
+                <CardDescription>{"商户号、签名方式与当前生效的密钥。"}</CardDescription>
+                {/* 签名自检只对 MD5 有意义：RSA2 的期望签名只能由商户私钥生成，平台给不出 */}
+                {!rsa2 && (
+                  <CardAction>
+                    <Button size="sm" variant="outline" onClick={() => setDebugOpen(true)}>
+                      <IconShieldCheck className="size-4" />
+                      {"签名自检"}
+                    </Button>
+                  </CardAction>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* 签名方式切换 */}
+                <div className="space-y-2">
+                  <Label>{"签名方式"}</Label>
+                  <RadioGroup
+                    value={rsa2 ? "RSA2" : "MD5"}
+                    onValueChange={selectSignType}
+                    disabled={switchBusy}
+                    className="grid gap-3 sm:grid-cols-2"
+                  >
+                    <SignOption
+                      value="MD5"
+                      title="MD5 密钥签名"
+                      description="对称密钥，开箱即用。"
+                      active={!rsa2}
+                    />
+                    <SignOption
+                      value="RSA2"
+                      title="RSA2 非对称签名"
+                      description="非对称密钥，需配置公钥。"
+                      active={rsa2}
+                      hint={!rsa2 && !apiKey?.public_key ? "选择后会先引导配置公钥" : undefined}
+                    />
+                  </RadioGroup>
+                  <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    {`注意：当前仅接受 sign_type=${rsa2 ? "RSA2" : "MD5"}。`}
+                  </p>
                 </div>
-                <Textarea
-                  readOnly
-                  value={apiKey.platform_public_key || ""}
-                  rows={3}
-                  placeholder="暂未生成"
-                  className="resize-none field-sizing-fixed break-all bg-muted font-mono text-xs"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {"验证平台异步通知（Webhook）的 RSA2 签名用，复制给开发者"}
-                </p>
-              </div>
-            )}
 
-            <div className="grid gap-1.5">
-              <Label>{"商户公钥"}</Label>
-              <Textarea
-                value={pubEdit}
-                onChange={(e) => setPubEdit(e.target.value)}
-                rows={3}
-                placeholder="点击下方「一键生成密钥对」或粘贴自行生成的公钥"
-                className="resize-none field-sizing-fixed break-all bg-muted font-mono text-xs"
-              />
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-muted-foreground">
-                  {"支持单行 Base64 或 PEM 格式，清空后保存即清除公钥并关闭 RSA2"}
-                </p>
-                <Button size="sm" variant="outline" disabled={pubEdit.trim() === (apiKey?.public_key || "")}
-                        onClick={savePublicKey}>
-                  {"保存公钥"}
-                </Button>
-              </div>
-            </div>
+                {/* 身份：pid 是接入最常用的信息，用独立展示条放大并支持一键复制 */}
+                <div className="grid gap-2">
+                  <Label>{"商户ID (pid)"}</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      readOnly
+                      value={String(apiKey?.pid ?? "")}
+                      className="font-mono text-sm"
+                      onFocus={(e) => e.currentTarget.select()}
+                      onClick={(e) => e.currentTarget.select()}
+                    />
+                    <CopyButton
+                      value={String(apiKey?.pid ?? "")}
+                      aria-label="复制商户ID"
+                      className="size-8"
+                    />
+                  </div>
+                </div>
 
-            <div className="grid gap-1.5">
-              <Label>{"商户私钥"}</Label>
-              <p className="rounded-lg bg-muted/50 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-                {
-                  "出于安全考虑，商户私钥仅在生成密钥对时弹出显示一次，本站不会保存。" +
-                  "请生成后立即复制并妥善保管，切勿泄露给他人；如遗失，可点击下方「重置RSA密钥对」重新生成。"
-                }
-              </p>
-            </div>
-            <Button size="sm" variant="outline" className="justify-self-start" onClick={generateRsa}>
-              <IconWand className="size-4" />
-              {apiKey?.public_key ? "重置RSA密钥对" : "一键生成密钥对"}
-            </Button>
-            {!apiKey?.rsa2_enable && (
-              <p className="text-xs text-muted-foreground">
-                {"配置公钥后即可打开上方开关；未开启时 sign_type=RSA2 的请求会被拒绝。"}
-              </p>
-            )}
-          </div>
+                {/* 只展示当前生效算法的凭据 */}
+                {!rsa2 ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label>{"MD5 密钥"}</Label>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setSecretResetOpen(true)}
+                      >
+                        <IconRefresh className="size-4" />
+                        {"重置密钥"}
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        readOnly
+                        value={showSecret ? secret : maskedSecret}
+                        placeholder="加载中"
+                        className="min-w-0 flex-1 font-mono text-xs"
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        aria-label={showSecret ? "隐藏密钥" : "显示密钥"}
+                        onClick={() => setShowSecret((v) => !v)}
+                      >
+                        {showSecret ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
+                      </Button>
+                      <CopyButton value={secret} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label>{"商户公钥"}</Label>
+                        {!!apiKey?.public_key && <CopyButton value={apiKey.public_key} />}
+                      </div>
+                      <Textarea
+                        readOnly
+                        value={apiKey?.public_key || ""}
+                        rows={3}
+                        placeholder="暂未生成"
+                        className="resize-none field-sizing-fixed break-all bg-muted font-mono text-xs"
+                      />
+                      <p className="text-xs text-muted-foreground">{"用于平台验证你的请求签名。"}</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label>{"平台公钥"}</Label>
+                        {!!apiKey?.platform_public_key && <CopyButton value={apiKey.platform_public_key} />}
+                      </div>
+                      <Textarea
+                        readOnly
+                        value={apiKey?.platform_public_key || ""}
+                        rows={3}
+                        placeholder="暂未生成"
+                        className="resize-none field-sizing-fixed break-all bg-muted font-mono text-xs"
+                      />
+                      <p className="text-xs text-muted-foreground">{"用于验证平台通知签名。"}</p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 border-t pt-4">
+                      <p className="text-xs text-muted-foreground">{"私钥仅生成时显示一次，平台不保存。"}</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0 text-destructive hover:text-destructive"
+                        onClick={() => setRsaResetOpen(true)}
+                      >
+                        <IconRefresh className="size-4" />
+                        {"重置密钥对"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -308,8 +414,65 @@ export function SecurityPage() {
         variant="danger"
         cancelLabel={"取消"}
         confirmLabel={"确定重置"}
-        onConfirm={doGenerateRsa}
+        onConfirm={doResetRsa}
       />
+
+      <ConfirmDialog
+        open={confirmEnableOpen}
+        onOpenChange={setConfirmEnableOpen}
+        title={"启用RSA2签名"}
+        description={"启用后 MD5 签名立即失效，所有接入必须改用 sign_type=RSA2，确定继续？"}
+        cancelLabel={"取消"}
+        confirmLabel={"启用RSA2"}
+        onConfirm={doEnableRsa2}
+      />
+
+      <ConfirmDialog
+        open={confirmDisableOpen}
+        onOpenChange={setConfirmDisableOpen}
+        title={"切回MD5签名"}
+        description={"切回后所有 RSA2 请求将被拒绝，需要接入方改回 sign_type=MD5，确定继续？"}
+        variant="danger"
+        cancelLabel={"取消"}
+        confirmLabel={"切回MD5"}
+        onConfirm={doDisableRsa2}
+      />
+
+      <ConfirmDialog
+        open={confirmGenerateOpen}
+        onOpenChange={setConfirmGenerateOpen}
+        title={"启用RSA2签名"}
+        description={"将生成新的 RSA 密钥对并启用 RSA2：启用后 MD5 立即失效，私钥仅显示一次，请及时保存。"}
+        cancelLabel={"取消"}
+        confirmLabel={"生成并启用"}
+        onConfirm={doGenerateAndEnable}
+      />
+
+      {/* 私钥（仅显示一次） */}
+      <Dialog open={!!rsaPair} onOpenChange={(open) => !open && setRsaPair(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{"商户私钥（仅显示一次）"}</DialogTitle>
+            <DialogDescription className="text-destructive font-medium">
+              {"请及时复制保存商户私钥！当前窗口关闭后，无法再次查询商户私钥，本站也不会保存。如遗失商户私钥，可重新生成密钥对进行替换。"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-start gap-2">
+            <Textarea
+              readOnly
+              value={rsaPair?.private_key || ""}
+              rows={6}
+              className="min-w-0 flex-1 resize-none field-sizing-fixed break-all font-mono text-xs"
+            />
+            <CopyButton value={rsaPair?.private_key || ""} />
+          </div>
+          <DialogFooter>
+            <Button onClick={confirmPrivateKeySaved}>
+              {enableAfterKey ? "我已保存，启用 RSA2" : "我已保存，关闭"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 签名自检 */}
       <Dialog open={debugOpen} onOpenChange={setDebugOpen}>
@@ -317,7 +480,7 @@ export function SecurityPage() {
           <DialogHeader>
             <DialogTitle>{"签名自检"}</DialogTitle>
             <DialogDescription>
-              {"粘贴你准备发送的参数（无需 sign / sign_type），这里给出平台实际使用的签名原文与期望签名。"}
+              {"粘贴你准备发送的参数（无需 sign / sign_type），这里给出平台实际使用的签名原文与当前生效算法的期望签名。"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -359,30 +522,6 @@ export function SecurityPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDebugOpen(false)}>{"关闭"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 私钥（仅显示一次） */}
-      <Dialog open={!!rsaPair} onOpenChange={(open) => !open && setRsaPair(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{"商户私钥（仅显示一次）"}</DialogTitle>
-            <DialogDescription className="text-destructive font-medium">
-              {"请及时复制保存商户私钥！当前窗口关闭后，无法再次查询商户私钥，本站也不会保存。如遗失商户私钥，可重新生成进行替换。"}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex items-start gap-2">
-            <Textarea
-              readOnly
-              value={rsaPair?.private_key || ""}
-              rows={6}
-              className="min-w-0 flex-1 resize-none field-sizing-fixed break-all font-mono text-xs"
-            />
-            <CopyButton value={rsaPair?.private_key || ""} />
-          </div>
-          <DialogFooter>
-            <Button onClick={() => setRsaPair(null)}>{"我已保存，关闭"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

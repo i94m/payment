@@ -9,7 +9,7 @@
 - **商户开放 API（全新 REST 设计）**：`POST /api/orders`（下单，幂等）、
   `GET /api/orders/{trade_no}`（查单）、`POST /api/orders/{trade_no}/refund`（退款，
   支持多次部分退款）、`GET /api/refunds/{refund_no}`（退款查询）；
-  pid + `sign_type` 签名认证（**MD5 默认**，RSA2 可选、商户面板开启；签名在 JSON body / 表单参数内），统一 `{code,message,data}` 包络
+  pid + `sign_type` 签名认证（**MD5 / RSA2 二选一**，由商户面板 RSA2 开关决定，启用 RSA2 后 MD5 立即失效；签名在 JSON body / 表单参数内），统一 `{code,message,data}` 包络
 - **收银台**：HTML 页（`/cashier/{不透明令牌}`，Fernet 加密 trade_no，链接不暴露业务号；
   自包含单文件，服务端注入 trade_no）+ 同资源 JSON
   `/cashier/types|pay|status`（页面内部调用，公开 + 限流）
@@ -70,11 +70,12 @@ Docker 全链路：`docker compose -f docker-compose.production.yml up -d`（镜
 初始化后：超管登录 `/admin-api/auth/login`（superadmin / 123456，登录后立即改密）。
 配置流程：插件管理→同步插件 → 支付方式（内置微信/支付宝/QQ钱包/网银/京东/PayPal 六项并带图标，可按需改图标或删除）→
 创建通道（选「易支付」插件填 appurl/appid/appkey；V2 上游选「易支付V2」再填平台公钥/商户私钥，凭证自动加密）→ 创建商户拿到 pid，
-商户面板「安全设置」复制 pid 与 MD5 密钥即可调用开放 API（RSA2 为可选，需开启并配置密钥对）。
+商户面板「API 信息」复制 pid 与 MD5 密钥即可调用开放 API（启用 RSA2 需先配置密钥对，启用后 MD5 立即失效）。
 
 ## 开放 API 要点
 
-- 认证：`pid + sign_type + sign`，`sign_type` 必填（`MD5` 默认 / `RSA2` 需商户面板开启）；
+- 认证：`pid + sign_type + sign`，`sign_type` 必填，且必须与商户当前生效算法一致
+  （未启用 RSA2 只用 `MD5`，启用后只用 `RSA2`，另一种直接拒绝）；
   签名放 JSON body 或表单参数内，`sign/sign_type` 与空值不参与拼串、`"0"` 参与签名，
   金额字段统一两位小数；`timestamp` 必填且 ±300s 防重放；
   MD5 = `md5(拼串 + 商户密钥)` 小写；RSA2 = SHA256WithRSA/RSA-2048，公钥单行 base64/PEM 均可
@@ -132,7 +133,7 @@ docs/
   index.md                  # 首页
   guide/protocol.md         # 协议规则
   pay/                      # 页面跳转支付 / API接口支付 / 支付结果通知
-  sign/                     # 签名算法（MD5 默认 / RSA2 可选）
+  sign/                     # 签名算法（MD5 / RSA2 二选一）
   api/                      # 查单 / 退款 / 退款查询
   appendix/                 # 支付方式列表 / 补单机制
 ```

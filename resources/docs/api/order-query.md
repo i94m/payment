@@ -12,7 +12,7 @@ URL地址：`{site_url}/api/orders/{trade_no}`
 | 商户ID | pid | 是 | Int | 1001 | |
 | 时间戳 | timestamp | 是 | Int | 1696000000 | Unix秒，偏差超过300秒拒绝（防重放） |
 | 签名字符串 | sign | 是 | String | 9f2c1a...（MD5） | 签名算法[点此查看](/sign/index.html) |
-| 签名类型 | sign_type | 是 | String | MD5 | `MD5`（默认）或 `RSA2`（需商户后台开启） |
+| 签名类型 | sign_type | 是 | String | MD5 | `MD5` 或 `RSA2`，须与商户当前生效算法一致（启用 RSA2 后只能用 RSA2） |
 
 签名原文为 `pid + timestamp`（按参数名升序拼串；MD5 用商户密钥、RSA2 用商户私钥签名）。
 

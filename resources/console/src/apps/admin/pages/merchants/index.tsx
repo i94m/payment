@@ -987,7 +987,7 @@ export function MerchantsPage() {
           <DialogHeader>
             <DialogTitle>{"MD5 签名密钥已重置"} - {secretResult?.username}</DialogTitle>
             <DialogDescription>
-              {"商户可在「安全设置」中查看同一密钥；如为线下交付，请通过安全渠道发送并提示其立即核对。"}
+              {"商户可在「API 信息」中查看同一密钥；如为线下交付，请通过安全渠道发送并提示其立即核对。"}
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2">
@@ -1387,10 +1387,10 @@ export function MerchantsPage() {
               {/* MD5 签名密钥（开放 API 默认算法） */}
               <div className="grid gap-1.5">
                 <div className="flex items-center justify-between">
-                  <Label>{"MD5 签名密钥（默认）"}</Label>
+                  <Label>{detailData.rsa2_enable ? "RSA2 签名（当前生效）" : "MD5 签名密钥（当前生效）"}</Label>
                   <div className="flex items-center gap-2">
                     <Badge variant={detailData.rsa2_enable ? "default" : "secondary"}>
-                      {detailData.rsa2_enable ? "RSA2 已开启" : "RSA2 未开启"}
+                      {detailData.rsa2_enable ? "签名方式 RSA2" : "签名方式 MD5"}
                     </Badge>
                     {hasPermission("merchant.resetkey") && (
                       <Button size="sm" variant="outline" onClick={() => setSecretResetTarget(detailData)}>
@@ -1406,7 +1406,7 @@ export function MerchantsPage() {
                   <p className="text-xs text-muted-foreground">{"未生成"}</p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {"商户面板「安全设置」可查看明文；重置后旧密钥立即失效，需同步通知商户。"}
+                  {"商户面板「API 信息」可查看明文；重置后旧密钥立即失效，需同步通知商户。"}
                 </p>
               </div>
 

@@ -1,4 +1,4 @@
-"""下游开放 API 认证依赖（pid + sign_type 签名，MD5 默认 / RSA2 可选）。
+"""下游开放 API 认证依赖（pid + sign_type 签名，算法由商户 RSA2 开关独占决定）。
 
 请求形态：POST/PUT 接受 JSON body 或 application/x-www-form-urlencoded 表单
 （PHP `http_build_query` 原生表单可直接对接，值天然是字符串）；GET 用 query 参数。

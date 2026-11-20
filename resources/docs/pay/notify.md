@@ -20,7 +20,7 @@
 | 业务扩展参数 | param | 否 | String | | 下单时传入原样返回，未传时无该字段 |
 | 时间戳 | timestamp | 是 | String | 1696000000 | Unix秒 |
 | 签名字符串 | sign | 是 | String | 9f2c1a... | MD5 订单用**商户密钥**签名；RSA2 订单用平台私钥签名，商户用**平台公钥**验签 |
-| 签名类型 | sign_type | 是 | String | MD5 | 与下单时的 `sign_type` 一致：`MD5`（默认）/ `RSA2` |
+| 签名类型 | sign_type | 是 | String | MD5 | 与下单时的 `sign_type` 一致：`MD5` / `RSA2` |
 
 商户侧处理约定：
 
