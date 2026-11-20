@@ -33,7 +33,8 @@ export const routes: PermissionRouteObject[] = [
   { path: "/orders", element: <OrdersPage /> },
   { path: "/testpay", element: <TestPayPage /> },
   { path: "/settle", element: <SettlePage /> },
-  { path: "/records", element: <RecordsPage /> },
+  // 资金明细按 merchant_records_enable 门控：关闭后菜单隐藏、直访按 404（接口同样 403）
+  { path: "/records", element: <FeatureRoute feature="merchant_records_enable"><RecordsPage /></FeatureRoute> },
   // 下级代理整组按 agent_enable 门控：关闭后直访 URL 也按不存在处理（接口同样 403）
   { path: "/agents", element: <FeatureRoute feature="agent_enable"><AgentsPage /></FeatureRoute> },
   { path: "/agent-performance", element: <FeatureRoute feature="agent_enable"><AgentPerformancePage /></FeatureRoute> },

@@ -25,3 +25,16 @@ async def require_agent_enabled(session: SessionDep, cache: CacheDep) -> None:
 
     if not setting_enabled(await get_setting(session, "agent_enable", True, cache=cache)):
         raise HTTPException(status_code=403, detail={"code": 403, "message": "下级代理功能已关闭"})
+
+
+async def require_merchant_records_enabled(session: SessionDep, cache: CacheDep) -> None:
+    """商户端资金明细开关（merchant_records_enable）依赖 —— 关闭后接口一律 403。
+
+    菜单显隐只是展示层：侧边栏「资金明细」隐藏后，直访 /records 或直接调
+    `/merchant-api/record/list` 仍能读到流水，所以关闭点同时放在接口层。
+    结算记录（/record/settlements）不在此开关范围内。
+    """
+    from app.services.settings import get_setting, setting_enabled
+
+    if not setting_enabled(await get_setting(session, "merchant_records_enable", True, cache=cache)):
+        raise HTTPException(status_code=403, detail={"code": 403, "message": "资金明细功能已关闭"})

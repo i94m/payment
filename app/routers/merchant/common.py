@@ -53,7 +53,8 @@ _MENU_SECTIONS: list[dict] = [
         {"key": "merchant.order", "name": "订单记录", "path": "/orders", "icon": "icon-list"},
         {"key": "merchant.testpay", "name": "测试支付", "path": "/testpay", "icon": "icon-flask"},
         {"key": "merchant.settle", "name": "结算记录", "path": "/settle", "icon": "icon-thumb-up"},
-        {"key": "merchant.record", "name": "资金明细", "path": "/records", "icon": "icon-file"},
+        {"key": "merchant.record", "name": "资金明细", "path": "/records", "icon": "icon-file",
+         "flag": "merchant_records_enable"},
     ]},
     {"label": "下级代理", "group_flag": "agent_enable", "items": [
         {"key": "merchant.agent", "name": "代理管理", "path": "/agents", "icon": "icon-users"},

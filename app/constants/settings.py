@@ -50,7 +50,8 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
     spec.key: spec
     for spec in [
         # ---- site ----
-        SettingSpec("site_name", SettingType.STRING, "聚合支付", SettingGroup.SITE, "站点名称"),
+        SettingSpec("site_name", SettingType.STRING, "聚合支付", SettingGroup.SITE, "站点名称",
+                    description="显示在浏览器标签页、登录页与后台/商户端侧边栏；留空回退「聚合支付」"),
         SettingSpec("site_url", SettingType.STRING, "", SettingGroup.SITE,
                     "站点地址（用于构建回调/回跳地址，留空自动取请求地址）"),
         SettingSpec("platform_rsa_private_key", SettingType.TEXT, "", SettingGroup.SITE,
@@ -87,12 +88,18 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
         SettingSpec("alert_queue_backlog", SettingType.INT, 500, SettingGroup.NOTIFY,
                     "队列积压告警阈值（queued+scheduled 超过即告警）"),
         # ---- settle ----
-        SettingSpec("merchant_default_rate", SettingType.DECIMAL, "0.00", SettingGroup.SETTLE, "新商户默认费率（%）"),
-        SettingSpec("settle_min_amount", SettingType.DECIMAL, "1.00", SettingGroup.SETTLE, "结算最低金额（元）"),
-        SettingSpec("settle_fee_rate", SettingType.DECIMAL, "0.00", SettingGroup.SETTLE, "结算手续费率（%）"),
-        SettingSpec("settle_fee_min", SettingType.DECIMAL, "0.00", SettingGroup.SETTLE, "结算手续费保底（元，0=不保底）"),
-        SettingSpec("settle_fee_max", SettingType.DECIMAL, "0.00", SettingGroup.SETTLE, "结算手续费封顶（元，0=不封顶）"),
-        SettingSpec("settle_daily_limit", SettingType.INT, 0, SettingGroup.SETTLE, "每日结算申请次数上限（0=不限）"),
+        SettingSpec("merchant_default_rate", SettingType.DECIMAL, "0.00", SettingGroup.SETTLE,
+                    "新商户默认费率（%）", description="仅在创建商户时作为默认值，创建后可在商户列表逐户调整"),
+        SettingSpec("settle_min_amount", SettingType.DECIMAL, "1.00", SettingGroup.SETTLE,
+                    "结算最低金额（元）", description="商户单笔结算申请的最低金额，低于该金额的申请会被拒绝"),
+        SettingSpec("settle_fee_rate", SettingType.DECIMAL, "0.00", SettingGroup.SETTLE,
+                    "结算手续费率（%）", description="按申请金额计算，0 表示不收手续费"),
+        SettingSpec("settle_fee_min", SettingType.DECIMAL, "0.00", SettingGroup.SETTLE,
+                    "结算手续费保底（元）", description="按费率算出的手续费低于该值时按该值收取；0 表示不保底"),
+        SettingSpec("settle_fee_max", SettingType.DECIMAL, "0.00", SettingGroup.SETTLE,
+                    "结算手续费封顶（元）", description="按费率算出的手续费高于该值时按该值收取；0 表示不封顶"),
+        SettingSpec("settle_daily_limit", SettingType.INT, 0, SettingGroup.SETTLE,
+                    "每日结算申请次数上限", description="每位商户每天可提交的结算申请次数上限；0 表示不限次数"),
         SettingSpec("settle_d1_enable", SettingType.BOOL, False, SettingGroup.SETTLE,
                     "D+1 结算（开启后当日收款不可提现，次日可提）"),
         SettingSpec("auto_settle_enable", SettingType.BOOL, False, SettingGroup.SETTLE,
@@ -114,6 +121,9 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
         SettingSpec("agent_enable", SettingType.BOOL, True, SettingGroup.SITE, "下级代理开关",
                     description="关闭后商户端「下级代理」菜单整组隐藏，代理端不可登录、"
                                 "商户/代理相关接口一律拒绝（历史订单归属与业绩数据保留）"),
+        SettingSpec("merchant_records_enable", SettingType.BOOL, True, SettingGroup.SITE,
+                    "商户端资金明细开关",
+                    description="关闭后商户端侧边栏隐藏「资金明细」菜单，直访 /records 与资金明细接口按不存在处理（历史流水保留）"),
         SettingSpec("announce_enable", SettingType.BOOL, True, SettingGroup.SITE, "商户公告开关",
                     description="关闭后商户端用户中心不展示公告，管理端也不提供发布入口；仅可在数据库/接口修改"),
         SettingSpec("site_qq_group", SettingType.STRING, "", SettingGroup.SITE, "产品QQ群链接（商户端菜单外链，留空隐藏）"),
@@ -121,21 +131,21 @@ SETTINGS_REGISTRY: dict[str, SettingSpec] = {
     ]
 }
 
-# 站点配置页可见 key 白名单：站点名称 + 首页趋势图开关 + 下级代理开关 + 结算组
-# （自动结算 / D+1 除外）。扣量已下放到商户行（merchants.deduct_*），不再有全局 deduct_* key。
+# 站点配置页可见 key 白名单：站点名称 + 首页趋势图开关 + 下级代理开关 + 商户端资金明细开关
+# + 结算组（自动结算 / D+1 除外）。扣量已下放到商户行（merchants.deduct_*），不再有全局 deduct_* key。
 # 注册开关、api_pay_enable / landing_enable / api_order_rate_limit、过期单回补窗口
 # （late_pay_backfill_hours，固定用默认 24h）等不在页面上暴露——仍由注册表提供默认值、
 # 运行期生效，需要时直接写库；不在页面展示是因为这些口径不需要运维日常调整。
 ADMIN_SETTING_HIDDEN_KEYS: set[str] = {"auto_settle_enable", "settle_d1_enable"}
 ADMIN_SETTING_KEYS: set[str] = (
-    {"site_name", "dashboard_trend_enable", "agent_enable"}
+    {"site_name", "dashboard_trend_enable", "agent_enable", "merchant_records_enable"}
     | {k for k, spec in SETTINGS_REGISTRY.items() if spec.group is SettingGroup.SETTLE}
 ) - ADMIN_SETTING_HIDDEN_KEYS
 
 # /site-info 公开下发的功能开关白名单（商户端菜单显隐、注册入口显隐）。
 # 仅布尔入口开关 + 两条外链字符串，敏感配置绝不入列。
 PUBLIC_FEATURE_KEYS: list[str] = [
-    "agent_enable", "announce_enable",
+    "agent_enable", "announce_enable", "merchant_records_enable",
     "recharge_enable", "paypage_enable", "api_pay_enable", "merchant_reg_open",
     "site_qq_group", "site_app_url",
 ]

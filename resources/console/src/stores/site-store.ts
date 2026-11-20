@@ -6,6 +6,7 @@ import apiClient from "@/lib/api-client"
 export interface SiteFeatures {
   agent_enable: boolean
   announce_enable: boolean
+  merchant_records_enable: boolean
   recharge_enable: boolean
   paypage_enable: boolean
   api_pay_enable: boolean
@@ -17,6 +18,7 @@ export interface SiteFeatures {
 export const DEFAULT_SITE_FEATURES: SiteFeatures = {
   agent_enable: true,
   announce_enable: true,
+  merchant_records_enable: true,
   recharge_enable: true,
   paypage_enable: true,
   api_pay_enable: true,

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Field, FieldError, FieldLabel, RequiredMark } from "@/components/ui/field"
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useForm, Controller, type Control } from "react-hook-form"
 import { useSiteStore } from "@/stores/site-store"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -38,8 +38,6 @@ const TOGGLE_DISABLES: Record<string, string[]> = {}
 interface SettingGroup {
   key: string
   title: string
-  /** 卡片标题下的补充描述（取组内第一个带 description 的项，可空） */
-  description: string
   /** 开关类：整行渲染在输入项网格上方 */
   toggles: SettingItem[]
   /** 其余项：开关行下方的网格 */
@@ -58,7 +56,6 @@ function groupItems(items: SettingItem[]): SettingGroup[] {
     .map(([key, groupItems]) => ({
       key,
       title: GROUP_TITLES[key] ?? key,
-      description: groupItems.find((i) => i.description)?.description ?? "",
       toggles: groupItems.filter((i) => i.type === "bool"),
       fields: groupItems.filter((i) => i.type !== "bool"),
     }))
@@ -108,6 +105,9 @@ function SettingField({ item, control, clearError, disabled }: {
               placeholder={"请输入"}
               aria-invalid={fieldState.invalid || undefined}
             />
+            {item.description && (
+              <p className="text-xs leading-relaxed text-muted-foreground">{item.description}</p>
+            )}
             {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
           </Field>
         )}
@@ -263,7 +263,6 @@ export function PaySettingsPage() {
                 <Card key={group.key}>
                   <CardHeader>
                     <CardTitle className="text-base">{group.title}</CardTitle>
-                    {group.description && <CardDescription className="text-xs">{group.description}</CardDescription>}
                     <CardAction>
                       <Button
                         size="sm"
@@ -277,20 +276,26 @@ export function PaySettingsPage() {
                   <CardContent className="grid gap-x-4 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
                     {group.toggles.length > 0 && (
                       // 开关整行置顶，横排模式：控件在前、标签在后
-                      <div className="sm:col-span-2 xl:col-span-3 flex items-center gap-6">
+                      <div className="sm:col-span-2 xl:col-span-3 flex flex-wrap items-start gap-x-8 gap-y-3">
                         {group.toggles.map((item) => (
                           <Controller
                             key={item.key}
                             name={item.key}
                             control={form.control}
                             render={({ field }) => (
-                              <Field orientation="horizontal">
+                              <Field orientation="horizontal" className="items-start">
                                 <Switch
                                   id={`setting-${item.key}`}
                                   checked={field.value === "true"}
                                   onCheckedChange={(v) => field.onChange(String(v))}
+                                  className="mt-0.5"
                                 />
-                                <FieldLabel htmlFor={`setting-${item.key}`} className="font-normal text-sm">{item.label}</FieldLabel>
+                                <div className="space-y-1">
+                                  <FieldLabel htmlFor={`setting-${item.key}`} className="font-normal text-sm">{item.label}</FieldLabel>
+                                  {item.description && (
+                                    <p className="text-xs leading-relaxed text-muted-foreground">{item.description}</p>
+                                  )}
+                                </div>
                               </Field>
                             )}
                           />

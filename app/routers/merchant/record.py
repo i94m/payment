@@ -1,8 +1,8 @@
 """商户端资金流水 + 结算记录。"""
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from sqlmodel import col, func, select
 
-from app.core.deps import SessionDep
+from app.core.deps import SessionDep, require_merchant_records_enabled
 from app.core.security import MerchantUser
 from app.models import MerchantRecord, Settlement
 from app.responses import paginate, suc
@@ -39,7 +39,7 @@ def _dump_record(r: MerchantRecord) -> dict:
     }
 
 
-@router.get("/list")
+@router.get("/list", dependencies=[Depends(require_merchant_records_enabled)])
 async def record_list(session: SessionDep, auth: MerchantUser,
                       page: int = Query(1, ge=1), per_page: int = Query(20, ge=1, le=100),
                       biz_type: str = "", addtime: str = ""):

@@ -159,7 +159,7 @@ export function SettlePage() {
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         {/* 余额概览 + 申请 */}
         <div className="grid gap-4 px-4 lg:px-6 lg:grid-cols-3">
-          <Card className="border-0 shadow-sm lg:col-span-2">
+          <Card className="shadow-sm lg:col-span-2">
             <CardHeader>
               <CardTitle className="text-base">{"结算中心"}</CardTitle>
             </CardHeader>
@@ -237,7 +237,7 @@ export function SettlePage() {
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-sm">
+          <Card className="shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle className="text-base">{"申请结算"}</CardTitle>
               <Link to="/user-center" className="text-xs text-primary underline-offset-2 hover:underline">{"修改收款账号"}</Link>
@@ -307,7 +307,7 @@ export function SettlePage() {
 
         {/* 结算记录 */}
         <div className="px-4 lg:px-6">
-          <Card className="border-0 shadow-sm">
+          <Card className="shadow-sm">
             <CardHeader>
               <CardTitle className="text-base">{"结算记录"}</CardTitle>
             </CardHeader>

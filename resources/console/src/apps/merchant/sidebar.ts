@@ -58,7 +58,7 @@ export function getMerchantMenu(): MenuSection[] {
         { title: "订单记录", url: "/orders", icon: IconListDetails },
         { title: "测试支付", url: "/testpay", icon: IconFlask },
         { title: "结算记录", url: "/settle", icon: IconReceipt },
-        { title: "资金明细", url: "/records", icon: IconHistory },
+        { title: "资金明细", url: "/records", icon: IconHistory, feature: "merchant_records_enable" },
       ],
     },
     {
