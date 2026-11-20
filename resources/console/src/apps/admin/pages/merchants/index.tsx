@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
+import type { ColumnDef } from "@tanstack/react-table"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import {
@@ -27,7 +28,7 @@ import {
   PanelError,
   actionsColumn,
 } from "@/components/data-list/"
-import type { ActionItem } from "@/components/data-list/"
+import type { ActionItem, FormFieldConfig } from "@/components/data-list/"
 import { z } from "zod"
 import {
   IconSearch, IconRefresh, IconPlus, IconEdit,
@@ -39,7 +40,7 @@ import {
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 import { downloadBlob } from "@/lib/export"
-import { EXPORT_ENABLED } from "@/lib/flags"
+import { EXPORT_ENABLED, MERCHANT_STATUS_ENABLED, RANDOM_AMOUNT_ENABLED } from "@/lib/flags"
 import { toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { CopyButton } from "@/components/ui/copy-button"
@@ -349,7 +350,8 @@ export function MerchantsPage() {
         },
         meta: { headClassName: "min-w-[130px]" },
       },
-      {
+      // 随机金额 / 建单限流：暂时隐藏列与设置入口（flags.ts 恢复）
+      ...(RANDOM_AMOUNT_ENABLED ? ([{
         // 随机金额（点击弹出设置）
         accessorKey: "random_enable",
         enableSorting: false,
@@ -388,7 +390,7 @@ export function MerchantsPage() {
           )
         },
         meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
-      },
+      }] as ColumnDef<MerchantData>[]) : []),
       {
         // 扣量（点击弹出设置）：商户级开关 + 每 N 笔扣 1 + 起扣金额
         accessorKey: "deduct_enable",
@@ -427,26 +429,8 @@ export function MerchantsPage() {
         },
         meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
       },
-      {
-        // 下游通道编码必传：默认全开，关闭即对该商户个别豁免；只约束开放 API 下单
-        // （收银台/收款页/充值不受影响）
-        accessorKey: "channel_code_required",
-        enableSorting: false,
-        header: () => "编码必传",
-        cell: ({ row }) => (
-          <div className="flex items-center justify-center gap-1.5">
-            <Switch
-              checked={row.original.channel_code_required}
-              onCheckedChange={() => toggleChannelCodeRequired(row.original)}
-            />
-            <span className="text-xs text-muted-foreground">
-              {row.original.channel_code_required ? "必传" : "豁免"}
-            </span>
-          </div>
-        ),
-        meta: { headClassName: "w-[110px] text-center", cellClassName: "text-center" },
-      },
-      {
+      // 建单限流：与随机金额同一开关（暂时隐藏设置入口）
+      ...(RANDOM_AMOUNT_ENABLED ? ([{
         // 建单限流（点击弹出设置）：同一付款 IP 每分钟建单上限，0=不限
         accessorKey: "random_ratelimit",
         enableSorting: false,
@@ -478,8 +462,9 @@ export function MerchantsPage() {
           )
         },
         meta: { headClassName: "min-w-[90px] text-center", cellClassName: "text-center" },
-      },
-      {
+      }] as ColumnDef<MerchantData>[]) : []),
+      // 商户状态/支付/结算/配置锁定：暂时隐藏展示与设置（flags.ts 恢复）
+      ...(MERCHANT_STATUS_ENABLED ? ([{
         // 用户状态：正常 / 禁用（开关实时切换）
         accessorKey: "status",
         header: () => "状态",
@@ -551,7 +536,7 @@ export function MerchantsPage() {
           )
         },
         meta: { headClassName: "w-[84px] text-center", cellClassName: "text-center" },
-      },
+      }] as ColumnDef<MerchantData>[]) : []),
       actionsColumn([
         { label: "API密钥", onClick: (item) => openDetail(item) },
         { label: "调整余额", onClick: (item) => { setBalanceTarget(item); setBalanceAmount(""); setBalanceRemark("") } },
@@ -560,7 +545,11 @@ export function MerchantsPage() {
         { label: "交易订单", icon: <IconList className="size-4" />, placement: "menu", onClick: (item) => navigate(`/trade/orders?merchant_id=${item.id}`) },
         { label: "结算", icon: <IconReceipt className="size-4" />, placement: "menu", onClick: (item) => navigate(`/settle?merchant_id=${item.id}`) },
         { label: "重置密码", icon: <IconLockPassword className="size-4" />, placement: "menu", onClick: (item) => { setPwdValue(""); setPwdTarget(item) } },
-        { label: "编辑", icon: <IconEdit className="size-4" />, placement: "menu", onClick: (item) => { setEditingId(item.id); setFormOpen(true) } },
+        // 编辑弹窗只有状态/支付/结算三个开关，暂时隐藏时也收起入口
+        ...(MERCHANT_STATUS_ENABLED ? [{
+          label: "编辑", icon: <IconEdit className="size-4" />, placement: "menu",
+          onClick: (item: MerchantData) => { setEditingId(item.id); setFormOpen(true) },
+        }] : []),
         { label: "删除", icon: <IconTrash className="size-4" />, placement: "menu", variant: "destructive", title: "删除商户", onClick: (item) => setDeleteTarget(item) },
       ] as ActionItem<MerchantData>[], { width: 240 }),
     ],
@@ -688,18 +677,6 @@ export function MerchantsPage() {
       toast.success("扣量设置已保存")
       setDeductTarget(null)
       refresh()
-    } catch (err) {
-      toast.error(getErrorMessage(err, "操作失败"))
-    }
-  }
-
-  // 编码必传：行内开关（默认全开，关闭即个别豁免；只约束开放 API 下单）
-  const toggleChannelCodeRequired = async (item: MerchantData) => {
-    const next = !item.channel_code_required
-    try {
-      await merchantsApi.setChannelCodeRequired(item.id, next)
-      updateRow(item.id, { channel_code_required: next })
-      toast.success(next ? "已要求携带通道编码" : "不再强制通道编码")
     } catch (err) {
       toast.error(getErrorMessage(err, "操作失败"))
     }
@@ -847,20 +824,22 @@ export function MerchantsPage() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setBatchRandomEnable("1")
-                  setBatchRandomInteger(false)
-                  setBatchRandomMin("")
-                  setBatchRandomMax("")
-                  setBatchRandomOpen(true)
-                }}
-              >
-                <IconDice className="size-4" />
-                {"批量随机金额"}
-              </Button>
+              {RANDOM_AMOUNT_ENABLED && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setBatchRandomEnable("1")
+                    setBatchRandomInteger(false)
+                    setBatchRandomMin("")
+                    setBatchRandomMax("")
+                    setBatchRandomOpen(true)
+                  }}
+                >
+                  <IconDice className="size-4" />
+                  {"批量随机金额"}
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -903,14 +882,14 @@ export function MerchantsPage() {
         fields={[
           { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", required: true, props: { autoComplete: "off" } },
           { type: "input", name: "password", label: "密码", placeholder: "密码", span: "full", required: true, props: { autoComplete: "new-password", spellCheck: false } },
-          {
+          ...(MERCHANT_STATUS_ENABLED ? ([{
             type: "switch-group", name: "switch_group", span: "full",
             items: [
               { name: "status", label: "商户状态" },
               { name: "pay_status", label: "支付权限" },
               { name: "settle_status", label: "结算权限" },
             ],
-          },
+          }] as FormFieldConfig[]) : []),
         ]}
         defaultValues={() => ({
           username: "", password: "",
@@ -939,14 +918,14 @@ export function MerchantsPage() {
         width="sm:max-w-sm"
         fields={[
           { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", props: { disabled: true } },
-          {
+          ...(MERCHANT_STATUS_ENABLED ? ([{
             type: "switch-group", name: "switch_group", span: "full",
             items: [
               { name: "status", label: "商户状态" },
               { name: "pay_status", label: "支付权限" },
               { name: "settle_status", label: "结算权限" },
             ],
-          },
+          }] as FormFieldConfig[]) : []),
         ]}
         defaultValues={() => ({
           username: "",
@@ -1106,6 +1085,7 @@ export function MerchantsPage() {
       />
 
       {/* 随机金额（单个） */}
+      {RANDOM_AMOUNT_ENABLED && (
       <Dialog open={!!randomTarget} onOpenChange={(open) => !open && setRandomTarget(null)}>
         <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
@@ -1153,6 +1133,7 @@ export function MerchantsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      )}
 
       {/* 扣量（单个）：商户级开关 + 每 N 笔扣 1 + 起扣金额 */}
       <Dialog open={!!deductTarget} onOpenChange={(open) => !open && setDeductTarget(null)}>
@@ -1208,6 +1189,7 @@ export function MerchantsPage() {
       </Dialog>
 
       {/* 限流（单个） */}
+      {RANDOM_AMOUNT_ENABLED && (
       <Dialog open={!!ratelimitTarget} onOpenChange={(open) => !open && setRatelimitTarget(null)}>
         <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
@@ -1224,6 +1206,7 @@ export function MerchantsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      )}
 
       {/* 修改结算账号 */}
       <Dialog open={!!settleTarget} onOpenChange={(open) => !open && setSettleTarget(null)}>
@@ -1288,6 +1271,7 @@ export function MerchantsPage() {
       </Dialog>
 
       {/* 批量随机金额 */}
+      {RANDOM_AMOUNT_ENABLED && (
       <Dialog open={batchRandomOpen} onOpenChange={setBatchRandomOpen}>
         <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
@@ -1340,6 +1324,7 @@ export function MerchantsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      )}
 
       {/* 批量扣量 */}
       <Dialog open={batchDeductOpen} onOpenChange={setBatchDeductOpen}>

@@ -81,7 +81,7 @@ export interface MerchantOverview {
   announcements: { id: number; content: string; created_at: string }[]
 }
 
-/** 首页快捷面板配置：金额路由 / 通道限速 */
+/** 首页快捷面板配置：金额路由 */
 export interface PayRouteItem {
   enable: number
   min: string
@@ -102,17 +102,6 @@ export interface HomeConfig {
   pay_types: { id: number; code: string; name: string; icon?: string }[]
   channels: { id: number; name: string; payment_type_id: number }[]
   payroute: Record<string, PayRouteItem>
-  ratelimit: Record<string, number>
-  ratelimit_last: number
-}
-
-export interface RatelimitStats {
-  show: number
-  limit?: number
-  allnum?: number
-  total?: number
-  success?: number
-  rate?: number
 }
 
 export const dashboardApi = {
@@ -126,10 +115,4 @@ export const dashboardApi = {
     apiClient.get("/dashboard/config") as Promise<HomeConfig>,
   savePayrouteBatch: (items: PayRouteSaveItem[]) =>
     apiClient.post("/dashboard/payroute/batch", { items }) as Promise<null>,
-  saveRatelimit: (data: { channel_id: number; value?: number }) =>
-    apiClient.post("/dashboard/ratelimit", data) as Promise<null>,
-  saveRatelimitLast: (channel_id: number) =>
-    apiClient.post("/dashboard/ratelimit/last", { channel_id }) as Promise<null>,
-  ratelimitStats: (cid: number) =>
-    apiClient.get("/dashboard/ratelimit-stats", { params: { cid } }) as Promise<RatelimitStats>,
 }
