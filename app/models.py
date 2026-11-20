@@ -368,13 +368,12 @@ class ChannelCode(SQLModel, table=True):
 class ChannelCodeItem(SQLModel, table=True):
     """编码 → 通道绑定（成员）。
 
-    `status` 是本编码内的临时开关（只摘掉这一个编码的分流，不影响其它编码与默认路由）；
+    「勾选即启用」：成员表本身就是候选集，要摘掉某条通道就取消勾选（删绑定行）；
     `last_used_at` 是轮询游标（放在绑定行而不是 channels.usetime，避免多个编码共用同一通道时串味）。
     """
     __tablename__ = "channel_code_items"
     __table_args__ = (
         UniqueConstraint("code_id", "channel_id", name="uq_channel_code_items"),
-        Index("ix_channel_code_items_code_status", "code_id", "status"),
         _MYSQL_ARGS,
     )
 
@@ -382,7 +381,6 @@ class ChannelCodeItem(SQLModel, table=True):
     code_id: int = Field(sa_column=Column(BigInt, nullable=False))     # → channel_codes.id
     channel_id: int = Field(sa_column=Column(BigInt, nullable=False))  # → channels.id
     weight: int = Field(default=1, sa_column=Column(Integer, server_default=text("1"), nullable=False))  # 权重模式抽签用
-    status: int = Field(default=1, sa_column=Column(SmallInteger, server_default=text("1"), nullable=False))  # 1=启用 0=本编码内停用
     sort: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))  # 轮询同游标时的稳定顺序
     last_used_at: int = Field(default=0, sa_column=Column(BigInteger, server_default=text("0"), nullable=False))  # 轮询游标（ms）
     created_at: Optional[datetime] = _ts_created()

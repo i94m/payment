@@ -40,6 +40,14 @@ PERMISSION_TREE: list[tuple[str, str, list[tuple[str, str]]]] = [
         ]
     ),
     (
+        "通道编码", "channel_code", [
+            ("查看", "channel_code.view"),
+            ("创建", "channel_code.create"),
+            ("编辑", "channel_code.update"),
+            ("删除", "channel_code.delete"),
+        ]
+    ),
+    (
         "支付方式", "payment_type", [
             ("查看", "payment_type.view"),
             ("创建", "payment_type.create"),
@@ -97,8 +105,7 @@ MENU_TREE: list[dict] = [
     {"key": "merchant.view", "name": "商户管理", "path": "/merchants", "icon": "icon-user"},
     {"key": "merchant.view", "name": "资金明细", "path": "/records", "icon": "icon-file"},
     {"key": "channel.view", "name": "支付通道", "path": "/pay/channels", "icon": "icon-swap"},
-    # 下游通道编码：复用 channel.* 权限（不新增权限树节点，避免升级要求跑 permission sync）
-    {"key": "channel.view", "name": "下游通道编码", "path": "/pay/codes", "icon": "icon-link"},
+    {"key": "channel_code.view", "name": "通道编码", "path": "/pay/codes", "icon": "icon-link"},
     {"key": "payment_type.view", "name": "支付方式", "path": "/pay/types", "icon": "icon-cloud"},
     {"key": "settle.view", "name": "结算管理", "path": "/settle", "icon": "icon-thumb-up"},
     {"key": "announce.view", "name": "公告管理", "path": "/announces", "icon": "icon-speaker"},

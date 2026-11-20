@@ -154,14 +154,12 @@ export interface ChannelPayload {
 export interface ChannelCodeItemData {
   channel_id: number
   weight: number
-  /** 本编码内的临时开关：0=停用（只影响本编码） */
-  status: number
   sort: number
   last_used_at: number
   channel_name: string
   plugin_name: string
   payment_type_id: number
-  /** 通道自身的全局状态（0=全局停用，编码内开关救不活） */
+  /** 通道自身的全局状态（0=全局停用，绑在编码里也分流不到） */
   channel_status: number
 }
 
@@ -174,7 +172,6 @@ export interface ChannelCodeData {
   mode: number
   status: number
   item_count: number
-  active_item_count: number
   members: ChannelCodeItemData[]
   today_count?: number
   today_amount?: string
@@ -199,7 +196,7 @@ export interface ChannelCodePayload {
   remark: string
   mode: number
   status: number
-  items: { channel_id: number; weight: number; status: number; sort?: number }[]
+  items: { channel_id: number; weight: number; sort?: number }[]
 }
 
 export const payApi = {
@@ -279,9 +276,4 @@ export const payApi = {
   /** 编码总闸：只改开关，不触碰成员与权重 */
   setChannelCodeStatus: (id: number, status: number) =>
     apiClient.put(`/pay/channel-codes/${id}/status`, { status }) as Promise<{ id: number; status: number }>,
-
-  /** 编码内成员临时开关：只影响本编码，不动通道全局状态 */
-  setChannelCodeItemStatus: (id: number, channelId: number, status: number) =>
-    apiClient.put(`/pay/channel-codes/${id}/items/${channelId}/status`,
-      { status }) as Promise<{ status: number }>,
 }

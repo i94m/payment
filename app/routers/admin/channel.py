@@ -663,7 +663,7 @@ async def channel_delete(channel_id: int, session: SessionDep, request: Request,
         .order_by(col(ChannelCode.code))
     )).all()
     if refs:
-        return err(-1, f"该通道仍被下游通道编码引用（{', '.join(refs)}），请先在编码里解绑")
+        return err(-1, f"该通道仍被通道编码引用（{', '.join(refs)}），请先在编码里解绑")
     await session.delete(c)
     await session.commit()
     return suc("success")
@@ -682,7 +682,6 @@ CODE_MODES = {0: "随机", 1: "轮询", 2: "权重"}
 class ChannelCodeItemRequest(BaseModel):
     channel_id: int
     weight: int = 1
-    status: int = 1
     sort: int = 0
 
 
@@ -726,8 +725,6 @@ async def _validate_code_payload(session, body: ChannelCodeRequest,
     for it in body.items:
         if it.weight < 0:
             return code, "权重不能为负数"
-        if it.status not in (0, 1):
-            return code, "成员状态取值不合法"
     # 权重模式必须至少有一个正权重成员：全零会在抽签时退化（老实现永远选最后一条），
     # 运营以为按权重分流、实际全量压一条通道，比报错危险
     if body.mode == 2 and not any(it.weight > 0 for it in body.items):
@@ -750,7 +747,6 @@ async def _replace_code_items(session, code_id: int, items: list[ChannelCodeItem
         if row is None:
             row = ChannelCodeItem(code_id=code_id, channel_id=it.channel_id)
         row.weight = it.weight
-        row.status = it.status
         row.sort = it.sort if it.sort else idx
         session.add(row)
 
@@ -759,7 +755,6 @@ def _dump_code_item(item: ChannelCodeItem, c: Channel | None) -> dict:
     return {
         "channel_id": item.channel_id,
         "weight": item.weight,
-        "status": item.status,
         "sort": item.sort,
         "last_used_at": item.last_used_at,
         "channel_name": c.name if c else "（通道已删除）",
@@ -793,7 +788,7 @@ async def _code_today_stats(session) -> dict[int, dict]:
     return stats
 
 
-@router.get("/channel-codes", dependencies=[Depends(PermissionChecker("channel.view"))])
+@router.get("/channel-codes", dependencies=[Depends(PermissionChecker("channel_code.view"))])
 async def channel_code_list(session: SessionDep, page: int = Query(1, ge=1),
                             per_page: int = Query(20, ge=1, le=100),
                             status: Optional[int] = Query(None),
@@ -836,7 +831,6 @@ async def channel_code_list(session: SessionDep, page: int = Query(1, ge=1),
             "mode": c.mode,
             "status": c.status,
             "item_count": len(members),
-            "active_item_count": sum(1 for it in members if it.status == 1),
             "members": [
                 _dump_code_item(it, channel_map.get(it.channel_id)) for it in members
             ],
@@ -849,7 +843,7 @@ async def channel_code_list(session: SessionDep, page: int = Query(1, ge=1),
     ))
 
 
-@router.get("/channel-codes/{code_id}", dependencies=[Depends(PermissionChecker("channel.view"))])
+@router.get("/channel-codes/{code_id}", dependencies=[Depends(PermissionChecker("channel_code.view"))])
 async def channel_code_detail(code_id: int, session: SessionDep):
     c = await session.get(ChannelCode, code_id)
     if not c:
@@ -874,7 +868,7 @@ async def channel_code_detail(code_id: int, session: SessionDep):
     })
 
 
-@router.post("/channel-codes", dependencies=[Depends(PermissionChecker("channel.create"))])
+@router.post("/channel-codes", dependencies=[Depends(PermissionChecker("channel_code.create"))])
 async def channel_code_create(body: ChannelCodeRequest, session: SessionDep):
     code, msg = await _validate_code_payload(session, body)
     if msg:
@@ -894,7 +888,7 @@ async def channel_code_create(body: ChannelCodeRequest, session: SessionDep):
     return suc({"id": c.id, "code": c.code})
 
 
-@router.put("/channel-codes/{code_id}", dependencies=[Depends(PermissionChecker("channel.update"))])
+@router.put("/channel-codes/{code_id}", dependencies=[Depends(PermissionChecker("channel_code.update"))])
 async def channel_code_update(code_id: int, body: ChannelCodeRequest, session: SessionDep):
     c = await session.get(ChannelCode, code_id)
     if not c:
@@ -914,7 +908,7 @@ async def channel_code_update(code_id: int, body: ChannelCodeRequest, session: S
 
 
 @router.put("/channel-codes/{code_id}/status",
-            dependencies=[Depends(PermissionChecker("channel.update"))])
+            dependencies=[Depends(PermissionChecker("channel_code.update"))])
 async def channel_code_set_status(code_id: int, body: ChannelCodeStatusRequest,
                                   session: SessionDep):
     """编码总闸：只改开关，不触碰成员与权重。"""
@@ -927,27 +921,8 @@ async def channel_code_set_status(code_id: int, body: ChannelCodeStatusRequest,
     return suc({"id": c.id, "status": c.status})
 
 
-@router.put("/channel-codes/{code_id}/items/{channel_id}/status",
-            dependencies=[Depends(PermissionChecker("channel.update"))])
-async def channel_code_item_set_status(code_id: int, channel_id: int,
-                                       body: ChannelCodeStatusRequest, session: SessionDep):
-    """编码内的成员临时开关：只影响本编码的分流，不影响通道全局状态与其它编码。"""
-    item = (await session.exec(
-        select(ChannelCodeItem).where(
-            col(ChannelCodeItem.code_id) == code_id,
-            col(ChannelCodeItem.channel_id) == channel_id,
-        )
-    )).first()
-    if not item:
-        return err(404, "该通道未绑定到此编码")
-    item.status = 1 if body.status == 1 else 0
-    session.add(item)
-    await session.commit()
-    return suc({"code_id": code_id, "channel_id": channel_id, "status": item.status})
-
-
 @router.delete("/channel-codes/{code_id}",
-               dependencies=[Depends(PermissionChecker("channel.delete"))])
+               dependencies=[Depends(PermissionChecker("channel_code.delete"))])
 async def channel_code_delete(code_id: int, session: SessionDep):
     """删除编码与全部绑定。历史订单保留 channel_code 字符串作为留痕，不回改。
 

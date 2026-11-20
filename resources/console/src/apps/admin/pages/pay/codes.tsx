@@ -2,6 +2,9 @@
 
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
+import { useForm, Controller } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
 import { payApi } from "@/api"
 import type {
   ChannelCodeData,
@@ -11,10 +14,9 @@ import type {
 } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Field, FieldLabel, FieldDescription, FieldError, RequiredMark } from "@/components/ui/field"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
@@ -40,23 +42,43 @@ import { getErrorMessage } from "@/lib/error"
 /** 编码级策略：与通道 mode 同口径（0=随机 1=轮询 2=权重） */
 const MODE_LABEL: Record<number, string> = { 0: "随机", 1: "轮询", 2: "权重" }
 
-// 行内编辑态：成员勾选/权重/本编码内开关
+// 行内编辑态：成员勾选/权重
 interface MemberDraft {
   channel_id: number
   weight: number
-  status: number
 }
 
-interface CodeDraft {
-  code: string
-  name: string
-  remark: string
-  mode: number
-  status: number
-  members: Record<number, MemberDraft>
-}
+// 编码表单校验：与后端 /channel-codes 的校验口径一致（编码格式/至少一个通道/权重模式非全零）
+// 放在前端是为了当场给提示，不把用户的重填成本留到提交之后。
+const memberSchema = z.object({
+  channel_id: z.number(),
+  weight: z.number().int("权重必须是整数").min(0, "权重不能为负数"),
+})
 
-const emptyDraft = (): CodeDraft => ({
+const codeSchema = z.object({
+  code: z.string().trim()
+    .min(1, "通道编码不能为空")
+    .max(32, "通道编码最多 32 位")
+    .regex(/^[a-z0-9_-]+$/i, "只支持字母、数字、- 和 _"),
+  name: z.string().trim().max(64, "名称最多 64 个字符"),
+  remark: z.string().trim().max(255, "备注最多 255 个字符"),
+  mode: z.number(),
+  status: z.number(),
+  members: z.record(z.string(), memberSchema),
+}).superRefine((values, ctx) => {
+  const items = Object.values(values.members)
+  if (items.length === 0) {
+    ctx.addIssue({ code: "custom", path: ["members"], message: "请至少勾选一个通道" })
+    return
+  }
+  if (values.mode === 2 && !items.some((it) => it.weight > 0)) {
+    ctx.addIssue({ code: "custom", path: ["members"], message: "权重模式下至少一个通道的权重要大于 0" })
+  }
+})
+
+type CodeFormValues = z.infer<typeof codeSchema>
+
+const emptyValues = (): CodeFormValues => ({
   code: "", name: "", remark: "", mode: 0, status: 1, members: {},
 })
 
@@ -74,8 +96,20 @@ export function ChannelCodesPage() {
 
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [editingId, setEditingId] = React.useState<number | null>(null)
-  const [draft, setDraft] = React.useState<CodeDraft>(emptyDraft)
   const [saving, setSaving] = React.useState(false)
+
+  // 表单输入用 z.input（members 由成员表行内编辑写入），提交时拿到校验后的 z.output
+  const codeForm = useForm<z.input<typeof codeSchema>, unknown, CodeFormValues>({
+    resolver: zodResolver(codeSchema),
+    defaultValues: emptyValues(),
+  })
+  const members = codeForm.watch("members")
+  // 权重模式已下线（只保留随机/轮询）：仅历史编码 mode=2 时仍显示权重列与权重项，
+  // 避免编辑老配置时把权重悄悄丢掉或静默改成随机
+  const mode = codeForm.watch("mode")
+  const showWeight = mode === 2
+  // 「至少一个通道 / 权重全零」是整段的错误，挂在 members 上统一展示
+  const membersError = (codeForm.formState.errors.members as { message?: string } | undefined)?.message
   const [deleteId, setDeleteId] = React.useState<number | null>(null)
 
   React.useEffect(() => {
@@ -118,23 +152,23 @@ export function ChannelCodesPage() {
 
   const openCreate = () => {
     setEditingId(null)
-    setDraft(emptyDraft())
+    codeForm.reset(emptyValues())
     setDialogOpen(true)
   }
 
   const openEdit = async (id: number) => {
     try {
       const detail = await payApi.channelCodeDetail(id)
-      const members: Record<number, MemberDraft> = {}
+      const memberMap: Record<string, MemberDraft> = {}
       detail.items.forEach((it) => {
-        members[it.channel_id] = {
-          channel_id: it.channel_id, weight: it.weight, status: it.status,
+        memberMap[String(it.channel_id)] = {
+          channel_id: it.channel_id, weight: it.weight,
         }
       })
       setEditingId(id)
-      setDraft({
+      codeForm.reset({
         code: detail.code, name: detail.name, remark: detail.remark,
-        mode: detail.mode, status: detail.status, members,
+        mode: detail.mode, status: detail.status, members: memberMap,
       })
       setDialogOpen(true)
     } catch (err) {
@@ -143,41 +177,28 @@ export function ChannelCodesPage() {
   }
 
   const toggleMember = (channelId: number) => {
-    setDraft((d) => {
-      const members = { ...d.members }
-      if (members[channelId]) delete members[channelId]
-      else members[channelId] = { channel_id: channelId, weight: 1, status: 1 }
-      return { ...d, members }
-    })
+    const next = { ...codeForm.getValues("members") }
+    if (next[channelId]) delete next[channelId]
+    else next[channelId] = { channel_id: channelId, weight: 1 }
+    // 提交过一次后再改成员就实时复校验：用户看到「请至少勾选一个通道」后勾上能立刻消掉
+    codeForm.setValue("members", next, { shouldDirty: true, shouldValidate: codeForm.formState.submitCount > 0 })
   }
 
   const patchMember = (channelId: number, patch: Partial<MemberDraft>) => {
-    setDraft((d) => ({
-      ...d,
-      members: { ...d.members, [channelId]: { ...d.members[channelId], ...patch } },
-    }))
+    codeForm.setValue("members", {
+      ...codeForm.getValues("members"),
+      [channelId]: { ...codeForm.getValues("members")[channelId], ...patch },
+    }, { shouldDirty: true, shouldValidate: codeForm.formState.submitCount > 0 })
   }
 
-  const submit = async () => {
-    const items = Object.values(draft.members)
-    if (!draft.code.trim()) {
-      toast.error("通道编码不能为空")
-      return
-    }
-    if (items.length === 0) {
-      toast.error("至少绑定一个通道")
-      return
-    }
-    if (draft.mode === 2 && !items.some((it) => it.weight > 0)) {
-      toast.error("权重模式下至少一个通道的权重要大于 0")
-      return
-    }
+  const submit = async (values: CodeFormValues) => {
+    const items = Object.values(values.members)
     const payload: ChannelCodePayload = {
-      code: draft.code.trim().toLowerCase(),
-      name: draft.name.trim(),
-      remark: draft.remark.trim(),
-      mode: draft.mode,
-      status: draft.status,
+      code: values.code.trim().toLowerCase(),
+      name: values.name.trim(),
+      remark: values.remark.trim(),
+      mode: values.mode,
+      status: values.status,
       items: items.map((it, idx) => ({ ...it, sort: idx })),
     }
     setSaving(true)
@@ -232,10 +253,7 @@ export function ChannelCodesPage() {
         enableSorting: false,
         header: () => "关联通道",
         cell: ({ row }) => (
-          <span className="text-sm tabular-nums">
-            {row.original.active_item_count}
-            <span className="text-muted-foreground">/{row.original.item_count}</span>
-          </span>
+          <span className="text-sm tabular-nums">{row.original.item_count}</span>
         ),
         meta: { headClassName: "w-[90px] text-right", cellClassName: "text-right" },
       },
@@ -328,151 +346,181 @@ export function ChannelCodesPage() {
         </div>
       </div>
 
-      {/* 编码编辑：主档 + 成员（权重 / 本编码内开关） */}
+      {/* 编码编辑：主档 + 成员（权重 / 是否启用） */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto"
+                       onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{editingId ? "修改通道编码" : "新增通道编码"}</DialogTitle>
             <DialogDescription>
-              {"编码是给下游的对外契约：下游下单传 channel_code，只能在该编码绑定的通道内分流，绝不回落到编码之外"}
+              {"下游下单时带上这个编码，订单只会走这里勾选的通道，不会跑到别的通道上去。"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-2">
-              <Label htmlFor="code">{"通道编码"}</Label>
-              <Input
-                id="code"
-                className="font-mono"
-                value={draft.code}
-                placeholder={"如 8088"}
-                onChange={(e) => setDraft((d) => ({ ...d, code: e.target.value }))}
+          <form onSubmit={codeForm.handleSubmit(submit)} className="space-y-4">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <Controller
+                name="code"
+                control={codeForm.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="code">{"通道编码"}<RequiredMark /></FieldLabel>
+                    <Input
+                      {...field}
+                      id="code"
+                      className="font-mono"
+                      placeholder={"如 8088"}
+                      aria-invalid={fieldState.invalid || undefined}
+                    />
+                    {fieldState.error
+                      ? <FieldError>{fieldState.error.message}</FieldError>
+                      : <FieldDescription className="text-xs">{"字母/数字/-/_，最多 32 位，自动转小写"}</FieldDescription>}
+                  </Field>
+                )}
               />
-              <p className="text-xs text-muted-foreground">{"字母/数字/-/_，最多 32 位，全局唯一（自动转小写）"}</p>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="code-name">{"名称"}</Label>
-              <Input
-                id="code-name"
-                value={draft.name}
-                placeholder={"如 下游A-支付宝"}
-                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+              <Controller
+                name="name"
+                control={codeForm.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor="code-name">{"名称"}</FieldLabel>
+                    <Input
+                      {...field}
+                      id="code-name"
+                      placeholder={"如 下游A-支付宝"}
+                      aria-invalid={fieldState.invalid || undefined}
+                    />
+                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
+                  </Field>
+                )}
+              />
+              <Controller
+                name="mode"
+                control={codeForm.control}
+                render={({ field }) => (
+                  <Field>
+                    <FieldLabel htmlFor="code-mode">{"策略"}</FieldLabel>
+                    <Select value={String(field.value)} onValueChange={(v) => field.onChange(Number(v))}>
+                      <SelectTrigger id="code-mode" className="w-full"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0">{"随机"}</SelectItem>
+                        <SelectItem value="1">{"轮询"}</SelectItem>
+                        {/* 权重模式已下线：历史编码仍按权重分流，给个只读项避免编辑时被静默改成随机 */}
+                        {showWeight && <SelectItem value="2" disabled>{"权重（已停用）"}</SelectItem>}
+                      </SelectContent>
+                    </Select>
+                    <FieldDescription className="text-xs">
+                      {showWeight ? "历史权重编码：仍按权重比例分流" : "随机：每单随机选；轮询：依次轮流"}
+                    </FieldDescription>
+                  </Field>
+                )}
+              />
+              <Controller
+                name="status"
+                control={codeForm.control}
+                render={({ field }) => (
+                  <Field>
+                    <FieldLabel htmlFor="code-status">{"是否启用"}</FieldLabel>
+                    <div className="flex h-9 items-center gap-2">
+                      <Switch
+                        id="code-status"
+                        checked={field.value === 1}
+                        onCheckedChange={(v) => field.onChange(v ? 1 : 0)}
+                      />
+                      <span className="text-sm text-muted-foreground">{field.value === 1 ? "启用" : "停用"}</span>
+                    </div>
+                    <FieldDescription className="text-xs">
+                      {"停用后下游再用这个编码下单会直接报错"}
+                    </FieldDescription>
+                  </Field>
+                )}
               />
             </div>
-            <div className="grid gap-2">
-              <Label>{"策略"}</Label>
-              <Select
-                value={String(draft.mode)}
-                onValueChange={(v) => setDraft((d) => ({ ...d, mode: Number(v) }))}
-              >
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">{"随机"}</SelectItem>
-                  <SelectItem value="1">{"轮询"}</SelectItem>
-                  <SelectItem value="2">{"权重"}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-end gap-2 pb-2">
-              <Switch
-                id="code-status"
-                checked={draft.status === 1}
-                onCheckedChange={(v) => setDraft((d) => ({ ...d, status: v ? 1 : 0 }))}
-              />
-              <Label htmlFor="code-status" className="cursor-pointer">{"启用"}</Label>
-            </div>
-            <div className="col-span-2 grid gap-2">
-              <Label htmlFor="code-remark">{"备注"}</Label>
-              <Textarea
-                id="code-remark"
-                rows={2}
-                value={draft.remark}
-                placeholder={"对应哪个下游 / 哪个产品线，排障用"}
-                onChange={(e) => setDraft((d) => ({ ...d, remark: e.target.value }))}
-              />
-            </div>
-          </div>
 
-          <div className="mt-2 space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>{"关联通道"}</Label>
-              <span className="text-xs text-muted-foreground">
-                {"权重 0 = 不参与抽签；本编码内开关只影响这条通道在这个编码里的分流"}
-              </span>
-            </div>
-            <div className="max-h-[320px] overflow-y-auto rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-muted/60 text-xs text-muted-foreground">
-                  <tr>
-                    <th className="w-12 px-2 py-2 text-center">{"绑定"}</th>
-                    <th className="px-2 py-2 text-left">{"通道"}</th>
-                    <th className="w-24 px-2 py-2 text-left">{"支付方式"}</th>
-                    <th className="w-20 px-2 py-2 text-right">{"权重"}</th>
-                    <th className="w-20 px-2 py-2 text-center">{"本编码"}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {channels.length === 0 && (
+            <Field>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <FieldLabel>{"关联通道"}<RequiredMark /></FieldLabel>
+                <span className="text-xs text-muted-foreground">
+                  {showWeight
+                    ? "勾选后才会参与这个编码的分流；权重越大越容易被选中"
+                    : "勾选后才会参与这个编码的分流"}
+                </span>
+              </div>
+              <div className={`max-h-[320px] overflow-y-auto rounded-md border${
+                membersError ? " border-destructive" : ""
+              }`}>
+                <table className="w-full table-fixed text-sm">
+                  <thead className="sticky top-0 bg-muted/60 text-xs text-muted-foreground">
                     <tr>
-                      <td colSpan={5} className="px-2 py-6 text-center text-xs text-muted-foreground">
-                        {"暂无可用通道，请先到「支付通道」创建"}
-                      </td>
+                      <th className="w-12 px-2 py-2 text-center">{"绑定"}</th>
+                      <th className={showWeight ? "w-[38%] px-2 py-2 text-left" : "w-[46%] px-2 py-2 text-left"}>
+                        {"通道"}
+                      </th>
+                      <th className="px-2 py-2 text-left">{"支付方式"}</th>
+                      {showWeight && <th className="w-[24%] px-2 py-2 text-right">{"权重"}</th>}
                     </tr>
-                  )}
-                  {channels.map((ch) => {
-                    const member = draft.members[ch.id]
-                    const pt = typeItem(ch.payment_type_id)
-                    return (
-                      <tr key={ch.id} className="border-t">
-                        <td className="px-2 py-1.5 text-center">
-                          <input
-                            type="checkbox"
-                            className="size-4 accent-primary"
-                            checked={!!member}
-                            onChange={() => toggleMember(ch.id)}
-                            aria-label={`绑定 ${ch.name}`}
-                          />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <span className="flex items-center gap-1.5">
-                            <span className="truncate" title={ch.name}>{ch.name}</span>
-                            {ch.status !== 1 && <Badge variant="outline">{"全局停用"}</Badge>}
-                          </span>
-                          <span className="text-xs text-muted-foreground">{ch.plugin_name}</span>
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <PayTypeLabel code={pt?.code} icon={pt?.icon} name={pt?.name ?? String(ch.payment_type_id)} />
-                        </td>
-                        <td className="px-2 py-1.5 text-right">
-                          <Input
-                            type="number"
-                            min={0}
-                            step={1}
-                            className="h-8 w-16 text-right"
-                            value={member?.weight ?? 1}
-                            disabled={!member}
-                            onChange={(e) => patchMember(ch.id, { weight: Number(e.target.value) || 0 })}
-                          />
-                        </td>
-                        <td className="px-2 py-1.5 text-center">
-                          <Switch
-                            checked={member?.status === 1}
-                            disabled={!member}
-                            onCheckedChange={(v) => patchMember(ch.id, { status: v ? 1 : 0 })}
-                          />
+                  </thead>
+                  <tbody>
+                    {channels.length === 0 && (
+                      <tr>
+                        <td colSpan={showWeight ? 4 : 3} className="px-2 py-6 text-center text-xs text-muted-foreground">
+                          {"暂无可用通道，请先到「支付通道」创建"}
                         </td>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                    )}
+                    {channels.map((ch) => {
+                      const member = members[ch.id]
+                      const pt = typeItem(ch.payment_type_id)
+                      return (
+                        <tr key={ch.id} className="border-t">
+                          <td className="px-2 py-1.5 text-center">
+                            <input
+                              type="checkbox"
+                              className="size-4 cursor-pointer accent-primary"
+                              checked={!!member}
+                              onChange={() => toggleMember(ch.id)}
+                              aria-label={`绑定 ${ch.name}`}
+                            />
+                          </td>
+                          <td className="overflow-hidden px-2 py-1.5">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <span className="min-w-0 truncate" title={ch.name}>{ch.name}</span>
+                              {ch.status !== 1 && <Badge variant="outline" className="shrink-0">{"全局停用"}</Badge>}
+                            </div>
+                            <div className="truncate text-xs text-muted-foreground" title={ch.plugin_name}>
+                              {ch.plugin_name}
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <PayTypeLabel code={pt?.code} icon={pt?.icon} name={pt?.name ?? String(ch.payment_type_id)} />
+                          </td>
+                          {showWeight && (
+                            <td className="px-2 py-1.5 text-right">
+                              <Input
+                                type="number"
+                                min={0}
+                                step={1}
+                                className="h-8 w-16 text-right"
+                                value={member ? member.weight : ""}
+                                disabled={!member}
+                                onChange={(e) => patchMember(ch.id, { weight: Number(e.target.value) || 0 })}
+                              />
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {membersError && <FieldError>{membersError}</FieldError>}
+            </Field>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>{"取消"}</Button>
-            <Button onClick={submit} disabled={saving}>{"确定"}</Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>{"取消"}</Button>
+              <Button type="submit" disabled={saving}>{"确定"}</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

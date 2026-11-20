@@ -250,8 +250,8 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
     if not pay_type:
         raise ValueError("支付方式不存在或未启用")
 
-    # 下游通道编码：参数级校验（编码存在/启用 + 与本次支付方式有绑定），
-    # 运行时可用性（成员开关/限额/限速）留到 process_payment。
+    # 通道编码：参数级校验（编码存在/启用 + 与本次支付方式有绑定），
+    # 运行时可用性（通道全局停用/限额/限速）留到 process_payment。
     code_row = None
     if channel_code:
         if not code_format_ok(channel_code):

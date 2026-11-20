@@ -110,7 +110,7 @@ async def main():
             await session.commit()
             await session.refresh(code)
             session.add(ChannelCodeItem(code_id=code.id, channel_id=ch.id,
-                                        weight=1, status=1, sort=0))
+                                        weight=1, sort=0))
             await session.commit()
             print(f"[编码] 已创建 channel_code=demo（绑定通道 id={ch.id}）")
         else:

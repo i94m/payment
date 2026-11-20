@@ -44,8 +44,8 @@ const pageRoutes: PermissionRouteObject[] = [
   { path: "/records", element: <AdminRecordsPage />, permission: "merchant.view" },
   { path: "/pay/channels", element: <ChannelsPage />, permission: "channel.view" },
   { path: "/pay/types", element: <PayTypesPage />, permission: "payment_type.view" },
-  // 下游通道编码：独立菜单（成员 + 权重 + 开关塞进通道页签太难用）
-  { path: "/pay/codes", element: <ChannelCodesPage />, permission: "channel.view" },
+  // 通道编码：独立菜单（成员 + 权重 + 开关塞进通道页签太难用）
+  { path: "/pay/codes", element: <ChannelCodesPage />, permission: "channel_code.view" },
   { path: "/settle", element: <SettlePage />, permission: "settle.view" },
   // 公告管理：announce_enable（默认开启，仅库内可改）关闭后无发布入口、直链落到 404
   {

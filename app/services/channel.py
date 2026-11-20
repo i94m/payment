@@ -220,7 +220,7 @@ async def get_channel_code(session: AsyncSession, code: str) -> ChannelCode | No
 
 
 async def code_supports_type(session: AsyncSession, code_id: int, payment_type_id: int) -> bool:
-    """编码下是否有与该支付方式绑定的通道（只看绑定关系，不看临时开关）。
+    """编码下是否有与该支付方式绑定的通道（只看绑定关系，不看通道运行时状态）。
 
     建单时的参数级校验用它：配置错误（编码不支持这个支付方式）要立刻告诉下游，
     而不是先给一张永远拉不起来的单。
@@ -318,8 +318,8 @@ async def choose_channel_by_code(
 ) -> ResolvedChannel | None:
     """在通道编码限定范围内选通道。编码停用 / 无绑定 / 编码内全不可用 → None。
 
-    与 choose_channel 的差别只有两处：候选集来自 `channel_code_items`（且只看本编码内
-    启用的成员 + 成员通道全局启用 + 该支付方式），策略取自编码主档的 mode。
+    与 choose_channel 的差别只有两处：候选集来自 `channel_code_items`（只看本编码绑定的
+    成员通道 + 通道全局启用 + 该支付方式），策略取自编码主档的 mode。
     **金额路由（payroute_config）不参与**：编码是运营对下游承诺的边界，叠加平台侧兜底
     分流会把单甩到编码之外。
 
@@ -332,7 +332,6 @@ async def choose_channel_by_code(
     items = (await session.exec(
         select(ChannelCodeItem).where(
             col(ChannelCodeItem.code_id) == code_id,
-            col(ChannelCodeItem.status) == 1,
         )
     )).all()
     if not items:
@@ -391,8 +390,8 @@ async def list_available_pay_types(
 ) -> list[dict]:
     """收银台支付方式列表：启用且有可用通道的支付方式。
 
-    `code_id` 指定时只看该通道编码内的绑定通道：编码停用 / 成员全关的支付方式
-    直接隐藏，否则买家会看到一个点了必然失败的支付方式。
+    `code_id` 指定时只看该通道编码内绑定的通道：编码停用 / 编码内通道全部不可用的
+    支付方式直接隐藏，否则买家会看到一个点了必然失败的支付方式。
     """
     types = (await session.exec(
         select(PaymentType).where(PaymentType.status == 1).order_by(PaymentType.sort, PaymentType.id)
@@ -408,7 +407,6 @@ async def list_available_pay_types(
             .join(ChannelCodeItem, col(ChannelCodeItem.channel_id) == col(Channel.id))
             .where(
                 col(ChannelCodeItem.code_id) == code_id,
-                col(ChannelCodeItem.status) == 1,
                 Channel.status == 1,
             )
         )).all()
