@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlmodel import col, func, select
 
 from app.core.deps import CacheDep, SessionDep
-from app.core.security import AdminUser, PermissionChecker, check_permission
+from app.core.security import AdminUser, AnyPermissionChecker, PermissionChecker, check_permission
 from app.models import Channel, ChannelCode, ChannelCodeItem, Order, PaymentType, Plugin
 from app.responses import err, paginate, suc
 from app.services.balance import dmoney
@@ -246,8 +246,15 @@ async def plugin_upload(file: UploadFile, session: SessionDep, request: Request,
 # 支付方式（调用值/显示名称/支持设备）
 # ============================================================
 
-@router.get("/types", dependencies=[Depends(PermissionChecker("payment_type.view"))])
+@router.get("/types",
+            dependencies=[Depends(AnyPermissionChecker(
+                "payment_type.view", "channel.view", "channel_code.view"))])
 async def type_list(session: SessionDep):
+    """支付方式字典（id/code/名称/图标）。
+
+    通道、通道编码页面都要用它渲染名称与图标；只授予对应模块权限的账号也应该能读，
+    否则页面进去就被 403 顶到错误页。只回字典字段，不含费率等业务数据。
+    """
     rows = (await session.exec(
         select(PaymentType).order_by(col(PaymentType.id))
     )).all()
@@ -670,7 +677,7 @@ async def channel_delete(channel_id: int, session: SessionDep, request: Request,
 
 
 # ============================================================
-# 下游通道编码（编码 → 通道绑定）
+# 通道编码（编码 → 通道绑定）
 # ============================================================
 #
 # 编码是给下游的对外契约：全局唯一命名空间、落库统一小写；
@@ -786,6 +793,26 @@ async def _code_today_stats(session) -> dict[int, dict]:
     await _collect(today_start, now, "today")
     await _collect(yesterday_start, today_start, "yesterday")
     return stats
+
+
+@router.get("/channel-options",
+            dependencies=[Depends(AnyPermissionChecker("channel.view", "channel_code.view"))])
+async def channel_options(session: SessionDep):
+    """通道编码弹窗的通道候选（只回挑通道要用的字段）。
+
+    给编码挑通道不需要看通道费率、成本与凭证：单独开这个接口，持有
+    `channel_code.view` 但没有 `channel.view` 的账号也能正常配置编码。
+    """
+    rows = (await session.exec(
+        select(Channel).order_by(col(Channel.sort), col(Channel.id))
+    )).all()
+    return suc([{
+        "id": c.id,
+        "name": c.name,
+        "plugin_name": c.plugin_name,
+        "payment_type_id": c.payment_type_id,
+        "status": c.status,
+    } for c in rows])
 
 
 @router.get("/channel-codes", dependencies=[Depends(PermissionChecker("channel_code.view"))])

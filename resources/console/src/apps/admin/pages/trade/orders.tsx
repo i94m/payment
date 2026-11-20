@@ -36,6 +36,7 @@ import {
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
+import { useAuthStore } from "@/stores/auth-store"
 import { downloadBlob } from "@/lib/export"
 import { EXPORT_ENABLED } from "@/lib/flags"
 import { digitsOnly, toIntParam } from "@/lib/form-utils"
@@ -112,12 +113,18 @@ export function OrdersPage() {
     applyFilters()
   }
 
-  // 编码下拉：筛选/展示编码名用（加载失败不阻断订单列表，编码列仍显示留痕字符串）
+  // 编码下拉只是筛选辅助：没有「通道编码-查看」权限就别请求 —— 403 会被全局拦截器
+  // 直接跳到错误页，订单列表反而打不开（编码列本身仍显示订单留痕的字符串）。
+  const user = useAuthStore((s) => s.user)
+  const permissions = useAuthStore((s) => s.permissions)
+  const canViewCodes = !!user?.is_super_admin || permissions.includes("*")
+    || permissions.includes("channel_code.view")
   React.useEffect(() => {
+    if (!canViewCodes) return
     payApi.channelCodes({ page: 1, per_page: 100 })
       .then((res) => setChannelCodes(res.items))
       .catch(() => {})
-  }, [])
+  }, [canViewCodes])
 
   const handleReset = () => {
     setKeyword(""); setOutTradeNo(""); setMerchantId(""); setOrderType(""); setChannelCodeId("")

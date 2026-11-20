@@ -9,7 +9,7 @@ import { payApi } from "@/api"
 import type {
   ChannelCodeData,
   ChannelCodePayload,
-  ChannelData,
+  ChannelOptionData,
   PaymentTypeData,
 } from "@/api"
 import { Button } from "@/components/ui/button"
@@ -90,7 +90,7 @@ const emptyValues = (): CodeFormValues => ({
 export function ChannelCodesPage() {
   const navigate = useNavigate()
 
-  const [channels, setChannels] = React.useState<ChannelData[]>([])
+  const [channels, setChannels] = React.useState<ChannelOptionData[]>([])
   const [payTypes, setPayTypes] = React.useState<PaymentTypeData[]>([])
   const [statusFilter, setStatusFilter] = React.useState("")
 
@@ -113,9 +113,10 @@ export function ChannelCodesPage() {
   const [deleteId, setDeleteId] = React.useState<number | null>(null)
 
   React.useEffect(() => {
-    // 成员选择需要全量通道与支付方式名称：加载失败显式提示（否则弹窗里是空成员表）
-    payApi.channels({ page: 1, per_page: 100 })
-      .then((res) => setChannels(res.items))
+    // 成员选择需要全量通道与支付方式名称：加载失败显式提示（否则弹窗里是空成员表）。
+    // 走 channel-options 而不是通道列表：只要 channel_code.view 就能读，且不含费率/凭证。
+    payApi.channelOptions()
+      .then(setChannels)
       .catch((err) => toast.error(getErrorMessage(err, "通道列表加载失败")))
     payApi.payTypes()
       .then(setPayTypes)

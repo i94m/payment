@@ -395,6 +395,26 @@ async def check_permission(auth: AuthResult, permission: str, session) -> bool:
     return permission in await auth.get_permission_keys(session)
 
 
+class AnyPermissionChecker:
+    """任一权限命中即放行（跨模块共用的只读元数据接口）。
+
+    典型场景：通道/通道编码页面都要展示「支付方式」名称与图标，但账号可能只被
+    授予了 `channel.view` 或 `channel_code.view`。若这些辅助读取仍按所属模块的权限
+    校验，页面会在进入后被 403 顶到错误页（前端对任何 403 都统一跳 403 页）。
+    只用于不含金额/凭证的字典类数据，不要拿它放松业务写接口。
+    """
+
+    def __init__(self, *permissions: str):
+        self.permissions = permissions
+
+    async def __call__(self, auth: AdminUser, session: SessionDep) -> None:
+        if auth.is_super_admin:
+            return
+        keys = await auth.get_permission_keys(session)
+        if not any(permission in keys for permission in self.permissions):
+            raise HTTPException(status_code=403, detail={"code": 403, "message": "forbidden"})
+
+
 async def require_super_admin(auth: AdminUser) -> None:
     """超管专属依赖（fail-closed）。
 

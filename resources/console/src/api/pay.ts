@@ -149,7 +149,16 @@ export interface ChannelPayload {
   config: Record<string, string>
 }
 
-// ============ 下游通道编码 ============
+// 通道编码弹窗的通道候选：只要挑通道要用的字段（不含费率/成本/凭证）
+export interface ChannelOptionData {
+  id: number
+  name: string
+  plugin_name: string
+  payment_type_id: number
+  status: number
+}
+
+// ============ 通道编码 ============
 
 export interface ChannelCodeItemData {
   channel_id: number
@@ -258,6 +267,9 @@ export const payApi = {
     apiClient.post(`/pay/channels/${id}/testpay`, data) as Promise<ChannelTestPayResult>,
 
   // ============ 下游通道编码 ============
+
+  /** 编码弹窗的通道候选：channel_code.view 即可读，不需要 channel.view */
+  channelOptions: () => apiClient.get("/pay/channel-options") as Promise<ChannelOptionData[]>,
 
   channelCodes: (params?: { page?: number; per_page?: number; keyword?: string; status?: number }) =>
     apiClient.get("/pay/channel-codes", { params }) as Promise<PaginatedResponse<ChannelCodeData>>,

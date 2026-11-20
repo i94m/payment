@@ -551,3 +551,29 @@ async def test_channel_code_has_own_permissions(client, session, two_channels):
                               headers=code_view)).status_code == 403
     assert (await client.delete(f"/admin-api/pay/channel-codes/{cc.id}",
                                 headers=code_view)).status_code == 403
+
+
+async def test_code_page_dictionaries_need_only_their_own_permission(client, session, two_channels):
+    """编码页用到的字典接口不能被别模块的权限挡住（403 会被前端全局跳到错误页）。
+
+    只授予 channel_code.view 的账号：通道候选（channel-options）与支付方式名称（types）
+    必须可读，否则进页面就 403；但通道本体（含费率/凭证）仍要 channel.view。
+    反之只授予 channel.view 的账号，也要能读到支付方式字典（通道页同样要用）。
+    """
+    seeded = two_channels
+    code_only = await _scoped_admin_headers(session, "ccdict", ("channel_code.view",))
+
+    r = await client.get("/admin-api/pay/channel-options", headers=code_only)
+    assert r.status_code == 200, r.text
+    row = r.json()["data"][0]
+    assert {"id", "name", "plugin_name", "payment_type_id", "status"} <= set(row)
+    # 只回字典字段：不含费率与凭证
+    assert "merchant_rate" not in row and "config" not in row
+
+    assert (await client.get("/admin-api/pay/types", headers=code_only)).status_code == 200
+    assert (await client.get("/admin-api/pay/channels", headers=code_only)).status_code == 403
+
+    channel_only = await _scoped_admin_headers(session, "chdict", ("channel.view",))
+    assert (await client.get("/admin-api/pay/types", headers=channel_only)).status_code == 200
+    assert (await client.get("/admin-api/pay/channel-options",
+                             headers=channel_only)).status_code == 200
