@@ -294,6 +294,8 @@ async def create_merchant(body: CreateMerchantRequest, session: SessionDep):
             status=body.status,
             pay_status=body.pay_status,
             settle_status=body.settle_status,
+            # 下游通道编码：新商户默认必传（老商户升级时保持 0，由批量开关过渡）
+            channel_code_required=True,
         )
         # 开放 API 默认 MD5：创建即生成密钥（面板可查看/重置）
         set_api_secret(m)

@@ -230,6 +230,9 @@ class Merchant(SQLModel, table=True):
     deduct_frequency: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))  # 每 N 笔扣 1，0=不扣（防御值，停用请用开关）
     # 起扣金额：单笔买家实付金额（order.realmoney，NULL 时回退 order.money）≥ 该值才参与扣量，0=不限金额
     deduct_minmoney: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
+    # 下游通道编码是否必传（商户级，仅约束开放 API 下单）：
+    # 存量商户默认 0（不动老下游），功能上线后新建的商户由建单入口显式置 1
+    channel_code_required: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     # 固定保护：不受批量随机金额影响
     fixed: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     last_login_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime))
@@ -336,6 +339,57 @@ class Channel(SQLModel, table=True):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ChannelCode(SQLModel, table=True):
+    """下游通道编码（下游下单时传 `channel_code`，路由限定在该编码绑定的通道内）。
+
+    - `code` 是给下游的对外契约：全局唯一命名空间，落库统一小写、下游大小写不敏感
+    - `mode` 是**编码级**策略（0=随机 1=轮询 2=权重），与通道自身的 mode 互不影响：
+      同一个通道被多个编码引用时，各编码按自己的策略分流
+    - `status=0` 是编码总闸：停用后该编码下单直接报错，不回落默认路由
+    """
+    __tablename__ = "channel_codes"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_channel_codes_code"),
+        _MYSQL_ARGS,
+    )
+
+    id: int = Field(sa_column=Column(BigIntPK, primary_key=True, autoincrement=True))
+    code: str = Field(sa_column=Column(String(32), nullable=False))  # 编码（小写，如 8088）
+    name: str = Field(default="", sa_column=Column(String(64), nullable=False, server_default=text("''")))
+    remark: Optional[str] = Field(default=None, sa_column=Column(String(255)))
+    mode: int = Field(default=0, sa_column=Column(SmallInteger, server_default=text("0"), nullable=False))  # 0=随机 1=轮询 2=权重
+    status: int = Field(default=1, sa_column=Column(SmallInteger, server_default=text("1"), nullable=False))  # 1=启用 0=停用
+    created_at: Optional[datetime] = _ts_created()
+    updated_at: Optional[datetime] = _ts_updated()
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ChannelCodeItem(SQLModel, table=True):
+    """编码 → 通道绑定（成员）。
+
+    `status` 是本编码内的临时开关（只摘掉这一个编码的分流，不影响其它编码与默认路由）；
+    `last_used_at` 是轮询游标（放在绑定行而不是 channels.usetime，避免多个编码共用同一通道时串味）。
+    """
+    __tablename__ = "channel_code_items"
+    __table_args__ = (
+        UniqueConstraint("code_id", "channel_id", name="uq_channel_code_items"),
+        Index("ix_channel_code_items_code_status", "code_id", "status"),
+        _MYSQL_ARGS,
+    )
+
+    id: int = Field(sa_column=Column(BigIntPK, primary_key=True, autoincrement=True))
+    code_id: int = Field(sa_column=Column(BigInt, nullable=False))     # → channel_codes.id
+    channel_id: int = Field(sa_column=Column(BigInt, nullable=False))  # → channels.id
+    weight: int = Field(default=1, sa_column=Column(Integer, server_default=text("1"), nullable=False))  # 权重模式抽签用
+    status: int = Field(default=1, sa_column=Column(SmallInteger, server_default=text("1"), nullable=False))  # 1=启用 0=本编码内停用
+    sort: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))  # 轮询同游标时的稳定顺序
+    last_used_at: int = Field(default=0, sa_column=Column(BigInteger, server_default=text("0"), nullable=False))  # 轮询游标（ms）
+    created_at: Optional[datetime] = _ts_created()
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ============================================================
 # 订单
 # ============================================================
@@ -358,6 +412,8 @@ class Order(SQLModel, table=True):
         Index("ix_orders_created", "created_at"),
         # 通道限速回退检查 / 管理端按通道统计与筛选（channel_id 等值 + created_at 范围）
         Index("ix_orders_channel_created", "channel_id", "created_at"),
+        # 管理端按下游通道编码统计/筛选（channel_code_id 等值 + created_at 范围）
+        Index("ix_orders_channel_code_created", "channel_code_id", "created_at"),
         # 商户同 IP 拉单限流计数（merchant_id + client_ip 等值 + created_at 范围）
         Index("ix_orders_merchant_ip_created", "merchant_id", "client_ip", "created_at"),
         # 未支付订单主动查单扫描（status=0 AND created_at >= ? ORDER BY created_at）
@@ -383,6 +439,9 @@ class Order(SQLModel, table=True):
     payment_type_id: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))
     payment_type_code: str = Field(default="", sa_column=Column(String(20), nullable=False, server_default=text("''")))
     channel_id: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))
+    # 下游通道编码留痕：记当时传的字符串（编码改名/删除不影响历史展示）与 ID（按 ID 统计不断档）
+    channel_code: Optional[str] = Field(default=None, sa_column=Column(String(32)))
+    channel_code_id: int = Field(default=0, sa_column=Column(BigInt, server_default=text("0"), nullable=False))
     plugin_name: Optional[str] = Field(default=None, sa_column=Column(String(40)))
     subject: str = Field(sa_column=Column(String(128), nullable=False))
     money: Decimal = Field(sa_column=Column(Numeric(12, 2), nullable=False))  # 商户申报金额
