@@ -130,7 +130,7 @@ export function PayTypesPage() {
         enableSorting: false,
         header: () => "今日收款",
         cell: ({ row }) => secondaryCell(stats[String(row.original.id)]?.today_amount ?? "-"),
-        meta: { headClassName: "w-[100px]", cellClassName: "text-right" },
+        meta: { headClassName: "w-[100px] text-right", cellClassName: "text-right" },
       },
       {
         accessorKey: "status",
@@ -144,7 +144,7 @@ export function PayTypesPage() {
             </span>
           </div>
         ),
-        meta: { headClassName: "min-w-[100px]", cellClassName: "text-center" },
+        meta: { headClassName: "min-w-[100px] text-center", cellClassName: "text-center" },
       },
       actionsColumn([
         { label: "编辑", icon: <IconEdit className="size-4" />, onClick: (item) => { setEditingId(item.id); setFormOpen(true) } },

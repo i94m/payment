@@ -210,7 +210,7 @@ export function OrdersPage() {
         enableSorting: false,
         header: () => "金额",
         cell: ({ row }) => <span className="text-sm font-medium tabular-nums">¥{row.original.money}</span>,
-        meta: { headClassName: "w-[90px]", cellClassName: "text-right" },
+        meta: { headClassName: "w-[90px] text-right", cellClassName: "text-right" },
       },
       {
         accessorKey: "merchant_income",
@@ -221,14 +221,14 @@ export function OrdersPage() {
             {row.original.merchant_income ? `¥${row.original.merchant_income}` : "—"}
           </span>
         ),
-        meta: { headClassName: "w-[100px]", cellClassName: "text-right" },
+        meta: { headClassName: "w-[100px] text-right", cellClassName: "text-right" },
       },
       {
         accessorKey: "status",
         enableSorting: false,
         header: () => "状态",
         cell: ({ row }) => <OrderStatusBadge status={row.original.status} />,
-        meta: { headClassName: "w-[80px]", cellClassName: "text-center" },
+        meta: { headClassName: "w-[80px] text-center", cellClassName: "text-center" },
       },
       {
         accessorKey: "notify_status",
@@ -237,7 +237,7 @@ export function OrdersPage() {
         cell: ({ row }) => (
           <NotifyStatusCell status={row.original.status} notifyStatus={row.original.notify_status} />
         ),
-        meta: { headClassName: "w-[90px]", cellClassName: "text-center" },
+        meta: { headClassName: "w-[90px] text-center", cellClassName: "text-center" },
       },
       {
         accessorKey: "created_at",

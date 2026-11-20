@@ -62,7 +62,7 @@ export function OrdersPage() {
         enableSorting: false,
         header: () => "金额",
         cell: ({ row }) => <span className="text-sm font-medium tabular-nums">¥{row.original.money}</span>,
-        meta: { headClassName: "w-[90px]", cellClassName: "text-right" },
+        meta: { headClassName: "w-[90px] text-right", cellClassName: "text-right" },
       },
       {
         accessorKey: "realmoney",
@@ -73,7 +73,7 @@ export function OrdersPage() {
             {row.original.realmoney ? `¥${row.original.realmoney}` : "—"}
           </span>
         ),
-        meta: { headClassName: "w-[100px]", cellClassName: "text-right" },
+        meta: { headClassName: "w-[100px] text-right", cellClassName: "text-right" },
       },
       {
         accessorKey: "subject",
@@ -101,7 +101,7 @@ export function OrdersPage() {
         enableSorting: false,
         header: () => "状态",
         cell: ({ row }) => <OrderStatusBadge status={row.original.status} />,
-        meta: { headClassName: "w-[80px]", cellClassName: "text-center" },
+        meta: { headClassName: "w-[80px] text-center", cellClassName: "text-center" },
       },
     ],
     perPage: 15,

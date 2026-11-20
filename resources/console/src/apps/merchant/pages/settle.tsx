@@ -129,11 +129,11 @@ export function SettlePage() {
 
   const columns = React.useMemo<ColumnDef<MerchantSettlementData>[]>(() => [
     { accessorKey: "settle_no", enableSorting: false, header: () => "结算单号", cell: ({ row }) => truncatedCell(row.original.settle_no, 200), meta: { headClassName: "min-w-[220px]" } },
-    { accessorKey: "amount", enableSorting: false, header: () => "结算金额", cell: ({ row }) => <span className="text-sm font-medium tabular-nums">¥{row.original.amount}</span>, meta: { cellClassName: "text-right" } },
-    { accessorKey: "fee", enableSorting: false, header: () => "手续费", cell: ({ row }) => secondaryCell(row.original.fee), meta: { cellClassName: "text-right" } },
-    { accessorKey: "real_amount", enableSorting: false, header: () => "实打金额", cell: ({ row }) => <span className="text-sm tabular-nums">¥{row.original.real_amount}</span>, meta: { cellClassName: "text-right" } },
+    { accessorKey: "amount", enableSorting: false, header: () => "结算金额", cell: ({ row }) => <span className="text-sm font-medium tabular-nums">¥{row.original.amount}</span>, meta: { headClassName: "text-right", cellClassName: "text-right" } },
+    { accessorKey: "fee", enableSorting: false, header: () => "手续费", cell: ({ row }) => secondaryCell(row.original.fee), meta: { headClassName: "text-right", cellClassName: "text-right" } },
+    { accessorKey: "real_amount", enableSorting: false, header: () => "实打金额", cell: ({ row }) => <span className="text-sm tabular-nums">¥{row.original.real_amount}</span>, meta: { headClassName: "text-right", cellClassName: "text-right" } },
     { accessorKey: "account", enableSorting: false, header: () => "收款账号", cell: ({ row }) => truncatedCell(row.original.account || "—", 120) },
-    { accessorKey: "status", enableSorting: false, header: () => "状态", cell: ({ row }) => statusBadge(row.original.status), meta: { headClassName: "w-[90px]", cellClassName: "text-center" } },
+    { accessorKey: "status", enableSorting: false, header: () => "状态", cell: ({ row }) => statusBadge(row.original.status), meta: { headClassName: "w-[90px] text-center", cellClassName: "text-center" } },
     { accessorKey: "created_at", enableSorting: false, header: () => "创建时间", cell: ({ row }) => dateCell(row.original.created_at), meta: { headClassName: "min-w-[150px]" } },
     { accessorKey: "paid_at", enableSorting: false, header: () => "支付时间", cell: ({ row }) => dateCell(row.original.paid_at || null, "—"), meta: { headClassName: "min-w-[150px]" } },
   ], []) // eslint-disable-line react-hooks/exhaustive-deps

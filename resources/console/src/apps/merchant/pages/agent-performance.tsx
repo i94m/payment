@@ -37,14 +37,14 @@ export function AgentPerformancePage() {
         enableSorting: false,
         header: () => "今日金额",
         cell: ({ row }) => <span className="text-sm tabular-nums">¥{row.original.today_money}</span>,
-        meta: { headClassName: "w-[110px]", cellClassName: "text-right" },
+        meta: { headClassName: "w-[110px] text-right", cellClassName: "text-right" },
       },
       {
         accessorKey: "yesterday_money",
         enableSorting: false,
         header: () => "昨日金额",
         cell: ({ row }) => <span className="text-sm tabular-nums">¥{row.original.yesterday_money}</span>,
-        meta: { headClassName: "w-[110px]", cellClassName: "text-right" },
+        meta: { headClassName: "w-[110px] text-right", cellClassName: "text-right" },
       },
       {
         accessorKey: "total_money",
@@ -53,14 +53,14 @@ export function AgentPerformancePage() {
         cell: ({ row }) => (
           <span className="text-sm font-medium tabular-nums">¥{row.original.total_money}</span>
         ),
-        meta: { headClassName: "w-[110px]", cellClassName: "text-right" },
+        meta: { headClassName: "w-[110px] text-right", cellClassName: "text-right" },
       },
       {
         accessorKey: "total_count",
         enableSorting: false,
         header: () => "总订单",
         cell: ({ row }) => <span className="text-sm tabular-nums">{row.original.total_count}</span>,
-        meta: { headClassName: "w-[90px]", cellClassName: "text-right" },
+        meta: { headClassName: "w-[90px] text-right", cellClassName: "text-right" },
       },
     ],
     perPage: 15,

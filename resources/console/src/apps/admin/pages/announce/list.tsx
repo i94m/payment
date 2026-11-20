@@ -100,7 +100,7 @@ export function AnnouncesPage() {
             {row.original.status === 1 ? "发布中" : "下线"}
           </Badge>
         ),
-        meta: { headClassName: "w-[80px]", cellClassName: "text-center" },
+        meta: { headClassName: "w-[80px] text-center", cellClassName: "text-center" },
       },
       {
         accessorKey: "created_at",

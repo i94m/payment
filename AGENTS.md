@@ -63,14 +63,14 @@ Local demo: `scripts/seed_demo.py` (demo/demo123456, pid=1001), `scripts/mock_up
 
 ## 前端列表展示约定（`resources/console`）
 
-列表**表头一律居中**：`DataTable` 用的 `components/ui/table.tsx` 里 `TableHead` 默认就是 `text-center`，不要在 `headClassName` 里再写 `text-left` / `text-right`（`headClassName` 只用来给列宽等非对齐样式）。对齐规则只作用于**单元格内容**，通过列的 `meta.cellClassName` 设置：
+列表对齐按**内容类型**统一，表头跟随单元格：`headClassName` 与 `cellClassName` 写同一套对齐 class（`components/ui/table.tsx` 的 `TableHead` 默认左对齐）：
 
 | 单元格内容类型 | 对齐 | 写法 |
 |---|---|---|
-| 数字：金额 / 数量 / 比率 / 次数 / 状态码 | 靠右 | `meta: { cellClassName: "text-right" }` |
+| 数字：金额 / 数量 / 比率 / 次数 / 状态码 | 靠右 | `headClassName` 加 `text-right`，`cellClassName: "text-right"` |
 | 字符串：名称 / 备注 / 时间 / URL | 靠左 | 默认，不写对齐 class |
 | 编号类标识：`id`、`pid`、订单号、结算单号 | 靠左 | 默认（按字符串处理，不按数字靠右） |
-| 状态徽标 / 标签 / 开关 / 操作 | 居中 | `meta: { cellClassName: "text-center" }`；单元格内容是 flex 容器时另加 `justify-center` |
+| 状态徽标 / 标签 / 开关 / 操作 | 居中 | `headClassName` 加 `text-center`，`cellClassName: "text-center"`；单元格内容是 flex 容器时另加 `justify-center` |
 
 - 订单状态色板只允许有一份：`src/lib/order-status.ts`（固定色值、不用主题色 `primary`、无边框，深色模式沿用同色相），三端共用 `components/order-status.tsx` 的 `OrderStatusBadge`；通知状态复用 `NOTIFY_STATUS_CLASS`，不要在页面里另写状态颜色。
 - 详情弹窗的键值表用 `components/detail-table.tsx`（`DetailTable`：桌面一行两组、窄屏一行一组），不要再手写 `flex justify-between` 的行。
