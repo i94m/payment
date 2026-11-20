@@ -17,12 +17,19 @@ Create Date: 2026-11-20 09:00:00.000000
 2. `orders` 加两列：MySQL 8.0.12+ 走 `ALGORITHM=INSTANT`（只改数据字典，毫秒级，
    不重建表、不持写锁）；5.7 与 8.0.12 以下不支持 INSTANT，退化为 COPY（重建整表，
    持写锁）。`_add_column()` 先试 INSTANT，失败才回落普通 ADD COLUMN 并打日志。
-3. `orders` 加二级索引：`ALGORITHM=INPLACE, LOCK=NONE`（在线建索引，DML 不阻塞，
+3. `orders` 加二级索引：`ALGORITHM=INPLACE LOCK=NONE`（在线建索引，DML 不阻塞，
    只是 IO/CPU 开销）；老版本/特殊引擎回落到普通 CREATE INDEX。
 
+实测（本机 docker，`orders` 造 100 万行 = 144MB 数据 + 198MB 索引）：
+
+| DDL | MySQL 8.0 | MySQL 5.7.44（QEMU 模拟，偏保守） |
+|---|---|---|
+| 加 2 列 | INSTANT 0.08~0.11s | 不支持 INSTANT（error 1800）→ COPY **55.8s**，全程持写锁 |
+| 建 `(channel_code_id, created_at)` 索引 | INPLACE LOCK=NONE **0.88s** | INPLACE LOCK=NONE **10.5s**（不阻塞读写） |
+
 存量库最坏情况（MySQL 5.7 + 大表）第 2 步是整表 COPY，这是本迁移唯一的长时间操作。
-两步上线路径：低峰期先手工跑一次只加列的 DDL（列已存在时本迁移会跳过，见
-`_column_exists`），随后正常发布只落后面的建索引（在线）。具体行数与耗时结论见 PR 描述。
+两步上线路径（已实测可重入）：低峰期先手工跑一次只加列的 DDL（列已存在时本迁移会跳过，
+见 `_column_exists`），随后正常发布只落后面的建索引（在线）。具体行数与耗时结论见 PR 描述。
 
 `orders.channel_code` 可空、`channel_code_id` 默认 0：历史订单不写编码，语义是「未指定编码」，
 与「编码被删除」区分开（删除编码时只解绑，不删历史留痕）。
@@ -31,7 +38,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 
 revision: str = '0014'
@@ -87,7 +94,7 @@ def _add_column(table: str, column: sa.Column) -> None:
         try:
             bind.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {ddl}, ALGORITHM=INSTANT"))
             return
-        except OperationalError as e:
+        except (OperationalError, ProgrammingError) as e:
             print(f"[0014] INSTANT 加列不可用（{e.orig}），回落普通 ADD COLUMN：{table}.{column.name}")
     op.add_column(table, column)
 
@@ -101,11 +108,12 @@ def _create_index(table: str, name: str, columns: list[str]) -> None:
     if bind.dialect.name == "mysql":
         cols = ", ".join(f"`{c}`" for c in columns)
         try:
+            # 注意：ALGORITHM 与 LOCK 之间不能加逗号（MySQL 会报 1064 语法错误）
             bind.execute(sa.text(
-                f"CREATE INDEX `{name}` ON `{table}` ({cols}) ALGORITHM=INPLACE, LOCK=NONE"
+                f"CREATE INDEX `{name}` ON `{table}` ({cols}) ALGORITHM=INPLACE LOCK=NONE"
             ))
             return
-        except OperationalError as e:
+        except (OperationalError, ProgrammingError) as e:
             print(f"[0014] 在线建索引不可用（{e.orig}），回落普通 CREATE INDEX：{name}")
     op.create_index(name, table, columns, unique=False)
 
