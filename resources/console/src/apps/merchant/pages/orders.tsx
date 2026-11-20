@@ -15,11 +15,13 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
-import { Separator } from "@/components/ui/separator"
 import { ConfirmDialog } from "@/components/data-list/confirm-dialog"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import { PayIcon } from "@/components/pay-icon"
+import { DetailTable } from "@/components/detail-table"
+import { OrderStatusBadge } from "@/components/order-status"
+import { NOTIFY_STATUS_CLASS, ORDER_STATUS_OPTIONS, STATUS_BADGE_BASE } from "@/lib/order-status"
 import {
   useDataList,
   ListError,
@@ -28,7 +30,7 @@ import {
   copyableCell,
   truncatedCell,
 } from "@/components/data-list/"
-import type { ActionItem, StatusBadgeOption } from "@/components/data-list/"
+import type { ActionItem } from "@/components/data-list/"
 import { IconSearch, IconRefresh, IconBell, IconEye, IconDownload, IconLoader2 } from "@tabler/icons-react"
 import apiClient from "@/lib/api-client"
 import { getErrorMessage } from "@/lib/error"
@@ -37,14 +39,7 @@ import { EXPORT_ENABLED } from "@/lib/flags"
 import { toIntParam } from "@/lib/form-utils"
 import { toast } from "sonner"
 
-// 状态口径与后端一致（0 待支付 / 1 已支付 / 2 已退款 / 3 已过期）；
-// 扣量单由后端按 status=0 返回，不在此处额外推断。
-const orderStatusOptions: StatusBadgeOption[] = [
-  { label: "待支付", value: 0, variant: "secondary" },
-  { label: "已支付", value: 1, variant: "default" },
-  { label: "已退款", value: 2, variant: "outline" },
-  { label: "已过期", value: 3, variant: "outline" },
-]
+// 扣量单由后端按 status=0 返回，不在此处额外推断；状态配色统一走 ORDER_STATUS_OPTIONS。
 
 /**
  * 详情接口（GET /order/{trade_no}）复用开放 API 查单字段：
@@ -65,36 +60,18 @@ const REFUND_LABELS: Record<string, string> = {
   FULL: "全额退款",
 }
 
-const STATUS_CLASS: Record<string, string> = {
-  default: "bg-primary/10 text-primary",
-  secondary: "bg-secondary text-secondary-foreground",
-  destructive: "bg-destructive/10 text-destructive",
-  outline: "border text-muted-foreground",
-}
-
-function StatusCell({ status }: { status: number }) {
-  const opt = orderStatusOptions.find((o) => o.value === status)
-  return (
-    <span
-      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[opt?.variant ?? "outline"]}`}
-    >
-      {opt?.label ?? `未知(${status})`}
-    </span>
-  )
-}
-
 /** 通知状态：-1 失败 / 0 成功 / ≥1 重试中；未支付订单不展示 */
 function NotifyStatusCell({ status, notifyStatus }: { status: number; notifyStatus?: number }) {
   if (status !== 1) return <span className="text-xs text-muted-foreground">—</span>
   const ns = notifyStatus ?? 0
-  const map: Record<string, { label: string; cls: string }> = {
-    failed: { label: "失败", cls: "bg-destructive/10 text-destructive" },
-    ok: { label: "已通知", cls: "bg-primary/10 text-primary" },
-    retry: { label: "重试中", cls: "bg-amber-500/10 text-amber-600" },
+  const map = {
+    failed: { label: "失败", cls: NOTIFY_STATUS_CLASS.failed },
+    ok: { label: "已通知", cls: NOTIFY_STATUS_CLASS.ok },
+    retry: { label: "重试中", cls: NOTIFY_STATUS_CLASS.retry },
   }
   const item = ns < 0 ? map.failed : ns === 0 ? map.ok : map.retry
   return (
-    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${item.cls}`}>
+    <span className={`${STATUS_BADGE_BASE} ${item.cls}`}>
       {item.label}
     </span>
   )
@@ -250,7 +227,7 @@ export function OrdersPage() {
         accessorKey: "status",
         enableSorting: false,
         header: () => "状态",
-        cell: ({ row }) => <StatusCell status={row.original.status} />,
+        cell: ({ row }) => <OrderStatusBadge status={row.original.status} />,
         meta: { headClassName: "w-[80px]" },
       },
       {
@@ -334,7 +311,7 @@ export function OrdersPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="_all">{"全部状态"}</SelectItem>
-                {orderStatusOptions.map((o) => (
+                {ORDER_STATUS_OPTIONS.map((o) => (
                   <SelectItem key={String(o.value)} value={String(o.value)}>{o.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -418,7 +395,7 @@ export function OrdersPage() {
           if (!open) { setDetailOpen(false); setDetailOrder(null) }
         }}
       >
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{"订单详情"}</DialogTitle>
             <DialogDescription className="font-mono text-xs">
@@ -431,39 +408,7 @@ export function OrdersPage() {
               {"正在加载订单详情…"}
             </div>
           ) : (
-            <div className="text-sm">
-              <div className="flex items-center justify-between py-1.5">
-                <span className="text-muted-foreground">{"状态"}</span>
-                <StatusCell status={detailOrder.refund_status === "FULL" ? 2 : detailOrder.status} />
-              </div>
-              <Separator />
-              <Row label={"商品名称"} value={detailOrder.subject || detailOrder.name} wrap />
-              {detailOrder.order_type === 2 && (
-                <Row label={"订单类型"} value={<Badge variant="secondary">{"测试单"}</Badge>} />
-              )}
-              <Row label={"支付方式"} value={(
-                <span className="inline-flex items-center gap-1.5">
-                  <PayIcon code={detailOrder.type} icon={detailOrder.type_icon} />
-                  {detailOrder.type_name || detailOrder.type}
-                </span>
-              )} />
-              <Row label={"金额"} value={`¥${detailOrder.money}`} />
-              <Row label={"实付金额"} value={detailOrder.realmoney ? `¥${detailOrder.realmoney}` : "—"} />
-              <Row label={"商户到账"} value={detailOrder.merchant_income ? `¥${detailOrder.merchant_income}` : "—"} />
-              <Row
-                label={"退款信息"}
-                value={
-                  detailOrder.refund_status && detailOrder.refund_status !== "NONE"
-                    ? `${REFUND_LABELS[detailOrder.refund_status] ?? detailOrder.refund_status} ¥${detailOrder.refunded_amount ?? "0.00"}`
-                    : "未退款"
-                }
-              />
-              <Row label={"商户订单号"} value={detailOrder.out_trade_no} mono />
-              <Row label={"扩展参数"} value={detailOrder.param} mono wrap />
-              <Row label={"创建时间"} value={detailOrder.created_at || detailOrder.addtime} />
-              <Row label={"支付时间"} value={detailOrder.paid_at || detailOrder.endtime || "—"} />
-              <Row label={"通知状态"} value={<NotifyStatusCell status={detailOrder.status} notifyStatus={detailOrder.notify_status} />} />
-            </div>
+            <MerchantOrderDetailTable order={detailOrder} />
           )}
         </DialogContent>
       </Dialog>
@@ -481,13 +426,49 @@ export function OrdersPage() {
   )
 }
 
-function Row({ label, value, mono, wrap }: { label: string; value?: React.ReactNode; mono?: boolean; wrap?: boolean }) {
+/** 订单详情主体：与后台订单详情同一套「一行两组」表格，窄屏自动退化成一行一组 */
+function MerchantOrderDetailTable({ order }: { order: OrderDetailData }) {
+  // 全额退款时对外展示为「已退款」，与列表口径一致
+  const status = order.refund_status === "FULL" ? 2 : order.status
+  const refundText = order.refund_status && order.refund_status !== "NONE"
+    ? `${REFUND_LABELS[order.refund_status] ?? order.refund_status} ¥${order.refunded_amount ?? "0.00"}`
+    : "未退款"
+
   return (
-    <div className="flex items-start justify-between gap-4 py-1.5">
-      <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className={`text-right ${mono ? "font-mono text-xs" : ""} ${wrap ? "break-all" : "truncate"}`}>
-        {value || "—"}
-      </span>
-    </div>
+    <DetailTable rows={[
+      [
+        { label: "状态", value: (
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <OrderStatusBadge status={status} />
+            {order.order_type === 2 && <Badge variant="secondary">{"测试单"}</Badge>}
+          </span>
+        ) },
+        { label: "商品名称", value: order.subject || order.name, wrap: true },
+      ],
+      [
+        { label: "支付方式", value: order.type_name || order.type,
+          icon: <PayIcon code={order.type} icon={order.type_icon} /> },
+        { label: "金额", value: `¥${order.money}` },
+      ],
+      [
+        { label: "实付金额", value: order.realmoney ? `¥${order.realmoney}` : "" },
+        { label: "商户到账", value: order.merchant_income ? `¥${order.merchant_income}` : "" },
+      ],
+      [
+        { label: "退款信息", value: refundText },
+        // 未支付订单没有通知可看，留空走统一占位符
+        { label: "通知状态", value: order.status === 1
+          ? <NotifyStatusCell status={order.status} notifyStatus={order.notify_status} />
+          : "" },
+      ],
+      [
+        { label: "商户订单号", value: order.out_trade_no, mono: true, wrap: true },
+        { label: "创建时间", value: order.created_at || order.addtime },
+      ],
+      [
+        { label: "支付时间", value: order.paid_at || order.endtime },
+        { label: "扩展参数", value: order.param, mono: true, wrap: true },
+      ],
+    ]} />
   )
 }

@@ -14,11 +14,13 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
-import { Separator } from "@/components/ui/separator"
 import { ConfirmDialog } from "@/components/data-list/confirm-dialog"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import { PayIcon } from "@/components/pay-icon"
+import { DetailTable } from "@/components/detail-table"
+import { OrderStatusBadge } from "@/components/order-status"
+import { ORDER_STATUS_OPTIONS } from "@/lib/order-status"
 import {
   useDataList,
   ListError,
@@ -28,7 +30,7 @@ import {
   copyableCell,
   truncatedCell,
 } from "@/components/data-list/"
-import type { ActionItem, StatusBadgeOption } from "@/components/data-list/"
+import type { ActionItem } from "@/components/data-list/"
 import {
   IconSearch, IconRefresh, IconBell, IconRefreshDot, IconDownload, IconEye,
 } from "@tabler/icons-react"
@@ -40,28 +42,6 @@ import { digitsOnly, toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { usePermission } from "@/hooks/use-permission"
 import { useSearchParams } from "react-router-dom"
-
-const orderStatusOptions: StatusBadgeOption[] = [
-  { label: "待支付", value: 0, variant: "secondary" },
-  { label: "已支付", value: 1, variant: "default" },
-  { label: "已退款", value: 2, variant: "outline" },
-  { label: "已过期", value: 3, variant: "outline" },
-]
-
-function statusBadge(status: number) {
-  const opt = orderStatusOptions.find((o) => o.value === status)
-  const variantCls: Record<string, string> = {
-    default: "bg-primary/10 text-primary",
-    secondary: "bg-secondary text-secondary-foreground",
-    destructive: "bg-destructive/10 text-destructive",
-    outline: "border text-muted-foreground",
-  }
-  return (
-    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${variantCls[opt?.variant ?? "default"]}`}>
-      {opt?.label ?? status}
-    </span>
-  )
-}
 
 function moneyCell(v: string | null | undefined) {
   if (!v) return <span className="text-sm text-muted-foreground">—</span>
@@ -215,7 +195,7 @@ export function OrdersPage() {
         accessorKey: "status",
         enableSorting: false,
         header: () => "状态",
-        cell: ({ row }) => statusBadge(row.original.status),
+        cell: ({ row }) => <OrderStatusBadge status={row.original.status} />,
         meta: { headClassName: "w-[80px]" },
       },
       {
@@ -332,7 +312,7 @@ export function OrdersPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="_all">{"全部状态"}</SelectItem>
-                {orderStatusOptions.map((o) => (
+                {ORDER_STATUS_OPTIONS.map((o) => (
                   <SelectItem key={String(o.value)} value={String(o.value)}>{o.label}</SelectItem>
                 ))}
               </SelectContent>
@@ -398,48 +378,14 @@ export function OrdersPage() {
         </div>
       </div>
 
-      {/* 订单详情 */}
+      {/* 订单详情：两列信息表，一行两组「字段 / 值」，长内容在单元格内换行 */}
       <Dialog open={!!detailOrder} onOpenChange={(open) => !open && setDetailOrder(null)}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{"详情"}</DialogTitle>
+            <DialogTitle>{"订单详情"}</DialogTitle>
             <DialogDescription className="font-mono text-xs">{detailOrder?.trade_no}</DialogDescription>
           </DialogHeader>
-          {detailOrder && (
-            <div className="text-sm">
-              <div className="flex items-center justify-between py-1.5">
-                <span className="text-muted-foreground">{"状态"}</span>
-                {statusBadge(detailOrder.status)}
-              </div>
-              <Separator />
-              <DetailRow label={"商品名称"} value={detailOrder.subject} />
-              {detailOrder.order_type === 2 && (
-                <DetailRow label={"订单类型"} value={<Badge variant="secondary">{"测试单（不计入资金与统计）"}</Badge>} />
-              )}
-              {detailOrder.order_type === 1 && (
-                <DetailRow label={"订单类型"} value={<Badge variant="outline">{"余额充值"}</Badge>} />
-              )}
-              <DetailRow label={"商户"} value={detailOrder.merchant_username || String(detailOrder.merchant_id ?? "")} />
-              <DetailRow label={"金额"} value={`¥${detailOrder.money}`} />
-              <DetailRow label={"实付金额"} value={detailOrder.realmoney ? `¥${detailOrder.realmoney}` : "—"} />
-              <DetailRow label={"商户到账"} value={detailOrder.merchant_income ? `¥${detailOrder.merchant_income}` : "—"} />
-              <DetailRow label={"平台利润"} value={detailOrder.profit ? `¥${detailOrder.profit}` : "—"} />
-              <DetailRow label={"支付方式"} value={detailOrder.type_name || detailOrder.type}
-                         icon={<PayIcon code={detailOrder.type} icon={detailOrder.type_icon} />} />
-              <DetailRow label={"通道插件"} value={detailOrder.plugin_name} />
-              <DetailRow label={"上游订单号"} value={detailOrder.api_trade_no} mono />
-              <DetailRow label={"商户订单号"} value={detailOrder.out_trade_no} mono />
-              <DetailRow label={"买家账号"} value={detailOrder.buyer_id} />
-              <DetailRow label={"客户端 IP"} value={detailOrder.client_ip} mono />
-              <DetailRow label={"扩展参数"} value={detailOrder.param} mono wrap />
-              <DetailRow label={"通知地址"} value={detailOrder.notify_url} mono wrap />
-              <DetailRow label={"回跳地址"} value={detailOrder.return_url} mono wrap />
-              <DetailRow label={"通知次数"} value={String(detailOrder.notify_count ?? 0)} />
-              <DetailRow label={"创建时间"} value={detailOrder.created_at} />
-              <DetailRow label={"支付时间"} value={detailOrder.paid_at || "—"} />
-              <DetailRow label={"过期时间"} value={detailOrder.expire_at || "—"} />
-            </div>
-          )}
+          {detailOrder && <OrderDetailTable order={detailOrder} />}
         </DialogContent>
       </Dialog>
 
@@ -458,16 +404,62 @@ export function OrdersPage() {
   )
 }
 
-function DetailRow({ label, value, icon, mono, wrap }: {
-  label: string; value?: React.ReactNode; icon?: React.ReactNode; mono?: boolean; wrap?: boolean
-}) {
+/** 订单详情主体：桌面一行两组「字段 / 值」，窄屏自动退化成一行一组 */
+function OrderDetailTable({ order }: { order: OrderData }) {
+  const typeBadge = order.order_type === 2
+    ? <Badge variant="secondary">{"测试单（不计入资金与统计）"}</Badge>
+    : order.order_type === 1
+      ? <Badge variant="outline">{"余额充值"}</Badge>
+      : null
+
   return (
-    <div className="flex items-start justify-between gap-4 py-1.5">
-      <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className={`text-right ${mono ? "font-mono text-xs" : ""} ${wrap ? "break-all" : "truncate"}`}
-            title={typeof value === "string" ? value : undefined}>
-        {icon ? <span className="inline-flex items-center gap-1.5 align-middle">{icon}{value || "—"}</span> : (value || "—")}
-      </span>
-    </div>
+    <DetailTable rows={[
+      [
+        { label: "状态", value: (
+          <span className="inline-flex flex-wrap items-center gap-1.5">
+            <OrderStatusBadge status={order.status} />
+            {typeBadge}
+          </span>
+        ) },
+        { label: "商品名称", value: order.subject, wrap: true },
+      ],
+      [
+        { label: "商户", value: order.merchant_username || String(order.merchant_id ?? "") },
+        { label: "支付方式", value: order.type_name || order.type,
+          icon: <PayIcon code={order.type} icon={order.type_icon} /> },
+      ],
+      [
+        { label: "金额", value: `¥${order.money}` },
+        { label: "实付金额", value: order.realmoney ? `¥${order.realmoney}` : "" },
+      ],
+      [
+        { label: "商户到账", value: order.merchant_income ? `¥${order.merchant_income}` : "" },
+        { label: "平台利润", value: order.profit ? `¥${order.profit}` : "" },
+      ],
+      [
+        { label: "通道插件", value: order.plugin_name },
+        { label: "买家账号", value: order.buyer_id, wrap: true },
+      ],
+      [
+        { label: "上游订单号", value: order.api_trade_no, mono: true, wrap: true },
+        { label: "商户订单号", value: order.out_trade_no, mono: true, wrap: true },
+      ],
+      [
+        { label: "客户端 IP", value: order.client_ip, mono: true },
+        { label: "通知次数", value: String(order.notify_count ?? 0) },
+      ],
+      [
+        { label: "创建时间", value: order.created_at },
+        { label: "支付时间", value: order.paid_at },
+      ],
+      [
+        { label: "过期时间", value: order.expire_at },
+        { label: "通知地址", value: order.notify_url, mono: true, wrap: true },
+      ],
+      [
+        { label: "回跳地址", value: order.return_url, mono: true, wrap: true },
+        { label: "扩展参数", value: order.param, mono: true, wrap: true },
+      ],
+    ]} />
   )
 }

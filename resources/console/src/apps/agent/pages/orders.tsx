@@ -18,35 +18,12 @@ import {
   dateCell,
   truncatedCell,
 } from "@/components/data-list/"
-import type { StatusBadgeOption } from "@/components/data-list/"
+import { OrderStatusBadge } from "@/components/order-status"
+import { ORDER_STATUS_OPTIONS } from "@/lib/order-status"
 import { toIntParam } from "@/lib/form-utils"
 import { IconSearch, IconRefresh } from "@tabler/icons-react"
 
-// 状态口径与后端 Order.status 一致（0 待支付 / 1 已支付 / 2 已退款 / 3 已过期）
-const orderStatusOptions: StatusBadgeOption[] = [
-  { label: "待支付", value: 0, variant: "secondary" },
-  { label: "已支付", value: 1, variant: "default" },
-  { label: "已退款", value: 2, variant: "outline" },
-  { label: "已过期", value: 3, variant: "outline" },
-]
-
-const STATUS_CLASS: Record<string, string> = {
-  default: "bg-primary/10 text-primary",
-  secondary: "bg-secondary text-secondary-foreground",
-  destructive: "bg-destructive/10 text-destructive",
-  outline: "border text-muted-foreground",
-}
-
-function StatusCell({ status }: { status: number }) {
-  const opt = orderStatusOptions.find((o) => o.value === status)
-  return (
-    <span
-      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[opt?.variant ?? "outline"]}`}
-    >
-      {opt?.label ?? `未知(${status})`}
-    </span>
-  )
-}
+// 状态口径与后端 Order.status 一致（0 待支付 / 1 已支付 / 2 已退款 / 3 已过期），配色统一走 ORDER_STATUS_OPTIONS
 
 export function OrdersPage() {
   const [startDate, setStartDate] = React.useState<Date | undefined>(undefined)
@@ -123,7 +100,7 @@ export function OrdersPage() {
         accessorKey: "status",
         enableSorting: false,
         header: () => "状态",
-        cell: ({ row }) => <StatusCell status={row.original.status} />,
+        cell: ({ row }) => <OrderStatusBadge status={row.original.status} />,
         meta: { headClassName: "w-[80px]" },
       },
     ],
@@ -153,7 +130,7 @@ export function OrdersPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="_all">{"全部状态"}</SelectItem>
-                {orderStatusOptions.map((o) => (
+                {ORDER_STATUS_OPTIONS.map((o) => (
                   <SelectItem key={String(o.value)} value={String(o.value)}>{o.label}</SelectItem>
                 ))}
               </SelectContent>
