@@ -16,7 +16,7 @@ from app.core.limiter import rate_limit
 from app.models import Merchant, Order, PaymentType
 from app.responses import err, suc_data
 from app.routers.common.params import parse_bool
-from app.services.channel import list_available_pay_types
+from app.services.channel import code_supports_type, list_available_pay_types
 from app.services.order import (
     ORDER_PAID,
     build_signed_return_url,
@@ -47,7 +47,7 @@ async def order_pay_types(trade_no: str, session: SessionDep, cache: CacheDep,
         return_url = await _signed_return_url(order, session, cache)
         return suc_data({"status": 1, "money": str(order.money), "subject": order.subject,
                          "types": [], "return_url": return_url})
-    types = await list_available_pay_types(session, cache)
+    types = await list_available_pay_types(session, cache, code_id=order.channel_code_id)
     data = {
         "status": 0,
         "money": str(order.money),
@@ -95,6 +95,12 @@ async def launch_payment(request: Request, session: SessionDep, cache: CacheDep,
     )).first()
     if not pay_type:
         return err(-1, "当前支付方式暂不可用，请选择其他支付方式")
+
+    # 订单绑定了下游通道编码：只允许编码内已绑定的支付方式，否则后续必然拉起失败
+    if order.channel_code_id and not await code_supports_type(
+        session, order.channel_code_id, pay_type.id
+    ):
+        return err(-1, "通道编码不支持当前支付方式")
 
     merchant = await session.get(Merchant, order.merchant_id)
     if not merchant:

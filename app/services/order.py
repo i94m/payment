@@ -20,11 +20,19 @@ from sqlmodel import col, func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.cache import CacheClient, try_lock, release_lock
-from app.models import Counter, Merchant, Order, PaymentType
+from app.models import ChannelCode, Counter, Merchant, Order, PaymentType
 from app.services.balance import change_merchant_balance, dmoney, lock_merchant
 from app.services.merchant import random_money
 from app.services.pay_debug import write_pay_debug
-from app.services.channel import ResolvedChannel, choose_channel
+from app.services.channel import (
+    ResolvedChannel,
+    choose_channel,
+    choose_channel_by_code,
+    code_format_ok,
+    code_supports_type,
+    get_channel_code,
+    normalize_channel_code,
+)
 from app.services.plugin import PluginRegistry, maybe_await
 from app.services.plugin_interfaces import PaymentContext, PaymentResult
 from app.constants.cache_keys import CacheKeys
@@ -138,18 +146,23 @@ def _is_http_url(url: str) -> bool:
 # ============================================================
 
 async def create_order(params: dict, session: AsyncSession, cache: CacheClient | None = None,
-                       order_type: int = 0, agent_id: int = 0, request_host: str = "") -> Order:
+                       order_type: int = 0, agent_id: int = 0, request_host: str = "",
+                       require_channel_code: bool = False) -> Order:
     """建单（幂等）。同一商户同一 out_trade_no 返回已有订单。
 
     事务内无外部 IO。抛 ValueError 表示业务校验失败。
     order_type: 0=普通收款 1=余额充值（仅内部入口可传，开放 API 固定为 0）。
     agent_id:   归属代理（须为该商户名下启用代理，0=无）。
     request_host: 来源域名（支付域名白名单 enforcement，空=不校验）。
+    require_channel_code: 是否执行「商户必须传通道编码」校验。**只有下游开放 API 传 True**：
+        这个开关是给下游对接方的契约，平台自己的收银台/收款页/余额充值不受影响
+        （否则新商户一上线就连自己的收款链接都拉不起来）。
     """
     pid = params.get("pid", "")
     out_trade_no = str(params.get("out_trade_no", "") or "").strip()
     subject = str(params.get("name", "") or params.get("subject", "") or "").strip()
     type_code = str(params.get("type", "") or "").strip()
+    channel_code = normalize_channel_code(params.get("channel_code"))
     notify_url = str(params.get("notify_url", "") or "").strip()
     return_url = str(params.get("return_url", "") or "").strip()
     param = str(params.get("param", "") or "").strip()
@@ -237,6 +250,22 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
     if not pay_type:
         raise ValueError("支付方式不存在或未启用")
 
+    # 下游通道编码：参数级校验（编码存在/启用 + 与本次支付方式有绑定），
+    # 运行时可用性（成员开关/限额/限速）留到 process_payment。
+    code_row = None
+    if channel_code:
+        if not code_format_ok(channel_code):
+            raise ValueError("通道编码格式错误")
+        code_row = await get_channel_code(session, channel_code)
+        if not code_row or code_row.status != 1:
+            # 不存在与被停用同一文案：不泄漏「这个编码存在但停了」，也不区分归属
+            raise ValueError("通道编码不存在或不可用")
+        if not await code_supports_type(session, code_row.id, pay_type.id):
+            raise ValueError("通道编码不支持当前支付方式")
+    elif require_channel_code and merchant.channel_code_required:
+        raise ValueError("缺少通道编码")
+    channel_code_id = code_row.id if code_row else 0
+
     # 幂等：同商户同 out_trade_no 直接返回已有订单
     # 一致性校验与并发冲突路径（下方 commit 冲突处理）同口径：金额/支付方式不一致
     # 必须报错，不能静默返回旧单（否则商户以为按新金额下单、付款人付的却是旧金额）；
@@ -247,6 +276,9 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
     if existing:
         if existing.money != money or existing.payment_type_code != pay_type.code:
             raise ValueError("out_trade_no 已存在且金额或支付方式不一致")
+        # 编码也是一致性的一部分：下游以为换了通道、实际还在老通道上，比报错危险
+        if (existing.channel_code or "") != channel_code:
+            raise ValueError("out_trade_no 已存在且通道编码不一致")
         if existing.status == ORDER_EXPIRED or (
             existing.status == ORDER_PENDING
             and existing.expire_at is not None
@@ -271,6 +303,8 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
         out_trade_no=out_trade_no,
         payment_type_id=pay_type.id,
         payment_type_code=pay_type.code,
+        channel_code=channel_code or None,
+        channel_code_id=channel_code_id,
         subject=subject[:128],
         money=money,
         notify_url=notify_url[:500] or merchant.default_notify_url,
@@ -313,6 +347,8 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
             if existing:
                 if existing.money != money or existing.payment_type_code != pay_type_code:
                     raise ValueError("out_trade_no 已存在且金额或支付方式不一致")
+                if (existing.channel_code or "") != channel_code:
+                    raise ValueError("out_trade_no 已存在且通道编码不一致")
                 # rollback 同样过期了调用方持有的 merchant（同会话实例），
                 # 刷新后再返回，避免下游读属性触发惰性加载
                 await session.refresh(merchant)
@@ -499,6 +535,25 @@ async def process_payment(
             channel=ch, config=ch_config,
             merchant_rate=ch.merchant_rate, cost_rate=ch.cost_rate,
         )
+    elif order.channel_code_id:
+        # 下游指定了通道编码：候选集永久限定在该编码内（收银台重试/换支付方式也越不出去），
+        # 编码内全不可用 → 报错，**绝不回落**编码之外的默认路由
+        code_row = await session.get(ChannelCode, order.channel_code_id)
+        if not code_row or code_row.status != 1:
+            # 编码整体停用：与「成员全关」分开文案（前者要改配置，后者可稍后重试）
+            _log.warning("拉起支付失败：通道编码已停用或不存在 trade_no=%s code=%s id=%s",
+                         order.trade_no, order.channel_code, order.channel_code_id)
+            return PayFlowResult(ok=False, error="通道编码不存在或不可用")
+        resolved = await choose_channel_by_code(
+            session, cache, order.channel_code_id, order.payment_type_id, order.money,
+            merchant_rate=merchant.rate,
+            # 测试单不占通道日限额/限速窗口，避免反复测试把通道测到自动关闭
+            skip_limits=order.order_type == ORDER_TYPE_TEST,
+        )
+        if not resolved:
+            _log.warning("拉起支付失败：编码内无可用通道 trade_no=%s code=%s type=%s money=%s",
+                         order.trade_no, order.channel_code, order.payment_type_id, order.money)
+            return PayFlowResult(ok=False, error=f"通道编码 {order.channel_code} 当前不可用，请稍后重试")
     else:
         resolved = await choose_channel(
             session, cache, order.payment_type_id, order.money, merchant_rate=merchant.rate,
