@@ -97,14 +97,14 @@ export function NotifyLogsPage() {
         enableSorting: false,
         header: () => "尝试次数",
         cell: ({ getValue }) => secondaryCell(getValue() as number),
-        meta: { headClassName: "w-[70px]" },
+        meta: { headClassName: "w-[70px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "http_status",
         enableSorting: false,
         header: () => "HTTP 状态",
         cell: ({ row }) => secondaryCell(row.original.http_status ?? "—"),
-        meta: { headClassName: "w-[90px]" },
+        meta: { headClassName: "w-[90px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "success",
@@ -115,7 +115,7 @@ export function NotifyLogsPage() {
             {row.original.success ? "成功" : "失败"}
           </span>
         ),
-        meta: { headClassName: "w-[80px]" },
+        meta: { headClassName: "w-[80px]", cellClassName: "text-center" },
       },
       actionsColumn([
         {

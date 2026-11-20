@@ -45,8 +45,9 @@ export function RecordsPage() {
             </span>
           )
         },
+        meta: { cellClassName: "text-right" },
       },
-      { accessorKey: "balance_after", enableSorting: false, header: () => "变动后", cell: ({ row }) => secondaryCell(`¥${row.original.balance_after}`) },
+      { accessorKey: "balance_after", enableSorting: false, header: () => "变动后", cell: ({ row }) => secondaryCell(`¥${row.original.balance_after}`), meta: { cellClassName: "text-right" } },
       { accessorKey: "order_trade_no", enableSorting: false, header: () => "关联订单", cell: ({ row }) => truncatedCell(row.original.order_trade_no || "—", 120) },
       { accessorKey: "remark", enableSorting: false, header: () => "备注", cell: ({ row }) => truncatedCell(row.original.remark || "—", 140) },
     ],

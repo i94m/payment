@@ -173,18 +173,18 @@ export function OrdersPage() {
         header: () => "平台订单号",
         cell: ({ row }) => (
           <span className="flex items-center gap-1.5">
-            {copyableCell(row.original.trade_no)}
+            {copyableCell(row.original.trade_no, 220)}
             {row.original.order_type === 2 && <Badge variant="secondary">{"测试"}</Badge>}
           </span>
         ),
-        meta: { headClassName: "min-w-[170px]", sticky: "left" },
+        meta: { headClassName: "min-w-[240px]", sticky: "left" },
       },
       {
         accessorKey: "out_trade_no",
         enableSorting: false,
         header: () => "商户订单号",
-        cell: ({ row }) => truncatedCell(row.original.out_trade_no, 120),
-        meta: { headClassName: "min-w-[130px]" },
+        cell: ({ row }) => truncatedCell(row.original.out_trade_no, 200),
+        meta: { headClassName: "min-w-[220px]" },
       },
       {
         accessorKey: "type",
@@ -210,7 +210,7 @@ export function OrdersPage() {
         enableSorting: false,
         header: () => "金额",
         cell: ({ row }) => <span className="text-sm font-medium tabular-nums">¥{row.original.money}</span>,
-        meta: { headClassName: "w-[90px]" },
+        meta: { headClassName: "w-[90px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "merchant_income",
@@ -221,14 +221,14 @@ export function OrdersPage() {
             {row.original.merchant_income ? `¥${row.original.merchant_income}` : "—"}
           </span>
         ),
-        meta: { headClassName: "w-[100px]" },
+        meta: { headClassName: "w-[100px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "status",
         enableSorting: false,
         header: () => "状态",
         cell: ({ row }) => <OrderStatusBadge status={row.original.status} />,
-        meta: { headClassName: "w-[80px]" },
+        meta: { headClassName: "w-[80px]", cellClassName: "text-center" },
       },
       {
         accessorKey: "notify_status",
@@ -237,7 +237,7 @@ export function OrdersPage() {
         cell: ({ row }) => (
           <NotifyStatusCell status={row.original.status} notifyStatus={row.original.notify_status} />
         ),
-        meta: { headClassName: "w-[90px]" },
+        meta: { headClassName: "w-[90px]", cellClassName: "text-center" },
       },
       {
         accessorKey: "created_at",

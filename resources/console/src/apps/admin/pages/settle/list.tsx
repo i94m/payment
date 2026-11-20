@@ -74,8 +74,8 @@ export function SettlePage() {
         accessorKey: "settle_no",
         enableSorting: false,
         header: () => "结算单号",
-        cell: ({ row }) => copyableCell(row.original.settle_no),
-        meta: { headClassName: "min-w-[160px]", sticky: "left" },
+        cell: ({ row }) => copyableCell(row.original.settle_no, 200),
+        meta: { headClassName: "min-w-[220px]", sticky: "left" },
       },
       {
         accessorKey: "merchant_username",
@@ -89,21 +89,21 @@ export function SettlePage() {
         enableSorting: false,
         header: () => "结算金额",
         cell: ({ row }) => <span className="text-sm font-medium tabular-nums">¥{row.original.amount}</span>,
-        meta: { headClassName: "w-[100px]" },
+        meta: { headClassName: "w-[100px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "fee",
         enableSorting: false,
         header: () => "手续费",
         cell: ({ row }) => secondaryCell(row.original.fee),
-        meta: { headClassName: "w-[80px]" },
+        meta: { headClassName: "w-[80px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "real_amount",
         enableSorting: false,
         header: () => "实打金额",
         cell: ({ row }) => <span className="text-sm tabular-nums">¥{row.original.real_amount}</span>,
-        meta: { headClassName: "w-[100px]" },
+        meta: { headClassName: "w-[100px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "account",
@@ -136,7 +136,7 @@ export function SettlePage() {
             </span>
           )
         },
-        meta: { headClassName: "w-[80px]" },
+        meta: { headClassName: "w-[80px]", cellClassName: "text-center" },
       },
       {
         accessorKey: "created_at",

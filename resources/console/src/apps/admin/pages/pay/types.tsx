@@ -130,21 +130,21 @@ export function PayTypesPage() {
         enableSorting: false,
         header: () => "今日收款",
         cell: ({ row }) => secondaryCell(stats[String(row.original.id)]?.today_amount ?? "-"),
-        meta: { headClassName: "w-[100px]" },
+        meta: { headClassName: "w-[100px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "status",
         enableSorting: false,
         header: () => "状态",
         cell: ({ row }) => (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center gap-2">
             <Switch checked={row.original.status === 1} onCheckedChange={() => toggleStatus(row.original)} />
             <span className="text-xs text-muted-foreground">
               {row.original.status === 1 ? "已开启" : "已关闭"}
             </span>
           </div>
         ),
-        meta: { headClassName: "min-w-[100px]" },
+        meta: { headClassName: "min-w-[100px]", cellClassName: "text-center" },
       },
       actionsColumn([
         { label: "编辑", icon: <IconEdit className="size-4" />, onClick: (item) => { setEditingId(item.id); setFormOpen(true) } },

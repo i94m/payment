@@ -181,16 +181,16 @@ export function booleanDotCell(value: boolean): React.ReactNode {
   )
 }
 
-export function copyableCell(text: string): React.ReactNode {
-  return <CopyableCell text={text} />
+export function copyableCell(text: string, maxWidth = 100): React.ReactNode {
+  return <CopyableCell text={text} maxWidth={maxWidth} />
 }
 
-function CopyableCell({ text }: { text: string }) {
+function CopyableCell({ text, maxWidth }: { text: string; maxWidth: number }) {
   const { copyToClipboard, isCopied } = useCopyToClipboard()
 
   return (
     <div className="flex items-center gap-1">
-      <span className="text-sm truncate max-w-[100px]">{text}</span>
+      <span className="text-sm truncate" style={{ maxWidth }} title={text}>{text}</span>
       <Button variant="ghost" size="icon" className="size-5 shrink-0" onClick={() => copyToClipboard(text)}>
         {isCopied
           ? <IconCheck className="size-3 text-green-500" />

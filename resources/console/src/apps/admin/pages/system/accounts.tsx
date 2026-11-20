@@ -255,7 +255,7 @@ export function AccountsPage() {
             {row.original.is_forbid ? "禁用" : "正常"}
           </span>
         ),
-        meta: { headClassName: "w-[70px]" },
+        meta: { headClassName: "w-[70px]", cellClassName: "text-center" },
       },
       {
         accessorKey: "created_at",

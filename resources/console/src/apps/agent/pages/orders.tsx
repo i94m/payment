@@ -54,15 +54,15 @@ export function OrdersPage() {
         accessorKey: "trade_no",
         enableSorting: false,
         header: () => "订单号",
-        cell: ({ row }) => copyableCell(row.original.trade_no),
-        meta: { headClassName: "min-w-[170px]" },
+        cell: ({ row }) => copyableCell(row.original.trade_no, 220),
+        meta: { headClassName: "min-w-[240px]" },
       },
       {
         accessorKey: "money",
         enableSorting: false,
         header: () => "金额",
         cell: ({ row }) => <span className="text-sm font-medium tabular-nums">¥{row.original.money}</span>,
-        meta: { headClassName: "w-[90px]" },
+        meta: { headClassName: "w-[90px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "realmoney",
@@ -73,7 +73,7 @@ export function OrdersPage() {
             {row.original.realmoney ? `¥${row.original.realmoney}` : "—"}
           </span>
         ),
-        meta: { headClassName: "w-[100px]" },
+        meta: { headClassName: "w-[100px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "subject",
@@ -101,7 +101,7 @@ export function OrdersPage() {
         enableSorting: false,
         header: () => "状态",
         cell: ({ row }) => <OrderStatusBadge status={row.original.status} />,
-        meta: { headClassName: "w-[80px]" },
+        meta: { headClassName: "w-[80px]", cellClassName: "text-center" },
       },
     ],
     perPage: 15,

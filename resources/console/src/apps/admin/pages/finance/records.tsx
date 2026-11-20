@@ -144,21 +144,21 @@ export function AdminRecordsPage() {
             </span>
           )
         },
-        meta: { headClassName: "w-[90px]" },
+        meta: { headClassName: "w-[90px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "balance_before",
         enableSorting: false,
         header: () => "变更前金额",
         cell: ({ row }) => secondaryCell(`¥${row.original.balance_before}`),
-        meta: { headClassName: "w-[95px]" },
+        meta: { headClassName: "w-[95px]", cellClassName: "text-right" },
       },
       {
         accessorKey: "balance_after",
         enableSorting: false,
         header: () => "变更后金额",
         cell: ({ row }) => secondaryCell(`¥${row.original.balance_after}`),
-        meta: { headClassName: "w-[95px]" },
+        meta: { headClassName: "w-[95px]", cellClassName: "text-right" },
       },
       {
         // 关联订单号（点击跳订单列表按单号搜索）

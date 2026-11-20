@@ -61,6 +61,20 @@ Local demo: `scripts/seed_demo.py` (demo/demo123456, pid=1001), `scripts/mock_up
 - **License gate (`AUTH_CODE`).** `app/core/license.py` verifies an Ed25519-signed code from `.env` at config-import time, but **only when running compiled** (detection = module `__file__` suffix ≠ `.py`); source runs and pytest always skip it, so tests need no `AUTH_CODE`. Codes are bare two-segment `<payload>.<sig>` strings (legacy `PAY1.`-prefixed codes still verify). The public key has a single source: the baked-in `PUBLIC_KEY_B64`, compiled into the image's `.so` (no env/config override — deliberately, so deployers cannot swap in their own key and self-sign; re-keying = edit + rebuild + redistribute the image); empty/invalid code → no exit, soft-lock mode instead (process stays up; browser page requests get plain text `Invalid License Code`, every other request 503s with the same generic message — no reason/config details leak to the public, those land in `docker logs` stderr at startup; `/health` and `/license/expire` exempt — the latter returns the expiry date as plain text `YYYY-MM-DD`, or 「未授权」 when nothing is loaded); LicenseKeyError (baked key broken = author-side build bug) still fail-secure exits. Vendor workflow: `uv run python scripts/license_gen.py keygen` → paste the printed public key into `license.py`'s `PUBLIC_KEY_B64` → `issue --until YYYY-MM-DD` hands out one-line codes. `license_private.pem` is gitignored and never leaves the author's machine. The builder smoke test stubs the license module in-process (build has no code to verify) after asserting the public key is baked in. A per-request soft-lock middleware in `main.py` (`lock_reason()` = startup failure OR loaded `exp` passed; pure in-memory compare) 503s every non-`/health` / non-`/license/expire` request — `Accept: text/html` gets plain text `Invalid License Code`, everything else JSON (`source runs never lock`, dev unaffected). Soft-lock also pauses the background worker: `app/worker/__init__.py` wraps every job + `CronJob` (and `enqueue`) with `license_guard`, so notify retries / query-fill / expire / auto-settle stop while unlicensed; `/health` stays 200 but reports `licensed: false` for monitoring. Expiry compares against `max(system clock, highest clock ever seen)` — the high-water mark is persisted to `storage/private/.license_clock` in compiled images (`LICENSE_CLOCK_FILE` overrides), so rolling the host clock back cannot extend a license.
 - **Deployment is documented in `DEPLOY.md`** (trust it over this summary for details): single `docker-compose.production.yml` runs app (scalable) + SAQ worker containers only; MySQL, Redis and nginx run as host services. Image comes from ghcr.io via `PAY_IMAGE` (default `ghcr.io/i94m/payment:latest`); `scripts/deploy.sh` on the server (auto `.env` bootstrap, pulls image, auto create-all or `alembic upgrade`), `scripts/build-image.sh` for local/offline builds.
 
+## 前端列表展示约定（`resources/console`）
+
+列表**表头一律居中**：`DataTable` 用的 `components/ui/table.tsx` 里 `TableHead` 默认就是 `text-center`，不要在 `headClassName` 里再写 `text-left` / `text-right`（`headClassName` 只用来给列宽等非对齐样式）。对齐规则只作用于**单元格内容**，通过列的 `meta.cellClassName` 设置：
+
+| 单元格内容类型 | 对齐 | 写法 |
+|---|---|---|
+| 数字：金额 / 数量 / 比率 / 次数 / 状态码 | 靠右 | `meta: { cellClassName: "text-right" }` |
+| 字符串：名称 / 备注 / 时间 / URL | 靠左 | 默认，不写对齐 class |
+| 编号类标识：`id`、`pid`、订单号、结算单号 | 靠左 | 默认（按字符串处理，不按数字靠右） |
+| 状态徽标 / 标签 / 开关 / 操作 | 居中 | `meta: { cellClassName: "text-center" }`；单元格内容是 flex 容器时另加 `justify-center` |
+
+- 订单状态色板只允许有一份：`src/lib/order-status.ts`（固定色值、不用主题色 `primary`、无边框，深色模式沿用同色相），三端共用 `components/order-status.tsx` 的 `OrderStatusBadge`；通知状态复用 `NOTIFY_STATUS_CLASS`，不要在页面里另写状态颜色。
+- 详情弹窗的键值表用 `components/detail-table.tsx`（`DetailTable`：桌面一行两组、窄屏一行一组），不要再手写 `flex justify-between` 的行。
+
 ## Architecture map
 
 - `main.py` — app wiring, CORS, rate limiter, JSON exception handlers, SPA registration, `/health`.

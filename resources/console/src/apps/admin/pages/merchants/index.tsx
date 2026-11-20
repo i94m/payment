@@ -306,7 +306,7 @@ export function MerchantsPage() {
             ¥{row.original.balance}
           </button>
         ),
-        meta: { headClassName: "w-[95px]" },
+        meta: { headClassName: "w-[95px]", cellClassName: "text-right" },
       },
       {
         // 结算账号/姓名（点击弹出快捷修改；微信/QQ 带类型前缀）
@@ -387,7 +387,7 @@ export function MerchantsPage() {
             </button>
           )
         },
-        meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[112px]", cellClassName: "text-center" },
       },
       {
         // 扣量（点击弹出设置）：商户级开关 + 每 N 笔扣 1 + 起扣金额
@@ -425,7 +425,7 @@ export function MerchantsPage() {
             </button>
           )
         },
-        meta: { headClassName: "w-[112px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[112px]", cellClassName: "text-center" },
       },
       {
         // 建单限流（点击弹出设置）：同一付款 IP 每分钟建单上限，0=不限
@@ -458,7 +458,7 @@ export function MerchantsPage() {
             </button>
           )
         },
-        meta: { headClassName: "min-w-[90px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "min-w-[90px]", cellClassName: "text-center" },
       },
       {
         // 用户状态：正常 / 禁用（开关实时切换）
@@ -475,7 +475,7 @@ export function MerchantsPage() {
             />
           )
         },
-        meta: { headClassName: "w-[70px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[70px]", cellClassName: "text-center" },
       },
       {
         // 支付权限：开启 / 关闭（待审核时额外提示，开关切换 开启↔关闭）
@@ -497,7 +497,7 @@ export function MerchantsPage() {
             </div>
           )
         },
-        meta: { headClassName: "w-[86px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[86px]", cellClassName: "text-center" },
       },
       {
         // 结算权限：开启 / 关闭（开关实时切换），关闭=能收款但余额冻结不可提
@@ -514,7 +514,7 @@ export function MerchantsPage() {
             />
           )
         },
-        meta: { headClassName: "w-[70px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[70px]", cellClassName: "text-center" },
       },
       {
         // 配置锁定（开关）：锁定后该商户不受批量随机金额影响
@@ -531,7 +531,7 @@ export function MerchantsPage() {
             />
           )
         },
-        meta: { headClassName: "w-[84px] text-center", cellClassName: "text-center" },
+        meta: { headClassName: "w-[84px]", cellClassName: "text-center" },
       },
       actionsColumn([
         { label: "API密钥", onClick: (item) => openDetail(item) },
