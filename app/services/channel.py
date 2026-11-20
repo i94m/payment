@@ -285,13 +285,18 @@ def _resolve_by_code(
     session: AsyncSession,
     chosen: Channel,
     item: ChannelCodeItem,
+    siblings: list[ChannelCodeItem],
     merchant_rate: Decimal | None,
 ) -> ResolvedChannel:
     """编码选定通道后推进**绑定行**的轮询游标（不碰 channels.usetime）。
 
     同一通道被多个编码引用时，各编码的轮询刻度互不干扰；默认路由的顺序游标也不受影响。
+    游标取 `max(now_ms, 本编码最大游标 + 1)`：同一毫秒内连续两单也能严格递增，
+    否则同毫秒的两单会因并列而反复命中同一条通道（轮询退化成固定）。
     """
-    item.last_used_at = int(time.time() * 1000)
+    now_ms = int(time.time() * 1000)
+    latest = max((it.last_used_at for it in siblings), default=0)
+    item.last_used_at = max(now_ms, latest + 1) if latest >= now_ms else now_ms
     session.add(item)
     rate = merchant_rate if merchant_rate is not None else chosen.merchant_rate
     return ResolvedChannel(
@@ -353,7 +358,7 @@ async def choose_channel_by_code(
 
     for c in _order_code_candidates(available, code.mode, item_map):
         if skip_limits or await reserve_channel_slot(cache, c.id, ratelimit_map.get(c.id, 0)) is not False:
-            return _resolve_by_code(session, c, item_map[c.id], merchant_rate)
+            return _resolve_by_code(session, c, item_map[c.id], items, merchant_rate)
     return None
 
 
