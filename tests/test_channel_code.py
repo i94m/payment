@@ -6,7 +6,7 @@
 
 两条硬断言（最容易悄悄退化的地方）：
 - 编码内通道全不可用 → 报错，且订单的 channel_id 保持 0（没有偷偷选到编码外的通道）
-- 权重全零 → 后台保存被拒
+- 权重全零 → 后台保存被拒；已存在的全零配置不选通道（不退化成随机）
 """
 from decimal import Decimal
 
@@ -26,7 +26,7 @@ from app.models import (
     SystemPermission,
 )
 from app.services.balance import dmoney
-from app.services.channel import choose_channel_by_code
+from app.services.channel import _order_code_candidates, choose_channel_by_code
 from tests.conftest import signed_params
 from tests.test_home_dashboard import two_channels  # noqa: F401  复用双通道夹具
 
@@ -242,6 +242,48 @@ async def test_weighted_zero_never_picked(session, two_channels):
         )
         assert resolved is not None
         assert resolved.channel.id != seeded["channel"].id
+
+
+async def test_weighted_zero_excluded_from_candidates(session, two_channels):
+    """权重 0 不只是「不容易选中」：候选列表里根本没有它，限速回退也轮不到。"""
+    seeded = two_channels
+    channel, channel2 = seeded["channel"], seeded["channel2"]
+    item_map = {
+        channel.id: ChannelCodeItem(code_id=1, channel_id=channel.id, weight=0),
+        channel2.id: ChannelCodeItem(code_id=1, channel_id=channel2.id, weight=5),
+    }
+    for _ in range(50):
+        picked = _order_code_candidates([channel, channel2], 2, item_map)
+        assert [c.id for c in picked] == [channel2.id]
+
+
+async def test_weighted_all_zero_code_has_no_candidate(session, two_channels):
+    """防御：绕过后台校验写进全零权重时，编码内无候选（报不可用），不退化成随机、不越界。"""
+    seeded = two_channels
+    cc = await _mk_code(session, [
+        (seeded["channel"], 0),
+        (seeded["channel2"], 0),
+    ], mode=2)
+    assert await choose_channel_by_code(
+        session, None, cc.id, seeded["pay_type"].id, dmoney("10.00")
+    ) is None
+
+
+async def test_weighted_distribution_follows_ratio(session, two_channels):
+    """权重：1:3 两条通道的实际命中比例落在 1/4 附近（不是等概率随机）。"""
+    seeded = two_channels
+    channel, channel2 = seeded["channel"], seeded["channel2"]
+    cc = await _mk_code(session, [(channel, 1), (channel2, 3)], mode=2)
+    rounds = 400
+    hits = {channel.id: 0, channel2.id: 0}
+    for _ in range(rounds):
+        resolved = await choose_channel_by_code(
+            session, None, cc.id, seeded["pay_type"].id, dmoney("10.00")
+        )
+        assert resolved is not None
+        hits[resolved.channel.id] += 1
+    share = hits[channel.id] / rounds
+    assert 0.15 < share < 0.35, hits      # 期望 0.25，留足随机波动
 
 
 # ============================================================

@@ -684,6 +684,8 @@ async def channel_delete(channel_id: int, session: SessionDep, request: Request,
 # mode 是**编码级**策略（与通道自身的 mode 无关）。
 
 CODE_MODES = {0: "随机", 1: "轮询", 2: "权重"}
+# 权重上限：防止误填天文数字把抽签区间撑爆（MySQL INT 上限也在这里兜住）
+CODE_WEIGHT_MAX = 1_000_000
 
 
 class ChannelCodeItemRequest(BaseModel):
@@ -732,6 +734,8 @@ async def _validate_code_payload(session, body: ChannelCodeRequest,
     for it in body.items:
         if it.weight < 0:
             return code, "权重不能为负数"
+        if it.weight > CODE_WEIGHT_MAX:
+            return code, f"权重不能超过 {CODE_WEIGHT_MAX}"
     # 权重模式必须至少有一个正权重成员：全零会在抽签时退化（老实现永远选最后一条），
     # 运营以为按权重分流、实际全量压一条通道，比报错危险
     if body.mode == 2 and not any(it.weight > 0 for it in body.items):

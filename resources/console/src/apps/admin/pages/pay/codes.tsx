@@ -52,7 +52,9 @@ interface MemberDraft {
 // 放在前端是为了当场给提示，不把用户的重填成本留到提交之后。
 const memberSchema = z.object({
   channel_id: z.number(),
-  weight: z.number().int("权重必须是整数").min(0, "权重不能为负数"),
+  weight: z.number().int("权重必须是整数")
+    .min(0, "权重不能为负数")
+    .max(1000000, "权重不能超过 1000000"),
 })
 
 const codeSchema = z.object({
@@ -104,8 +106,8 @@ export function ChannelCodesPage() {
     defaultValues: emptyValues(),
   })
   const members = codeForm.watch("members")
-  // 权重模式已下线（只保留随机/轮询）：仅历史编码 mode=2 时仍显示权重列与权重项，
-  // 避免编辑老配置时把权重悄悄丢掉或静默改成随机
+  // 权重列只在「权重」模式出现：其它模式下权重不入候选排序（值仍随成员保留，
+  // 切回权重模式不用重新填），列表里历史权重也不会被清掉。
   const mode = codeForm.watch("mode")
   const showWeight = mode === 2
   // 「至少一个通道 / 权重全零」是整段的错误，挂在 members 上统一展示
@@ -253,9 +255,18 @@ export function ChannelCodesPage() {
         accessorKey: "item_count",
         enableSorting: false,
         header: () => "关联通道",
-        cell: ({ row }) => (
-          <span className="text-sm tabular-nums">{row.original.item_count}</span>
-        ),
+        cell: ({ row }) => {
+          const isWeight = row.original.mode === 2
+          // 权重模式下把成员权重挂到悬浮提示：列表一眼能核对「谁占多少比例」
+          const tip = (row.original.members ?? [])
+            .map((m) => (isWeight ? `${m.channel_name} ×${m.weight}` : m.channel_name))
+            .join("\n")
+          return (
+            <span className="text-sm tabular-nums" title={tip || undefined}>
+              {row.original.item_count}
+            </span>
+          )
+        },
         meta: { headClassName: "w-[90px] text-right", cellClassName: "text-right" },
       },
       {
@@ -406,12 +417,13 @@ export function ChannelCodesPage() {
                       <SelectContent>
                         <SelectItem value="0">{"随机"}</SelectItem>
                         <SelectItem value="1">{"轮询"}</SelectItem>
-                        {/* 权重模式已下线：历史编码仍按权重分流，给个只读项避免编辑时被静默改成随机 */}
-                        {showWeight && <SelectItem value="2" disabled>{"权重（已停用）"}</SelectItem>}
+                        <SelectItem value="2">{"权重"}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FieldDescription className="text-xs">
-                      {showWeight ? "历史权重编码：仍按权重比例分流" : "随机：每单随机选；轮询：依次轮流"}
+                      {showWeight
+                        ? "按权重比例随机：权重越大越容易被选中，权重 0 的通道不参与分流"
+                        : "随机：每单随机选；轮询：依次轮流"}
                     </FieldDescription>
                   </Field>
                 )}
@@ -443,7 +455,7 @@ export function ChannelCodesPage() {
                 <FieldLabel>{"关联通道"}<RequiredMark /></FieldLabel>
                 <span className="text-xs text-muted-foreground">
                   {showWeight
-                    ? "勾选后才会参与这个编码的分流；权重越大越容易被选中"
+                    ? "勾选后参与分流；权重越大越容易被选中，权重 0 等于摘流"
                     : "勾选后才会参与这个编码的分流"}
                 </span>
               </div>
@@ -500,6 +512,7 @@ export function ChannelCodesPage() {
                               <Input
                                 type="number"
                                 min={0}
+                                max={1000000}
                                 step={1}
                                 className="h-8 w-16 text-right"
                                 value={member ? member.weight : ""}

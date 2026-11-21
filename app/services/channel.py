@@ -240,20 +240,21 @@ async def code_supports_type(session: AsyncSession, code_id: int, payment_type_i
 
 
 def _weighted_order(pairs: list[tuple[Any, int]]) -> list[Any]:
-    """按权重不放回抽签。
+    """按权重不放回抽签（调用方已剔除零权重，这里只处理正权重）。
 
-    权重全为 0 时**退化为随机**（保存时已拦截，这里只是防御）：老实现会退化成
-    「永远选最后一条」，运营配错时全量单压到同一条通道，比随机更危险。
+    首个元素的命中概率严格等于 `weight / sum(weight)`（与 epay 轮询组的加权随机同一算法：
+    整数区间 [1, sum] 取点后按配置顺序累加），后续元素在同口径下依次抽取 —— 既保留按权重
+    分流的分布，又能在限速占坑失败时给出下一候选，而不是像 epay 那样一次抽签、失败就不换。
     """
     pool = list(pairs)
     ordered: list[Any] = []
-    if sum(max(w, 0) for _, w in pool) <= 0:
-        picks = [obj for obj, _ in pool]
-        random.shuffle(picks)
-        return picks
     while pool:
         total = sum(max(w, 0) for _, w in pool)
-        point = random.uniform(0, total)
+        if total <= 0:
+            # 防御：正权重在抽完前不会被删光，走到这里说明入参异常。
+            # 不退化成随机：静默换策略会让运营以为按权重分流，实际全量随机。
+            break
+        point = random.randint(1, total)
         acc = 0
         chosen_idx = len(pool) - 1
         for idx, (_, w) in enumerate(pool):
@@ -268,14 +269,20 @@ def _weighted_order(pairs: list[tuple[Any, int]]) -> list[Any]:
 def _order_code_candidates(
     available: list[Channel], mode: int, item_map: dict[int, ChannelCodeItem]
 ) -> list[Channel]:
-    """按**编码级** mode 排定候选：0=随机 / 1=轮询（绑定行游标）/ 2=权重。"""
+    """按**编码级** mode 排定候选：0=随机 / 1=轮询（绑定行游标）/ 2=权重。
+
+    权重 0 = **不参与分流**（与 epay 轮询组加权随机同口径）：既不做首选，也不做限速
+    回退候选。正权重成员全部不可用时返回空列表，由调用方报「编码当前不可用」，
+    不退化成随机或默认路由 —— 编码代表费率/成本边界，静默改策略比报错更难追。
+    """
     if mode == 1:
         return sorted(
             available,
             key=lambda c: (item_map[c.id].last_used_at, item_map[c.id].sort, c.id),
         )
-    if mode == 2 and len(available) > 1:
-        return _weighted_order([(c, item_map[c.id].weight) for c in available])
+    if mode == 2:
+        pool = [(c, item_map[c.id].weight) for c in available if item_map[c.id].weight > 0]
+        return _weighted_order(pool) if pool else []
     pool = list(available)
     random.shuffle(pool)
     return pool
