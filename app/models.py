@@ -230,9 +230,6 @@ class Merchant(SQLModel, table=True):
     deduct_frequency: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))  # 每 N 笔扣 1，0=不扣（防御值，停用请用开关）
     # 起扣金额：单笔买家实付金额（order.realmoney，NULL 时回退 order.money）≥ 该值才参与扣量，0=不限金额
     deduct_minmoney: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
-    # 下游通道编码是否必传（商户级，仅约束开放 API 下单）：
-    # 全新系统默认 1（下游对接必须传编码），商户级开关只用于对个别下游做豁免
-    channel_code_required: bool = Field(default=True, sa_column=Column(Boolean, server_default=text("1"), nullable=False))
     # 固定保护：不受批量随机金额影响
     fixed: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     last_login_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime))
