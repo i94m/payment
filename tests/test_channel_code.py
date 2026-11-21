@@ -8,6 +8,7 @@
 - 编码内通道全不可用 → 报错，且订单的 channel_id 保持 0（没有偷偷选到编码外的通道）
 - 权重全零 → 后台保存被拒；已存在的全零配置不选通道（不退化成随机）
 """
+import random
 from decimal import Decimal
 
 import pytest
@@ -280,6 +281,43 @@ async def test_weighted_distribution_follows_ratio(session, two_channels):
         hits[resolved.channel.id] += 1
     share = hits[channel.id] / rounds
     assert 0.15 < share < 0.35, hits      # 期望 0.25，留足随机波动
+
+
+async def test_weighted_three_channels_50_30_20(session, two_channels):
+    """用户场景：一个编码 3 个通道，权重 50 / 30 / 20（合计 100），命中比例就是 50/30/20。
+
+    走完整链路（`choose_channel_by_code`）而不是只测抽签函数：金额过滤、限速占坑等前置
+    环节都不能把分布带偏。
+    """
+    seeded = two_channels
+    channel, channel2 = seeded["channel"], seeded["channel2"]
+    channel3 = Channel(
+        name="通道三", plugin_name="epay", payment_type_id=seeded["pay_type"].id,
+        merchant_rate=2, cost_rate=1, status=1, mode=0,
+        min_amount=1, max_amount=0, day_limit=0,
+        config=channel.config,
+    )
+    session.add(channel3)
+    await session.commit()
+    await session.refresh(channel3)
+
+    cc = await _mk_code(session, [(channel, 50), (channel2, 30), (channel3, 20)], mode=2)
+    rounds = 600
+    hits = {channel.id: 0, channel2.id: 0, channel3.id: 0}
+    state = random.getstate()
+    random.seed(20261121)
+    try:
+        for _ in range(rounds):
+            resolved = await choose_channel_by_code(
+                session, None, cc.id, seeded["pay_type"].id, dmoney("10.00")
+            )
+            assert resolved is not None
+            hits[resolved.channel.id] += 1
+    finally:
+        random.setstate(state)
+    assert 0.42 < hits[channel.id] / rounds < 0.58, hits     # 期望 0.50
+    assert 0.23 < hits[channel2.id] / rounds < 0.37, hits    # 期望 0.30
+    assert 0.13 < hits[channel3.id] / rounds < 0.27, hits    # 期望 0.20
 
 
 # ============================================================
