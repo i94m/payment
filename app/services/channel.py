@@ -81,15 +81,45 @@ async def _check_day_limit(cache: CacheClient | None, channel: Channel, money: D
         return True
 
 
+def _epay_pick(pairs: list[tuple[Any, int]]) -> Any | None:
+    """加权随机抽签——epay `Channel::random_weight` 的逐行移植（`includes/lib/Channel.php`）：
+
+    ```php
+    $weightSum = 0;
+    foreach ($arr as $value) $weightSum += intval($value['weight']);
+    if ($weightSum <= 0) return false;
+    $randNum = mt_rand(1, $weightSum);
+    foreach ($arr as $v) {
+        if ($randNum <= $v['weight']) return $v['name'];
+        $randNum -= $v['weight'];
+    }
+    ```
+
+    - 在整数区间 `[1, 权重和]` 取点（含首尾），按 `pairs` 顺序累减；命中概率严格等于
+      `weight / 权重和`，权重 0 永远命中不了（区间不推进）。
+    - 权重和 ≤ 0 返回 None（epay 返回 false = 不选通道），不是退化成等概率。
+    - 负数权重由后台校验拦下；这里按 0 处理，避免脏数据把区间顶歪。
+    """
+    total = sum(max(int(w), 0) for _, w in pairs)
+    if total <= 0:
+        return None
+    point = random.randint(1, total)
+    for item, w in pairs:
+        w = max(int(w), 0)
+        if point <= w:
+            return item
+        point -= w
+    return None
+
+
 def _weighted_random(channels: list[Channel]) -> Channel:
-    total = sum(max(c.weight, 0) for c in channels) or len(channels)
-    point = random.uniform(0, total)
-    acc = 0
-    for c in channels:
-        acc += max(c.weight, 0)
-        if point <= acc:
-            return c
-    return channels[-1]
+    """通道级（默认路由）加权随机：一次 epay 抽签。
+
+    通道侧没有「合计 100」的强校验，全零权重属于脏配置：沿用历史兜底（永远取最后一条），
+    不在这里改成报错，避免一条漏配权重的通道把整条支付方式打挂。
+    """
+    pick = _epay_pick([(c, c.weight) for c in channels])
+    return pick if pick is not None else channels[-1]
 
 
 def _ordered_candidates(available: list[Channel], mode: int) -> list[Channel]:
@@ -240,42 +270,50 @@ async def code_supports_type(session: AsyncSession, code_id: int, payment_type_i
 
 
 def _weighted_order(pairs: list[tuple[Any, int]]) -> list[Any]:
-    """按权重不放回抽签。
+    """按权重不放回抽签：每一步都是一次**完整的 epay 抽签**（`_epay_pick`）。
 
-    权重全为 0 时**退化为随机**（保存时已拦截，这里只是防御）：老实现会退化成
-    「永远选最后一条」，运营配错时全量单压到同一条通道，比随机更危险。
+    epay 每单只抽一次，抽中的通道不可用就整单失败；本项目在抽中之后还要原子占坑抢限速
+    名额，抢不到需要换下一条，所以把「一次抽签」重复到池子抽空。逐步抽签与 epay 的
+    「先剔除不可用、再在剩余集合上抽签」分布等价（剔除后相对权重不变），因此：
+
+    - 第一个元素就是 epay 那一抽，概率严格等于 `weight / 权重和`；
+    - 后续元素也只是在剩余集合上按同一口径重抽，不会越出按权重分流的比例。
     """
     pool = list(pairs)
     ordered: list[Any] = []
-    if sum(max(w, 0) for _, w in pool) <= 0:
-        picks = [obj for obj, _ in pool]
-        random.shuffle(picks)
-        return picks
     while pool:
-        total = sum(max(w, 0) for _, w in pool)
-        point = random.uniform(0, total)
-        acc = 0
-        chosen_idx = len(pool) - 1
-        for idx, (_, w) in enumerate(pool):
-            acc += max(w, 0)
-            if point <= acc:
-                chosen_idx = idx
-                break
-        ordered.append(pool.pop(chosen_idx)[0])
+        pick = _epay_pick(pool)
+        if pick is None:
+            # 防御：正权重在抽完前不会被删光，走到这里说明入参异常。
+            # 不退化成随机：静默换策略会让运营以为按权重分流，实际全量随机。
+            break
+        ordered.append(pick)
+        pool = [it for it in pool if it[0] is not pick]
     return ordered
 
 
 def _order_code_candidates(
     available: list[Channel], mode: int, item_map: dict[int, ChannelCodeItem]
 ) -> list[Channel]:
-    """按**编码级** mode 排定候选：0=随机 / 1=轮询（绑定行游标）/ 2=权重。"""
+    """按**编码级** mode 排定候选：0=随机 / 1=轮询（绑定行游标）/ 2=权重。
+
+    权重 0 = **不参与分流**（与 epay 轮询组加权随机同口径）：既不做首选，也不做限速
+    回退候选。正权重成员全部不可用时返回空列表，由调用方报「编码当前不可用」，
+    不退化成随机或默认路由 —— 编码代表费率/成本边界，静默改策略比报错更难追。
+    """
     if mode == 1:
         return sorted(
             available,
             key=lambda c: (item_map[c.id].last_used_at, item_map[c.id].sort, c.id),
         )
-    if mode == 2 and len(available) > 1:
-        return _weighted_order([(c, item_map[c.id].weight) for c in available])
+    if mode == 2:
+        # 抽签顺序 = 后台成员表的顺序（ChannelCodeItem.sort），与 epay 轮询组 `通道:权重`
+        # 串的顺序一致：分界点可以按配置顺序核对（1~50 命中第一行、51~80 命中第二行…）。
+        members = sorted(
+            (c for c in available if item_map[c.id].weight > 0),
+            key=lambda c: (item_map[c.id].sort, c.id),
+        )
+        return _weighted_order([(c, item_map[c.id].weight) for c in members])
     pool = list(available)
     random.shuffle(pool)
     return pool

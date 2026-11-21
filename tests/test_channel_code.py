@@ -6,8 +6,9 @@
 
 两条硬断言（最容易悄悄退化的地方）：
 - 编码内通道全不可用 → 报错，且订单的 channel_id 保持 0（没有偷偷选到编码外的通道）
-- 权重全零 → 后台保存被拒
+- 权重全零 → 后台保存被拒；已存在的全零配置不选通道（不退化成随机）
 """
+import random
 from decimal import Decimal
 
 import pytest
@@ -25,7 +26,7 @@ from app.models import (
     SystemPermission,
 )
 from app.services.balance import dmoney
-from app.services.channel import choose_channel_by_code
+from app.services.channel import _order_code_candidates, choose_channel_by_code
 from tests.conftest import signed_params
 from tests.test_home_dashboard import two_channels  # noqa: F401  复用双通道夹具
 
@@ -230,7 +231,7 @@ async def test_weighted_zero_never_picked(session, two_channels):
     seeded = two_channels
     cc = await _mk_code(session, [
         (seeded["channel"], 0),     # 0 权重 = 不参与抽签
-        (seeded["channel2"], 5),
+        (seeded["channel2"], 100),
     ], mode=2)
     for _ in range(200):
         resolved = await choose_channel_by_code(
@@ -238,6 +239,85 @@ async def test_weighted_zero_never_picked(session, two_channels):
         )
         assert resolved is not None
         assert resolved.channel.id != seeded["channel"].id
+
+
+async def test_weighted_zero_excluded_from_candidates(session, two_channels):
+    """权重 0 不只是「不容易选中」：候选列表里根本没有它，限速回退也轮不到。"""
+    seeded = two_channels
+    channel, channel2 = seeded["channel"], seeded["channel2"]
+    item_map = {
+        channel.id: ChannelCodeItem(code_id=1, channel_id=channel.id, weight=0),
+        channel2.id: ChannelCodeItem(code_id=1, channel_id=channel2.id, weight=100),
+    }
+    for _ in range(50):
+        picked = _order_code_candidates([channel, channel2], 2, item_map)
+        assert [c.id for c in picked] == [channel2.id]
+
+
+async def test_weighted_all_zero_code_has_no_candidate(session, two_channels):
+    """防御：绕过后台校验写进全零权重时，编码内无候选（报不可用），不退化成随机、不越界。"""
+    seeded = two_channels
+    cc = await _mk_code(session, [
+        (seeded["channel"], 0),
+        (seeded["channel2"], 0),
+    ], mode=2)
+    assert await choose_channel_by_code(
+        session, None, cc.id, seeded["pay_type"].id, dmoney("10.00")
+    ) is None
+
+
+async def test_weighted_distribution_follows_ratio(session, two_channels):
+    """权重：25 / 75 两条通道的实际命中比例落在 1/4 附近（不是等概率随机）。"""
+    seeded = two_channels
+    channel, channel2 = seeded["channel"], seeded["channel2"]
+    cc = await _mk_code(session, [(channel, 25), (channel2, 75)], mode=2)
+    rounds = 400
+    hits = {channel.id: 0, channel2.id: 0}
+    for _ in range(rounds):
+        resolved = await choose_channel_by_code(
+            session, None, cc.id, seeded["pay_type"].id, dmoney("10.00")
+        )
+        assert resolved is not None
+        hits[resolved.channel.id] += 1
+    share = hits[channel.id] / rounds
+    assert 0.15 < share < 0.35, hits      # 期望 0.25，留足随机波动
+
+
+async def test_weighted_three_channels_50_30_20(session, two_channels):
+    """用户场景：一个编码 3 个通道，权重 50 / 30 / 20（合计 100），命中比例就是 50/30/20。
+
+    走完整链路（`choose_channel_by_code`）而不是只测抽签函数：金额过滤、限速占坑等前置
+    环节都不能把分布带偏。
+    """
+    seeded = two_channels
+    channel, channel2 = seeded["channel"], seeded["channel2"]
+    channel3 = Channel(
+        name="通道三", plugin_name="epay", payment_type_id=seeded["pay_type"].id,
+        merchant_rate=2, cost_rate=1, status=1, mode=0,
+        min_amount=1, max_amount=0, day_limit=0,
+        config=channel.config,
+    )
+    session.add(channel3)
+    await session.commit()
+    await session.refresh(channel3)
+
+    cc = await _mk_code(session, [(channel, 50), (channel2, 30), (channel3, 20)], mode=2)
+    rounds = 600
+    hits = {channel.id: 0, channel2.id: 0, channel3.id: 0}
+    state = random.getstate()
+    random.seed(20261121)
+    try:
+        for _ in range(rounds):
+            resolved = await choose_channel_by_code(
+                session, None, cc.id, seeded["pay_type"].id, dmoney("10.00")
+            )
+            assert resolved is not None
+            hits[resolved.channel.id] += 1
+    finally:
+        random.setstate(state)
+    assert 0.42 < hits[channel.id] / rounds < 0.58, hits     # 期望 0.50
+    assert 0.23 < hits[channel2.id] / rounds < 0.37, hits    # 期望 0.30
+    assert 0.13 < hits[channel3.id] / rounds < 0.27, hits    # 期望 0.20
 
 
 # ============================================================
@@ -346,11 +426,51 @@ async def test_admin_rejects_all_zero_weights(client, session, two_channels):
     assert "权重" in r.json()["message"]
     assert (await session.exec(select(ChannelCode))).first() is None
 
-    # 至少一个正权重即可保存
-    body["items"][1]["weight"] = 3
+    # 全零之外，权重必须按百分比配置且合计 100
+    body["items"][0]["weight"] = 40
+    body["items"][1]["weight"] = 60
     r = await client.post("/admin-api/pay/channel-codes", json=body, headers=headers)
     assert r.json()["code"] == 0, r.text
     assert (await session.exec(select(ChannelCode))).first() is not None
+
+
+async def test_admin_rejects_weight_total_not_100(client, session, two_channels):
+    """硬断言：权重按百分比配置，合计不等于 100 的保存一律被拒（含单条超 100）。"""
+    headers = await _admin_headers(session)
+    seeded = two_channels
+    body = {
+        "code": "8088", "name": "编码8088", "remark": "", "mode": 2, "status": 1,
+        "items": [
+            {"channel_id": seeded["channel"].id, "weight": 30},
+            {"channel_id": seeded["channel2"].id, "weight": 30},
+        ],
+    }
+    r = await client.post("/admin-api/pay/channel-codes", json=body, headers=headers)
+    assert r.status_code == 400
+    assert r.json()["code"] == -1
+    assert r.json()["message"] == "权重合计必须等于 100（当前 60）"
+    assert (await session.exec(select(ChannelCode))).first() is None
+
+    # 单条超过 100 也要拦（否则「合计 100」可以被 150 + (-50) 之类的脏数据绕过）
+    body["items"] = [
+        {"channel_id": seeded["channel"].id, "weight": 150},
+        {"channel_id": seeded["channel2"].id, "weight": 0},
+    ]
+    r = await client.post("/admin-api/pay/channel-codes", json=body, headers=headers)
+    assert r.json()["code"] == -1
+    assert "不能超过 100" in r.json()["message"]
+
+    # 合计恰好 100（允许有 0 权重成员）即可保存
+    body["items"] = [
+        {"channel_id": seeded["channel"].id, "weight": 100},
+        {"channel_id": seeded["channel2"].id, "weight": 0},
+    ]
+    r = await client.post("/admin-api/pay/channel-codes", json=body, headers=headers)
+    assert r.json()["code"] == 0, r.text
+    detail = (await client.get(
+        f"/admin-api/pay/channel-codes/{r.json()['data']['id']}", headers=headers
+    )).json()["data"]
+    assert [it["weight"] for it in detail["items"]] == [100, 0]
 
 
 async def test_admin_channel_delete_blocked_when_referenced(client, session, two_channels):
