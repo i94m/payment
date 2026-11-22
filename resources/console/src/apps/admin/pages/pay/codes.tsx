@@ -66,6 +66,7 @@ const codeSchema = z.object({
   remark: z.string().trim().max(255, "备注最多 255 个字符"),
   mode: z.number(),
   status: z.number(),
+  is_test: z.boolean(),
   members: z.record(z.string(), memberSchema),
 }).superRefine((values, ctx) => {
   const items = Object.values(values.members)
@@ -92,7 +93,7 @@ const codeSchema = z.object({
 type CodeFormValues = z.infer<typeof codeSchema>
 
 const emptyValues = (): CodeFormValues => ({
-  code: "", name: "", remark: "", mode: 0, status: 1, members: {},
+  code: "", name: "", remark: "", mode: 0, status: 1, is_test: false, members: {},
 })
 
 /**
@@ -187,7 +188,7 @@ export function ChannelCodesPage() {
       setEditingId(id)
       codeForm.reset({
         code: detail.code, name: detail.name, remark: detail.remark,
-        mode: detail.mode, status: detail.status, members: memberMap,
+        mode: detail.mode, status: detail.status, is_test: detail.is_test, members: memberMap,
       })
       setDialogOpen(true)
     } catch (err) {
@@ -255,6 +256,7 @@ export function ChannelCodesPage() {
       remark: values.remark.trim(),
       mode: values.mode,
       status: values.status,
+      is_test: values.is_test,
       items: items.map((it, idx) => ({ ...it, sort: idx })),
     }
     setSaving(true)
@@ -335,6 +337,16 @@ export function ChannelCodesPage() {
         header: () => "昨日收款",
         cell: ({ row }) => secondaryCell(row.original.yesterday_amount ?? "-"),
         meta: { headClassName: "w-[100px] text-right", cellClassName: "text-right" },
+      },
+      {
+        accessorKey: "is_test",
+        enableSorting: false,
+        header: () => "用途",
+        cell: ({ row }) => (row.original.is_test
+          ? <Badge className="border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400">{"测试编码"}</Badge>
+          : <span className="text-sm text-muted-foreground">{"正式"}</span>
+        ),
+        meta: { headClassName: "w-[90px] text-center", cellClassName: "text-center" },
       },
       {
         accessorKey: "status",
@@ -418,17 +430,19 @@ export function ChannelCodesPage() {
           <DialogHeader>
             <DialogTitle>{editingId ? "修改通道编码" : "新增通道编码"}</DialogTitle>
             <DialogDescription>
-              {"下游下单时带上这个编码，订单只会走这里勾选的通道，不会跑到别的通道上去。"}
+              {"下游带此编码下单，只走这里勾选的通道。"}
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={codeForm.handleSubmit(submit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+            {/* 四列栅格：编码/名称各占半行；策略占 1/2，是否启用、测试通道各占 1/4，同一行铺满。
+                窄屏回退两列：编码/名称/策略各占整行，两个开关并排各占半行 */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               <Controller
                 name="code"
                 control={codeForm.control}
                 render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
+                  <Field data-invalid={fieldState.invalid} className="col-span-2">
                     <FieldLabel htmlFor="code">{"通道编码"}<RequiredMark /></FieldLabel>
                     <Input
                       {...field}
@@ -447,7 +461,7 @@ export function ChannelCodesPage() {
                 name="name"
                 control={codeForm.control}
                 render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
+                  <Field data-invalid={fieldState.invalid} className="col-span-2">
                     <FieldLabel htmlFor="code-name">{"名称"}</FieldLabel>
                     <Input
                       {...field}
@@ -463,7 +477,7 @@ export function ChannelCodesPage() {
                 name="mode"
                 control={codeForm.control}
                 render={({ field }) => (
-                  <Field>
+                  <Field className="col-span-2">
                     <FieldLabel htmlFor="code-mode">{"策略"}</FieldLabel>
                     <Select value={String(field.value)} onValueChange={(v) => field.onChange(Number(v))}>
                       <SelectTrigger id="code-mode" className="w-full"><SelectValue /></SelectTrigger>
@@ -485,7 +499,7 @@ export function ChannelCodesPage() {
                 name="status"
                 control={codeForm.control}
                 render={({ field }) => (
-                  <Field>
+                  <Field className="col-span-1">
                     <FieldLabel htmlFor="code-status">{"是否启用"}</FieldLabel>
                     <div className="flex h-9 items-center gap-2">
                       <Switch
@@ -495,9 +509,25 @@ export function ChannelCodesPage() {
                       />
                       <span className="text-sm text-muted-foreground">{field.value === 1 ? "启用" : "停用"}</span>
                     </div>
-                    <FieldDescription className="text-xs">
-                      {"停用后下游再用这个编码下单会直接报错"}
-                    </FieldDescription>
+                    <FieldDescription className="text-xs">{"停用后该编码不能下单"}</FieldDescription>
+                  </Field>
+                )}
+              />
+              <Controller
+                name="is_test"
+                control={codeForm.control}
+                render={({ field }) => (
+                  <Field className="col-span-1">
+                    <FieldLabel htmlFor="code-is-test">{"测试通道"}</FieldLabel>
+                    <div className="flex h-9 items-center gap-2">
+                      <Switch
+                        id="code-is-test"
+                        checked={field.value}
+                        onCheckedChange={(v) => field.onChange(v)}
+                      />
+                      <span className="text-sm text-muted-foreground">{field.value ? "测试编码" : "正式编码"}</span>
+                    </div>
+                    <FieldDescription className="text-xs">{"仅用于对接联调"}</FieldDescription>
                   </Field>
                 )}
               />
