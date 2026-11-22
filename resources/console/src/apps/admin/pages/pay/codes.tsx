@@ -371,7 +371,7 @@ export function ChannelCodesPage() {
           </DialogHeader>
 
           <form onSubmit={codeForm.handleSubmit(submit)} className="space-y-4">
-            {/* 四列栅格：编码/名称各占半行；策略、是否启用、测试通道同一行各占 1/4，末尾 1/4 留白。
+            {/* 四列栅格：编码/名称各占半行；策略占 1/2，是否启用、测试通道各占 1/4，同一行铺满。
                 窄屏回退两列：编码/名称/策略各占整行，两个开关并排各占半行 */}
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               <Controller
@@ -413,7 +413,7 @@ export function ChannelCodesPage() {
                 name="mode"
                 control={codeForm.control}
                 render={({ field }) => (
-                  <Field className="col-span-2 sm:col-span-1">
+                  <Field className="col-span-2">
                     <FieldLabel htmlFor="code-mode">{"策略"}</FieldLabel>
                     <Select value={String(field.value)} onValueChange={(v) => field.onChange(Number(v))}>
                       <SelectTrigger id="code-mode" className="w-full"><SelectValue /></SelectTrigger>
