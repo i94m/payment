@@ -8,6 +8,7 @@
 - 精细搜索（按字段）+ 状态筛选 + 排序 + 高级搜索（N 天无订单）+ Excel 导出
 - SSO 一键登录商户后台（一次性 token，60 秒有效）
 """
+import logging
 import secrets
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -22,9 +23,11 @@ from sqlalchemy import exists as sa_exists
 from sqlmodel import col, func, select
 
 from app.core.deps import CacheDep, SessionDep
-from app.core.security import AdminUser, PermissionChecker, hash_password, revoke_all_tokens
+from app.core.security import (
+    AdminUser, AuthResult, PermissionChecker, hash_password, revoke_all_tokens,
+)
 from app.lib.export import export_xlsx
-from app.models import Merchant, MerchantRecord, Order, Settlement
+from app.models import ChannelCode, Merchant, MerchantRecord, Order, Settlement
 from app.responses import err, paginate, suc
 from app.routers.common.params import parse_int
 from app.services.merchant import generate_merchant_pid
@@ -35,6 +38,10 @@ from app.lib.sign import derive_public_key, pem_to_flat
 from app.services.apikey import get_api_secret, set_api_secret
 
 router = APIRouter()
+
+# 审计日志独立命名空间（作为 "app" 的子 logger，handler 挂在父级 "app" 上，
+# 记录向上冒泡写进同一份 app.log；名字带 audit 便于 grep 出后台敏感操作）
+logger = logging.getLogger("app.audit")
 
 
 # 列表搜索字段白名单（column 参数）
@@ -247,11 +254,54 @@ async def merchant_platform_key(session: SessionDep):
 
 
 @router.get("/{merchant_id}", dependencies=[Depends(PermissionChecker("merchant.view"))])
-async def merchant_detail(merchant_id: int, session: SessionDep):
+async def merchant_detail(merchant_id: int, session: SessionDep, request: Request,
+                          auth: AdminUser):
+    """商户详情（后台「API密钥」弹窗用）。
+
+    比列表接口多两项，仅此接口下发：
+
+    - `api_secret`：MD5 签名密钥**明文**（需求方明确后台不脱敏，运营要整段发给客户）。
+      列表接口 `_dump_merchant` 仍只给掩码，避免一次拉全平台密钥。每返回一次明文都
+      落一条审计日志（谁 / 何时 / 哪个商户 / 来源 IP），见 `_audit_secret_view`。
+    - `channel_code`：全局「测试编码」（`is_test=1` 且启用，多条取 id 最小）的
+      `{code, name}`，没有则为 null；卡片据此决定「业务编码」整行是否展示。
+      口径与商户端 `/merchant-api/account/apikey` 完全一致。
+    """
     m = await _get_merchant_or_404(session, merchant_id)
     if not m:
         return err(404, "商户不存在")
-    return suc(_dump_merchant(m))
+    data = _dump_merchant(m)
+    secret = get_api_secret(m)
+    data["api_secret"] = secret or ""
+    picked = (await session.exec(
+        select(ChannelCode)
+        .where(col(ChannelCode.status) == 1, col(ChannelCode.is_test).is_(True))
+        .order_by(col(ChannelCode.id))
+        .limit(1)
+    )).first()
+    data["channel_code"] = (
+        {"code": picked.code, "name": picked.name or ""} if picked else None
+    )
+    if secret:
+        _audit_secret_view(request, auth, m)
+    return suc(data)
+
+
+def _audit_secret_view(request: Request, auth: AuthResult, m: Merchant) -> None:
+    """留痕：后台查看了某商户的明文签名密钥。
+
+    仓库暂无操作审计表（只有登录日志），所以先落到 app.log 的 `app.audit`
+    命名 logger：一行一条，带 request_id，可 grep；后续若加 `admin_audit_logs`
+    表，改这一处即可。日志本身**不写密钥内容**。
+    """
+    logger.info(
+        "admin_audit action=view_merchant_api_secret admin_id=%s admin=%s "
+        "merchant_id=%s pid=%s ip=%s",
+        getattr(auth.user, "id", ""),
+        getattr(auth.user, "username", ""),
+        m.id, m.pid,
+        request.client.host if request.client else "",
+    )
 
 
 class CreateMerchantRequest(BaseModel):
