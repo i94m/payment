@@ -132,3 +132,76 @@ async def test_admin_channel_code_is_test_roundtrip(client, session, seeded):
     resp = await client.get("/merchant-api/account/apikey",
                             headers=await _merchant_headers(session))
     assert resp.json()["data"]["channel_code"] is None
+
+
+@pytest.mark.asyncio
+async def test_channel_codes_lists_enabled_codes_with_pay_types(client, seeded, session):
+    """「支付通道」卡片：只列启用编码，支付方式取编码内启用中通道的类型。
+
+    - 停用编码（status=0）不出现：下单会直接报错
+    - 停用通道不贡献支付方式：它不参与分流，列出来等于虚假可用
+    - 停用的支付方式（payment_types.status=0）也不下发
+    - 没有任何可用通道的编码照常列，但 pay_types 为空数组（前端提示「暂不可用」）
+    """
+    from app.models import Channel, ChannelCodeItem, PaymentType
+    from app.services.crypto import encrypt_config
+
+    wx = PaymentType(code="wxpay", name="微信支付", status=1, sort=2)
+    bank = PaymentType(code="bank", name="银行卡", status=0, sort=3)
+    session.add_all([wx, bank])
+    await session.commit()
+    await session.refresh(wx)
+    await session.refresh(bank)
+
+    cfg = encrypt_config({"appurl": "https://upstream.example/", "appid": "2001",
+                          "appkey": "k", "appswitch": "1"})
+    ch_wx = Channel(name="微信上游", plugin_name="epay", payment_type_id=wx.id,
+                    status=1, mode=0, config=cfg)
+    ch_bank = Channel(name="银行上游", plugin_name="epay", payment_type_id=bank.id,
+                      status=1, mode=0, config=cfg)
+    ch_alipay_off = Channel(name="支付宝停用上游", plugin_name="epay",
+                            payment_type_id=seeded["pay_type"].id, status=0, mode=0, config=cfg)
+    session.add_all([ch_wx, ch_bank, ch_alipay_off])
+    await session.commit()
+    for ch in (ch_wx, ch_bank, ch_alipay_off):
+        await session.refresh(ch)
+
+    codes = {
+        "a001": ChannelCode(code="a001", name="全支付", status=1),
+        "b001": ChannelCode(code="b001", name="停用编码", status=0),
+        "c001": ChannelCode(code="c001", name="只有停用通道", status=1, is_test=True,
+                            remark="联调用"),
+        "d001": ChannelCode(code="d001", name="未绑定", status=1),
+    }
+    for c in codes.values():
+        session.add(c)
+    await session.commit()
+    for c in codes.values():
+        await session.refresh(c)
+    for code, channel_ids in {
+        codes["a001"].id: [seeded["channel"].id, ch_wx.id, ch_bank.id],
+        codes["c001"].id: [ch_alipay_off.id],
+    }.items():
+        for cid in channel_ids:
+            session.add(ChannelCodeItem(code_id=code, channel_id=cid, weight=1, sort=0))
+    await session.commit()
+
+    resp = await client.get("/merchant-api/account/channel-codes",
+                            headers=await _merchant_headers(session))
+    body = resp.json()
+    assert body["code"] == 0, body
+    data = body["data"]
+    # 停用编码不出现；启用编码按 id 升序
+    assert [c["code"] for c in data] == ["a001", "c001", "d001"]
+
+    a = data[0]
+    assert a["name"] == "全支付"
+    # 支付宝（sort=1）+ 微信（sort=2）；银行卡的支付方式停用、被过滤
+    assert [t["code"] for t in a["pay_types"]] == ["alipay", "wxpay"]
+    assert a["pay_types"][1] == {"code": "wxpay", "name": "微信支付", "icon": ""}
+
+    c = data[1]
+    assert c["is_test"] is True
+    assert c["remark"] == "联调用"
+    assert c["pay_types"] == []
+    assert data[2]["pay_types"] == []
