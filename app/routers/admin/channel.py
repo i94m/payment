@@ -698,6 +698,8 @@ class ChannelCodeRequest(BaseModel):
     remark: str = ""
     mode: int = 0
     status: int = 1
+    # 测试编码：商户端「对接信息」只展示这条（允许多条，取 id 最小的一条启用编码）
+    is_test: bool = False
     items: list[ChannelCodeItemRequest] = []
 
 
@@ -857,6 +859,7 @@ async def channel_code_list(session: SessionDep, page: int = Query(1, ge=1),
             "remark": c.remark or "",
             "mode": c.mode,
             "status": c.status,
+            "is_test": bool(c.is_test),
             "item_count": len(members),
             "members": [
                 _dump_code_item(it, channel_map.get(it.channel_id)) for it in members
@@ -891,6 +894,7 @@ async def channel_code_detail(code_id: int, session: SessionDep):
         "remark": c.remark or "",
         "mode": c.mode,
         "status": c.status,
+        "is_test": bool(c.is_test),
         "items": [_dump_code_item(it, channels.get(it.channel_id)) for it in items],
     })
 
@@ -906,6 +910,7 @@ async def channel_code_create(body: ChannelCodeRequest, session: SessionDep):
         remark=(body.remark or "").strip()[:255] or None,
         mode=body.mode,
         status=1 if body.status == 1 else 0,
+        is_test=bool(body.is_test),
     )
     session.add(c)
     await session.commit()
@@ -928,6 +933,7 @@ async def channel_code_update(code_id: int, body: ChannelCodeRequest, session: S
     c.remark = (body.remark or "").strip()[:255] or None
     c.mode = body.mode
     c.status = 1 if body.status == 1 else 0
+    c.is_test = bool(body.is_test)
     session.add(c)
     await _replace_code_items(session, code_id, body.items)
     await session.commit()

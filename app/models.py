@@ -346,6 +346,8 @@ class ChannelCode(SQLModel, table=True):
     - `mode` 是**编码级**策略（0=随机 1=轮询 2=权重），与通道自身的 mode 互不影响：
       同一个通道被多个编码引用时，各编码按自己的策略分流
     - `status=0` 是编码总闸：停用后该编码下单直接报错，不回落默认路由
+    - `is_test=1` 标记「测试编码」：商户端对接信息只展示这条（多条时取 id 最小的一条）。
+      标记挂在业务编码而不是上游通道上 —— 卡片展示的是编码，标记要跟着被展示的那条走
     """
     __tablename__ = "channel_codes"
     __table_args__ = (
@@ -359,6 +361,7 @@ class ChannelCode(SQLModel, table=True):
     remark: Optional[str] = Field(default=None, sa_column=Column(String(255)))
     mode: int = Field(default=0, sa_column=Column(SmallInteger, server_default=text("0"), nullable=False))  # 0=随机 1=轮询 2=权重
     status: int = Field(default=1, sa_column=Column(SmallInteger, server_default=text("1"), nullable=False))  # 1=启用 0=停用
+    is_test: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))  # 1=测试编码
     created_at: Optional[datetime] = _ts_created()
     updated_at: Optional[datetime] = _ts_updated()
 

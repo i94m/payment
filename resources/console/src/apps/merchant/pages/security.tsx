@@ -20,9 +20,10 @@ import { PanelError } from "@/components/data-list"
 import { getErrorMessage } from "@/lib/error"
 import { cn } from "@/lib/utils"
 import {
-  IconEye, IconEyeOff, IconKey, IconRefresh, IconShieldCheck,
+  IconCheck, IconCopy, IconEye, IconEyeOff, IconKey, IconRefresh, IconShieldCheck,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard"
 
 const DEBUG_PLACEHOLDER = `{
   "pid": "1001",
@@ -67,6 +68,50 @@ function SignOption({
         {hint && <span className="text-xs text-amber-600 dark:text-amber-500">{hint}</span>}
       </div>
     </label>
+  )
+}
+
+/** 对接信息一行：标签 + 值 + 可选操作（如密钥的眼睛按钮）+ 复制按钮。
+ *  复制目标可单独传入：密钥行按当前「可见状态」复制（脱敏时复制脱敏值）。 */
+function IntegrationRow({
+  label, value, copyValue, children,
+}: {
+  label: string
+  value: string
+  copyValue?: string
+  children?: React.ReactNode
+}) {
+  const { copyToClipboard, isCopied } = useCopyToClipboard()
+  const target = copyValue ?? value
+  const onCopy = async () => {
+    if (!target) return
+    if (!(await copyToClipboard(target))) {
+      toast.error("复制失败，请手动选中文本复制")
+    }
+  }
+  return (
+    <div className="flex items-start gap-3 px-4 py-2.5">
+      <span className="w-16 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 break-all font-mono text-sm">
+        {value || "-"}
+      </span>
+      <div className="flex shrink-0 items-center">
+        {children}
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-8"
+          aria-label={`复制${label}`}
+          title={`复制${label}`}
+          disabled={!target}
+          onClick={onCopy}
+        >
+          {isCopied
+            ? <IconCheck className="size-4 text-green-500" />
+            : <IconCopy className="size-4" />}
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -118,6 +163,43 @@ export function SecurityPage() {
   const maskedSecret = secret
     ? `${secret.slice(0, 4)}${"*".repeat(Math.max(secret.length - 8, 8))}${secret.slice(-4)}`
     : ""
+
+  // ---- 对接信息（可整段复制给接入方的纯文本）----
+  const { copyToClipboard: copyIntegration, isCopied: integrationCopied } = useCopyToClipboard()
+  // 域名一律取当前访问页面的 origin：客户从哪个域名登录，拿到的就是哪个域名
+  const site = window.location.origin.replace(/\/+$/, "")
+  // 业务编码只展示后台标了「测试编码」的那条（由后端挑选，前端不判断用途）；
+  // 没有标记时这一行整行不展示，也不回退到正式编码。
+  const codeValue = apiKey?.channel_code
+    ? (apiKey.channel_code.name
+      ? `${apiKey.channel_code.code} - ${apiKey.channel_code.name}`
+      : apiKey.channel_code.code)
+    : ""
+  // 复制跟随当前可见状态：脱敏时复制脱敏值，点眼睛后才复制明文
+  const visibleSecret = showSecret ? secret : maskedSecret
+  // RSA2 生效时没有可交付的共享密钥（私钥只在商户侧），不能把已停用的 MD5 密钥发出去
+  const secretValue = rsa2 ? "RSA2 签名（私钥由接入方自行保管）" : visibleSecret
+  const integrationFields: Array<[string, string]> = apiKey ? [
+    ["商户名称", apiKey.username],
+    ["商户号", String(apiKey.pid)],
+    ["API密钥", secretValue],
+    // 只有被标记为测试编码时才占一行；缺这一行不影响其它字段与整段复制
+    ...(codeValue ? [["业务编码", codeValue] as [string, string]] : []),
+    ["下单地址", `${site}/api/orders`],
+    ["查询地址", `${site}/api/orders/{trade_no}`],
+    ["对接文档", `${site}/docs`],
+  ] : []
+  const integrationText = apiKey ? [
+    "【商户对接参数】",
+    ...integrationFields.map(([label, value]) => `${label}：${value}`),
+  ].join("\n") : ""
+
+  const doCopyIntegration = async () => {
+    if (!integrationText) return
+    if (!(await copyIntegration(integrationText))) {
+      toast.error("复制失败，请手动选中文本复制")
+    }
+  }
 
   /** 重置 MD5 密钥：旧密钥立即失效，接入方需同步更换 */
   const doResetSecret = async () => {
@@ -248,149 +330,222 @@ export function SecurityPage() {
           {loading && !apiKey ? (
             <Skeleton className="h-80 w-full rounded-xl" />
           ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>{"接入信息"}</CardTitle>
-                <CardDescription>{"商户号、签名方式与当前生效的密钥。"}</CardDescription>
-                {/* 签名自检只对 MD5 有意义：RSA2 的期望签名只能由商户私钥生成，平台给不出 */}
-                {!rsa2 && (
-                  <CardAction>
-                    <Button size="sm" variant="outline" onClick={() => setDebugOpen(true)}>
-                      <IconShieldCheck className="size-4" />
-                      {"签名自检"}
-                    </Button>
-                  </CardAction>
-                )}
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {/* 签名方式切换 */}
-                <div className="space-y-2">
-                  <Label>{"签名方式"}</Label>
-                  <RadioGroup
-                    value={rsa2 ? "RSA2" : "MD5"}
-                    onValueChange={selectSignType}
-                    disabled={switchBusy}
-                    className="grid gap-3 sm:grid-cols-2"
-                  >
-                    <SignOption
-                      value="MD5"
-                      title="MD5 密钥签名"
-                      description="对称密钥，开箱即用。"
-                      active={!rsa2}
-                    />
-                    <SignOption
-                      value="RSA2"
-                      title="RSA2 非对称签名"
-                      description="非对称密钥，需配置公钥。"
-                      active={rsa2}
-                      hint={!rsa2 && !apiKey?.public_key ? "选择后会先引导配置公钥" : undefined}
-                    />
-                  </RadioGroup>
-                  <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                    {`注意：当前仅接受 sign_type=${rsa2 ? "RSA2" : "MD5"}。`}
-                  </p>
-                </div>
-
-                {/* 身份：pid 是接入最常用的信息，用独立展示条放大并支持一键复制 */}
-                <div className="grid gap-2">
-                  <Label>{"商户ID (pid)"}</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      readOnly
-                      value={String(apiKey?.pid ?? "")}
-                      className="font-mono text-sm"
-                      onFocus={(e) => e.currentTarget.select()}
-                      onClick={(e) => e.currentTarget.select()}
-                    />
-                    <CopyButton
-                      value={String(apiKey?.pid ?? "")}
-                      aria-label="复制商户ID"
-                      className="size-8"
-                    />
-                  </div>
-                </div>
-
-                {/* 只展示当前生效算法的凭据 */}
-                {!rsa2 ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label>{"MD5 密钥"}</Label>
+            <>
+              {/* 对接信息：整段/逐项复制给接入方的纯文本，密钥按当前可见状态复制 */}
+              {apiKey && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{"对接信息"}</CardTitle>
+                    <CardDescription>
+                      {"可直接复制发送给接入方，内容为「字段：值」纯文本（非表格/HTML）。"}
+                    </CardDescription>
+                    <CardAction>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => setSecretResetOpen(true)}
+                        onClick={doCopyIntegration}
+                        disabled={!integrationText}
                       >
-                        <IconRefresh className="size-4" />
-                        {"重置密钥"}
+                        {integrationCopied
+                          ? <IconCheck className="size-4 text-green-500" />
+                          : <IconCopy className="size-4" />}
+                        {"一键复制全部信息"}
                       </Button>
+                    </CardAction>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div>
+                      <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
+                        {"【商户对接参数】"}
+                      </div>
+                      {integrationFields.map(([label, value]) => {
+                        // RSA2 下没有可交付的共享密钥，这一行不可单独复制
+                        const cannotCopy = label === "API密钥" && rsa2
+                        return (
+                          <IntegrationRow
+                            key={label}
+                            label={label}
+                            value={value}
+                            copyValue={cannotCopy ? "" : undefined}
+                          >
+                            {label === "API密钥" && !rsa2 && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8"
+                                aria-label={showSecret ? "隐藏密钥" : "显示密钥"}
+                                title={showSecret ? "隐藏密钥" : "查看明文"}
+                                onClick={() => setShowSecret((v) => !v)}
+                              >
+                                {showSecret
+                                  ? <IconEyeOff className="size-4" />
+                                  : <IconEye className="size-4" />}
+                              </Button>
+                            )}
+                          </IntegrationRow>
+                        )
+                      })}
                     </div>
+                    <div className="space-y-1 px-4 py-2.5 text-xs text-muted-foreground">
+                      <p>
+                        {apiKey.channel_code_required
+                          ? (apiKey.channel_code
+                            ? "下单时必须携带 channel_code 参数（即上方业务编码）。"
+                            : "下单时必须携带 channel_code 参数（业务编码由运营另行提供）。")
+                          : "当前未强制 channel_code，不传时按平台默认路由。"}
+                        {rsa2
+                          ? "当前为 RSA2 签名，平台不保存私钥，对接信息中不包含密钥明文。"
+                          : "API 密钥默认脱敏，点眼睛查看明文后复制才会带明文。"}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>{"接入信息"}</CardTitle>
+                  <CardDescription>{"商户号、签名方式与当前生效的密钥。"}</CardDescription>
+                  {/* 签名自检只对 MD5 有意义：RSA2 的期望签名只能由商户私钥生成，平台给不出 */}
+                  {!rsa2 && (
+                    <CardAction>
+                      <Button size="sm" variant="outline" onClick={() => setDebugOpen(true)}>
+                        <IconShieldCheck className="size-4" />
+                        {"签名自检"}
+                      </Button>
+                    </CardAction>
+                  )}
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  {/* 签名方式切换 */}
+                  <div className="space-y-2">
+                    <Label>{"签名方式"}</Label>
+                    <RadioGroup
+                      value={rsa2 ? "RSA2" : "MD5"}
+                      onValueChange={selectSignType}
+                      disabled={switchBusy}
+                      className="grid gap-3 sm:grid-cols-2"
+                    >
+                      <SignOption
+                        value="MD5"
+                        title="MD5 密钥签名"
+                        description="对称密钥，开箱即用。"
+                        active={!rsa2}
+                      />
+                      <SignOption
+                        value="RSA2"
+                        title="RSA2 非对称签名"
+                        description="非对称密钥，需配置公钥。"
+                        active={rsa2}
+                        hint={!rsa2 && !apiKey?.public_key ? "选择后会先引导配置公钥" : undefined}
+                      />
+                    </RadioGroup>
+                    <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                      {`注意：当前仅接受 sign_type=${rsa2 ? "RSA2" : "MD5"}。`}
+                    </p>
+                  </div>
+
+                  {/* 身份：pid 是接入最常用的信息，用独立展示条放大并支持一键复制 */}
+                  <div className="grid gap-2">
+                    <Label>{"商户ID (pid)"}</Label>
                     <div className="flex items-center gap-2">
                       <Input
                         readOnly
-                        value={showSecret ? secret : maskedSecret}
-                        placeholder="加载中"
-                        className="min-w-0 flex-1 font-mono text-xs"
+                        value={String(apiKey?.pid ?? "")}
+                        className="font-mono text-sm"
+                        onFocus={(e) => e.currentTarget.select()}
+                        onClick={(e) => e.currentTarget.select()}
                       />
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={showSecret ? "隐藏密钥" : "显示密钥"}
-                        onClick={() => setShowSecret((v) => !v)}
-                      >
-                        {showSecret ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
-                      </Button>
-                      <CopyButton value={secret} />
+                      <CopyButton
+                        value={String(apiKey?.pid ?? "")}
+                        aria-label="复制商户ID"
+                        className="size-8"
+                      />
                     </div>
                   </div>
-                ) : (
-                  <div className="space-y-4">
+
+                  {/* 只展示当前生效算法的凭据 */}
+                  {!rsa2 ? (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-2">
-                        <Label>{"商户公钥"}</Label>
-                        {!!apiKey?.public_key && <CopyButton value={apiKey.public_key} />}
+                        <Label>{"MD5 密钥"}</Label>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setSecretResetOpen(true)}
+                        >
+                          <IconRefresh className="size-4" />
+                          {"重置密钥"}
+                        </Button>
                       </div>
-                      <Textarea
-                        readOnly
-                        value={apiKey?.public_key || ""}
-                        rows={3}
-                        placeholder="暂未生成"
-                        className="resize-none field-sizing-fixed break-all bg-muted font-mono text-xs"
-                      />
-                      <p className="text-xs text-muted-foreground">{"用于平台验证你的请求签名。"}</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <Label>{"平台公钥"}</Label>
-                        {!!apiKey?.platform_public_key && <CopyButton value={apiKey.platform_public_key} />}
+                      <div className="flex items-center gap-2">
+                        <Input
+                          readOnly
+                          value={showSecret ? secret : maskedSecret}
+                          placeholder="加载中"
+                          className="min-w-0 flex-1 font-mono text-xs"
+                        />
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          aria-label={showSecret ? "隐藏密钥" : "显示密钥"}
+                          onClick={() => setShowSecret((v) => !v)}
+                        >
+                          {showSecret ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
+                        </Button>
+                        <CopyButton value={secret} />
                       </div>
-                      <Textarea
-                        readOnly
-                        value={apiKey?.platform_public_key || ""}
-                        rows={3}
-                        placeholder="暂未生成"
-                        className="resize-none field-sizing-fixed break-all bg-muted font-mono text-xs"
-                      />
-                      <p className="text-xs text-muted-foreground">{"用于验证平台通知签名。"}</p>
                     </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label>{"商户公钥"}</Label>
+                          {!!apiKey?.public_key && <CopyButton value={apiKey.public_key} />}
+                        </div>
+                        <Textarea
+                          readOnly
+                          value={apiKey?.public_key || ""}
+                          rows={3}
+                          placeholder="暂未生成"
+                          className="resize-none field-sizing-fixed break-all bg-muted font-mono text-xs"
+                        />
+                        <p className="text-xs text-muted-foreground">{"用于平台验证你的请求签名。"}</p>
+                      </div>
 
-                    <div className="flex items-center justify-between gap-3 border-t pt-4">
-                      <p className="text-xs text-muted-foreground">{"私钥仅生成时显示一次，平台不保存。"}</p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0 text-destructive hover:text-destructive"
-                        onClick={() => setRsaResetOpen(true)}
-                      >
-                        <IconRefresh className="size-4" />
-                        {"重置密钥对"}
-                      </Button>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label>{"平台公钥"}</Label>
+                          {!!apiKey?.platform_public_key && <CopyButton value={apiKey.platform_public_key} />}
+                        </div>
+                        <Textarea
+                          readOnly
+                          value={apiKey?.platform_public_key || ""}
+                          rows={3}
+                          placeholder="暂未生成"
+                          className="resize-none field-sizing-fixed break-all bg-muted font-mono text-xs"
+                        />
+                        <p className="text-xs text-muted-foreground">{"用于验证平台通知签名。"}</p>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 border-t pt-4">
+                        <p className="text-xs text-muted-foreground">{"私钥仅生成时显示一次，平台不保存。"}</p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0 text-destructive hover:text-destructive"
+                          onClick={() => setRsaResetOpen(true)}
+                        >
+                          <IconRefresh className="size-4" />
+                          {"重置密钥对"}
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
+            </>
           )}
         </div>
       </div>

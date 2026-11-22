@@ -180,6 +180,8 @@ export interface ChannelCodeData {
   /** 0=随机 1=轮询 2=权重 */
   mode: number
   status: number
+  /** 测试编码：商户端「对接信息」只展示被标记的这条 */
+  is_test: boolean
   item_count: number
   members: ChannelCodeItemData[]
   today_count?: number
@@ -196,6 +198,7 @@ export interface ChannelCodeDetailData {
   remark: string
   mode: number
   status: number
+  is_test: boolean
   items: ChannelCodeItemData[]
 }
 
@@ -205,6 +208,7 @@ export interface ChannelCodePayload {
   remark: string
   mode: number
   status: number
+  is_test: boolean
   items: { channel_id: number; weight: number; sort?: number }[]
 }
 
