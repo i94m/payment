@@ -366,7 +366,7 @@ export function ChannelCodesPage() {
           <DialogHeader>
             <DialogTitle>{editingId ? "修改通道编码" : "新增通道编码"}</DialogTitle>
             <DialogDescription>
-              {"下游下单时带上这个编码，订单只会走这里勾选的通道，不会跑到别的通道上去。"}
+              {"下游带此编码下单，只走这里勾选的通道。"}
             </DialogDescription>
           </DialogHeader>
 
@@ -428,11 +428,15 @@ export function ChannelCodesPage() {
                   </Field>
                 )}
               />
+            </div>
+
+            {/* 两个开关各占表单 1/4（四列栅格各一列），窄屏回退两列 */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               <Controller
                 name="status"
                 control={codeForm.control}
                 render={({ field }) => (
-                  <Field>
+                  <Field className="sm:col-span-1">
                     <FieldLabel htmlFor="code-status">{"是否启用"}</FieldLabel>
                     <div className="flex h-9 items-center gap-2">
                       <Switch
@@ -442,9 +446,7 @@ export function ChannelCodesPage() {
                       />
                       <span className="text-sm text-muted-foreground">{field.value === 1 ? "启用" : "停用"}</span>
                     </div>
-                    <FieldDescription className="text-xs">
-                      {"停用后下游再用这个编码下单会直接报错"}
-                    </FieldDescription>
+                    <FieldDescription className="text-xs">{"停用后该编码不能下单"}</FieldDescription>
                   </Field>
                 )}
               />
@@ -452,7 +454,7 @@ export function ChannelCodesPage() {
                 name="is_test"
                 control={codeForm.control}
                 render={({ field }) => (
-                  <Field>
+                  <Field className="sm:col-span-1">
                     <FieldLabel htmlFor="code-is-test">{"测试通道"}</FieldLabel>
                     <div className="flex h-9 items-center gap-2">
                       <Switch
@@ -462,9 +464,7 @@ export function ChannelCodesPage() {
                       />
                       <span className="text-sm text-muted-foreground">{field.value ? "测试编码" : "正式编码"}</span>
                     </div>
-                    <FieldDescription className="text-xs">
-                      {"商户端「对接信息」只展示测试编码（多条时取 id 最小的一条，需启用）"}
-                    </FieldDescription>
+                    <FieldDescription className="text-xs">{"仅用于对接联调"}</FieldDescription>
                   </Field>
                 )}
               />
@@ -475,8 +475,8 @@ export function ChannelCodesPage() {
                 <FieldLabel>{"关联通道"}<RequiredMark /></FieldLabel>
                 <span className="text-xs text-muted-foreground">
                   {showWeight
-                    ? "勾选后才会参与这个编码的分流；权重越大越容易被选中"
-                    : "勾选后才会参与这个编码的分流"}
+                    ? "勾选即参与分流，权重越大越易被选中"
+                    : "勾选即参与该编码分流"}
                 </span>
               </div>
               <div className={`max-h-[320px] overflow-y-auto rounded-md border${
