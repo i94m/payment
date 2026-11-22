@@ -7,6 +7,8 @@ export interface MerchantData {
   username: string
   public_key: string
   api_secret_masked: string    // MD5 签名密钥（掩码，如 abcd****wxyz）
+  api_secret?: string          // MD5 签名密钥明文：仅详情接口返回，列表接口没有
+  channel_code?: { code: string; name: string } | null  // 全局测试编码（is_test=1），仅详情接口
   has_api_secret: boolean
   rsa2_enable: boolean         // 是否启用 RSA2（默认关闭；启用后 MD5 失效）
   balance: string

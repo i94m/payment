@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DataTable, DataTablePagination } from "@/components/data-table/"
 import { FilterCard } from "@/components/filter-card"
 import {
@@ -35,6 +36,7 @@ import {
   IconDice, IconAdjustments, IconPercentage,
   IconTrash, IconLockPassword,
   IconList, IconReceipt,
+  IconCheck, IconCopy,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
@@ -44,6 +46,7 @@ import { toIntParam } from "@/lib/form-utils"
 import apiClient from "@/lib/api-client"
 import { CopyButton } from "@/components/ui/copy-button"
 import { usePermission } from "@/hooks/use-permission"
+import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard"
 
 /** 综合状态筛选（dstatus 参数） */
 const dstatusOptions = [
@@ -116,6 +119,111 @@ const editSchema = z.object({
   pay_status: z.boolean(),
   settle_status: z.boolean(),
 })
+
+/** 对接信息一行：标签 + 值 + 复制按钮（复制走 CopyButton → useCopyToClipboard）。 */
+function IntegrationRow({ label, value, copyValue }: {
+  label: string
+  value: string
+  copyValue?: string
+}) {
+  return (
+    <div className="flex items-start gap-3 px-4 py-2.5">
+      <span className="w-16 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 break-all font-mono text-sm">{value || "-"}</span>
+      <CopyButton
+        value={copyValue ?? value}
+        className="size-8"
+        aria-label={`复制${label}`}
+        title={`复制${label}`}
+        disabled={!value}
+      />
+    </div>
+  )
+}
+
+/**
+ * 商户「对接信息」只读卡片（总后台版）。
+ *
+ * 与商户端 `apps/merchant/pages/security.tsx` 的卡片逐字段对齐：顺序、文案、
+ * `【商户对接参数】` + `字段：值` 的整段格式都一致，运营发出去的和客户自己复制的
+ * 是同一份文本。区别只有一处——后台**直接展示明文密钥**（需求方明确要求不脱敏），
+ * 明文来自详情接口 `GET /admin-api/merchant/{id}`，列表接口不下发。
+ *
+ * 业务编码只展示后台标了「测试编码」（is_test）的那条，由后端挑选；没有就整行不展示，
+ * 不回退正式编码。地址取当前访问页面的 origin。
+ */
+function MerchantIntegrationCard({ data, canReset, onReset }: {
+  data: MerchantData
+  canReset: boolean
+  onReset: () => void
+}) {
+  const { copyToClipboard, isCopied } = useCopyToClipboard()
+  const site = window.location.origin.replace(/\/+$/, "")
+  // RSA2 生效时 MD5 密钥已停用，且私钥只在商户侧：与商户端一样不把失效密钥发出去
+  const secretValue = data.rsa2_enable
+    ? "RSA2 签名（私钥由接入方自行保管）"
+    : (data.api_secret || "")
+  const codeValue = data.channel_code
+    ? (data.channel_code.name
+      ? `${data.channel_code.code} - ${data.channel_code.name}`
+      : data.channel_code.code)
+    : ""
+  const fields: Array<[string, string]> = [
+    ["商户名称", data.username],
+    ["商户号", String(data.pid)],
+    ["API密钥", secretValue],
+    ...(codeValue ? [["业务编码", codeValue] as [string, string]] : []),
+    ["下单地址", `${site}/api/orders`],
+    ["查询地址", `${site}/api/orders/{trade_no}`],
+    ["对接文档", `${site}/docs`],
+  ]
+  const integrationText = [
+    "【商户对接参数】",
+    ...fields.map(([label, value]) => `${label}：${value}`),
+  ].join("\n")
+
+  const copyAll = async () => {
+    if (!(await copyToClipboard(integrationText))) {
+      toast.error("复制失败，请手动选中文本复制")
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{"对接信息"}</CardTitle>
+        <CardDescription>
+          {"直接复制发送给接入方；格式与商户端「API 信息」页一致。"}
+        </CardDescription>
+        <CardAction className="flex items-center gap-2">
+          <Badge variant={data.rsa2_enable ? "default" : "secondary"}>
+            {data.rsa2_enable ? "签名方式 RSA2" : "签名方式 MD5"}
+          </Badge>
+          {canReset && (
+            <Button size="sm" variant="outline" onClick={onReset}>
+              <IconRefresh className="size-4" />
+              {"重置"}
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={copyAll}>
+            {isCopied
+              ? <IconCheck className="size-4 text-green-500" />
+              : <IconCopy className="size-4" />}
+            {"一键复制全部信息"}
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
+          {"【商户对接参数】"}
+        </div>
+        {fields.map(([label, value]) => (
+          <IntegrationRow key={label} label={label} value={value} />
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
 
 export function MerchantsPage() {
   const navigate = useNavigate()
@@ -761,7 +869,13 @@ export function MerchantsPage() {
     if (!secretResetTarget) return
     const res = await merchantsApi.resetApiSecret(secretResetTarget.id)
     setDetailData((d) => (d && d.id === secretResetTarget.id
-      ? { ...d, api_secret_masked: `${res.api_secret.slice(0, 4)}****${res.api_secret.slice(-4)}`, has_api_secret: true }
+      ? {
+        ...d,
+        // 卡片直接吃明文：重置后立刻显示新密钥，不再只更新掩码
+        api_secret: res.api_secret,
+        api_secret_masked: `${res.api_secret.slice(0, 4)}****${res.api_secret.slice(-4)}`,
+        has_api_secret: true,
+      }
       : d))
     setSecretResult({ username: secretResetTarget.username, api_secret: res.api_secret })
     setSecretResetTarget(null)
@@ -1415,31 +1529,13 @@ export function MerchantsPage() {
             <p className="text-sm text-muted-foreground">{"暂无数据"}</p>
           ) : (
             <div className="space-y-4">
-              {/* MD5 签名密钥（开放 API 默认算法） */}
-              <div className="grid gap-1.5">
-                <div className="flex items-center justify-between">
-                  <Label>{detailData.rsa2_enable ? "RSA2 签名（当前生效）" : "MD5 签名密钥（当前生效）"}</Label>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={detailData.rsa2_enable ? "default" : "secondary"}>
-                      {detailData.rsa2_enable ? "签名方式 RSA2" : "签名方式 MD5"}
-                    </Badge>
-                    {hasPermission("merchant.resetkey") && (
-                      <Button size="sm" variant="outline" onClick={() => setSecretResetTarget(detailData)}>
-                        <IconRefresh className="size-4" />
-                        {"重置"}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {detailData.has_api_secret ? (
-                  <Input readOnly value={detailData.api_secret_masked} className="font-mono text-xs" />
-                ) : (
-                  <p className="text-xs text-muted-foreground">{"未生成"}</p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  {"商户面板「API 信息」可查看明文；重置后旧密钥立即失效，需同步通知商户。"}
-                </p>
-              </div>
+              {/* 对接信息（明文，可整段/逐项复制）：原「MD5 签名密钥」掩码框已并入此卡片，
+                  同一值不再出现两次；重置按钮与签名方式徽标挪到卡片头部 */}
+              <MerchantIntegrationCard
+                data={detailData}
+                canReset={hasPermission("merchant.resetkey")}
+                onReset={() => setSecretResetTarget(detailData)}
+              />
 
               {/* 平台公钥（商户用于验证平台通知签名） */}
               <div className="grid gap-1.5">
