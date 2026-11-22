@@ -72,13 +72,15 @@ function SignOption({
 }
 
 /** 对接信息一行：标签 + 值 + 可选操作（如密钥的眼睛按钮）+ 复制按钮。
- *  复制目标可单独传入：密钥行按当前「可见状态」复制（脱敏时复制脱敏值）。 */
+ *  复制目标可单独传入：密钥行按当前「可见状态」复制（脱敏时复制脱敏值）。
+ *  warning 用于空态提示（如缺业务编码），提示文案不按等宽字体展示。 */
 function IntegrationRow({
-  label, value, copyValue, children,
+  label, value, copyValue, warning, children,
 }: {
   label: string
   value: string
   copyValue?: string
+  warning?: boolean
   children?: React.ReactNode
 }) {
   const { copyToClipboard, isCopied } = useCopyToClipboard()
@@ -92,7 +94,14 @@ function IntegrationRow({
   return (
     <div className="flex items-start gap-3 px-4 py-2.5">
       <span className="w-16 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 break-all font-mono text-sm">{value || "-"}</span>
+      <span
+        className={cn(
+          "min-w-0 flex-1 break-all text-sm",
+          warning ? "font-medium text-amber-600 dark:text-amber-500" : "font-mono",
+        )}
+      >
+        {value || "-"}
+      </span>
       <div className="flex shrink-0 items-center">
         {children}
         <Button
@@ -166,11 +175,14 @@ export function SecurityPage() {
   const { copyToClipboard: copyIntegration, isCopied: integrationCopied } = useCopyToClipboard()
   // 域名一律取当前访问页面的 origin：客户从哪个域名登录，拿到的就是哪个域名
   const site = window.location.origin.replace(/\/+$/, "")
+  // 下单强制携带编码，但平台还没有启用中的编码：此时拼出来的对接信息缺业务编码，
+  // 发出去客户会直接报「缺少通道编码」，所以整份信息不可复制。
+  const codeMissing = !!apiKey?.channel_code_required && !apiKey?.channel_code
   const codeValue = apiKey?.channel_code
     ? (apiKey.channel_code.name
       ? `${apiKey.channel_code.code} - ${apiKey.channel_code.name}`
       : apiKey.channel_code.code)
-    : (apiKey?.channel_code_required ? "未配置（请联系平台）" : "不限制")
+    : (codeMissing ? "" : "不限制")
   // 复制跟随当前可见状态：脱敏时复制脱敏值，点眼睛后才复制明文
   const visibleSecret = showSecret ? secret : maskedSecret
   // RSA2 生效时没有可交付的共享密钥（私钥只在商户侧），不能把已停用的 MD5 密钥发出去
@@ -179,12 +191,13 @@ export function SecurityPage() {
     ["商户名称", apiKey.username],
     ["商户号", String(apiKey.pid)],
     ["API密钥", secretValue],
-    ["业务编码", codeValue],
+    // 空态不给空值，也不参与整段复制（见下方 codeMissing 判定）
+    ["业务编码", codeMissing ? "暂未配置业务编码，请联系客服" : codeValue],
     ["下单地址", `${site}/api/orders`],
     ["查询地址", `${site}/api/orders/{trade_no}`],
     ["对接文档", `${site}/docs`],
   ] : []
-  const integrationText = [
+  const integrationText = codeMissing ? "" : [
     "【商户对接参数】",
     ...integrationFields.map(([label, value]) => `${label}：${value}`),
   ].join("\n")
@@ -335,7 +348,13 @@ export function SecurityPage() {
                       {"可直接复制发送给接入方，内容为「字段：值」纯文本（非表格/HTML）。"}
                     </CardDescription>
                     <CardAction>
-                      <Button size="sm" variant="outline" onClick={doCopyIntegration}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={doCopyIntegration}
+                        disabled={!integrationText}
+                        title={codeMissing ? "暂未配置业务编码，无法生成对接信息" : undefined}
+                      >
                         {integrationCopied
                           ? <IconCheck className="size-4 text-green-500" />
                           : <IconCopy className="size-4" />}
@@ -348,37 +367,50 @@ export function SecurityPage() {
                       <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
                         {"【商户对接参数】"}
                       </div>
-                      {integrationFields.map(([label, value]) => (
-                        <IntegrationRow
-                          key={label}
-                          label={label}
-                          value={value}
-                          copyValue={label === "API密钥" && rsa2 ? "" : undefined}
-                        >
-                          {label === "API密钥" && !rsa2 && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-8"
-                              aria-label={showSecret ? "隐藏密钥" : "显示密钥"}
-                              title={showSecret ? "隐藏密钥" : "查看明文"}
-                              onClick={() => setShowSecret((v) => !v)}
-                            >
-                              {showSecret
-                                ? <IconEyeOff className="size-4" />
-                                : <IconEye className="size-4" />}
-                            </Button>
-                          )}
-                        </IntegrationRow>
-                      ))}
+                      {integrationFields.map(([label, value]) => {
+                        const noCode = label === "业务编码" && codeMissing
+                        // RSA2 下没有可交付的共享密钥；缺编码时也不能单独复制这一行
+                        const cannotCopy = noCode || (label === "API密钥" && rsa2)
+                        return (
+                          <IntegrationRow
+                            key={label}
+                            label={label}
+                            value={value}
+                            warning={noCode}
+                            copyValue={cannotCopy ? "" : undefined}
+                          >
+                            {label === "API密钥" && !rsa2 && (
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="size-8"
+                                aria-label={showSecret ? "隐藏密钥" : "显示密钥"}
+                                title={showSecret ? "隐藏密钥" : "查看明文"}
+                                onClick={() => setShowSecret((v) => !v)}
+                              >
+                                {showSecret
+                                  ? <IconEyeOff className="size-4" />
+                                  : <IconEye className="size-4" />}
+                              </Button>
+                            )}
+                          </IntegrationRow>
+                        )
+                      })}
                     </div>
-                    <div className="px-4 py-2.5 text-xs text-muted-foreground">
-                      {apiKey.channel_code_required
-                        ? "下单时必须携带 channel_code 参数（即上方业务编码）。"
-                        : "当前未强制 channel_code，不传时按平台默认路由。"}
-                      {rsa2
-                        ? "当前为 RSA2 签名，平台不保存私钥，对接信息中不包含密钥明文。"
-                        : "API 密钥默认脱敏，点眼睛查看明文后复制才会带明文。"}
+                    <div className="space-y-1 px-4 py-2.5 text-xs text-muted-foreground">
+                      {codeMissing && (
+                        <p className="font-medium text-amber-600 dark:text-amber-500">
+                          {"平台还没有启用中的业务编码，这份信息暂时不能发给客户。业务编码由运营在后台「通道编码」中创建并启用，请联系客服配置后再复制。"}
+                        </p>
+                      )}
+                      <p>
+                        {apiKey.channel_code_required
+                          ? "下单时必须携带 channel_code 参数（即上方业务编码）。"
+                          : "当前未强制 channel_code，不传时按平台默认路由。"}
+                        {rsa2
+                          ? "当前为 RSA2 签名，平台不保存私钥，对接信息中不包含密钥明文。"
+                          : "API 密钥默认脱敏，点眼睛查看明文后复制才会带明文。"}
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
