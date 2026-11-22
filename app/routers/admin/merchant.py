@@ -103,8 +103,6 @@ def _dump_merchant(m: Merchant) -> dict:
         "deduct_enable": bool(m.deduct_enable),
         "deduct_frequency": m.deduct_frequency,
         "deduct_minmoney": str(m.deduct_minmoney),
-        # 下游通道编码：是否强制开放 API 下单必须携带 channel_code
-        "channel_code_required": bool(m.channel_code_required),
         "fixed": bool(m.fixed),
         "settle_type": m.settle_type,     # 1支付宝 2微信 3QQ 4银行卡
         "settle_account": m.settle_account or "",
@@ -793,32 +791,6 @@ async def set_all_merchant_deduct(body: SetAllDeductRequest, session: SessionDep
         session.add(m)
     await session.commit()
     return suc(f"已应用到 {len(merchants)} 个商户")
-
-
-# ============================================================
-# 下游通道编码必传开关（商户级；默认全开，只做个别豁免）
-# ============================================================
-
-class SetChannelCodeRequiredRequest(BaseModel):
-    required: bool
-
-
-@router.post("/{merchant_id}/channel-code",
-             dependencies=[Depends(PermissionChecker("merchant.update"))])
-async def set_merchant_channel_code(merchant_id: int,
-                                    body: SetChannelCodeRequiredRequest,
-                                    session: SessionDep):
-    """单商户「下游下单必须携带通道编码」开关（个别豁免用；默认全开）。
-
-    只约束开放 API 下单；平台自己的收银台/收款页/余额充值不受影响。
-    """
-    m = await _get_merchant_or_404(session, merchant_id)
-    if not m:
-        return err(404, "商户不存在")
-    m.channel_code_required = bool(body.required)
-    session.add(m)
-    await session.commit()
-    return suc({"id": m.id, "channel_code_required": bool(m.channel_code_required)})
 
 
 # ============================================================

@@ -50,7 +50,6 @@ async def test_apikey_exposes_only_marked_test_code(client, seeded, session):
     assert data["username"] == "testmch"
     assert data["pid"] == 1001
     assert data["channel_code"] == {"code": "1003", "name": "联调编码", "is_test": True}
-    assert data["channel_code_required"] is False
     # 域名交给前端 window.location.origin，后端不再下发站点地址
     assert "site_url" not in data
     assert "channel_codes" not in data

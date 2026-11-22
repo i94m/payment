@@ -51,8 +51,7 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
     - rsa2_enable / public_key：RSA2 是否开启及商户公钥（开启后 MD5 失效）
     - platform_public_key：平台公钥（验 RSA2 通知签名用）
     - 对接信息（面板「对接信息」一键复制用）：username /
-      channel_code（启用中的测试编码，`is_test` 显式标记；没有则为 null）/
-      channel_code_required
+      channel_code（启用中的测试编码，`is_test` 显式标记；没有则为 null）
     - 下单/查询/文档地址的域名由前端取 `window.location.origin` 拼接，
       后端不再下发 site_url（站点地址配置不等于用户实际访问的域名）
     """
@@ -82,7 +81,6 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
         "channel_code": (
             {"code": picked.code, "name": picked.name or "", "is_test": True} if picked else None
         ),
-        "channel_code_required": bool(m.channel_code_required),
     })
 
 

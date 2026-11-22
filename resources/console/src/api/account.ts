@@ -9,7 +9,6 @@ export interface ApiKeyData {
   platform_public_key: string // 平台公钥（由平台私钥派生，未配置为空串）
   // 对接信息展示的业务编码：只给被标成测试编码且启用中的那条，没有则为 null（整行不展示）
   channel_code: { code: string; name: string; is_test: boolean } | null
-  channel_code_required: boolean // 开放 API 下单是否必须携带 channel_code
 }
 
 export interface SignDebugResult {

@@ -388,11 +388,9 @@ export function SecurityPage() {
                     </div>
                     <div className="space-y-1 px-4 py-2.5 text-xs text-muted-foreground">
                       <p>
-                        {apiKey.channel_code_required
-                          ? (apiKey.channel_code
-                            ? "下单时必须携带 channel_code 参数（即上方业务编码）。"
-                            : "下单时必须携带 channel_code 参数（业务编码由运营另行提供）。")
-                          : "当前未强制 channel_code，不传时按平台默认路由。"}
+                        {apiKey.channel_code
+                          ? "下单时携带 channel_code（即上方业务编码），只在该编码绑定的通道内分流；不传则按平台默认路由。"
+                          : "下单可携带 channel_code 指定通道范围（业务编码由运营另行提供）；不传则按平台默认路由。"}
                         {rsa2
                           ? "当前为 RSA2 签名，平台不保存私钥，对接信息中不包含密钥明文。"
                           : "API 密钥默认脱敏，点眼睛查看明文后复制才会带明文。"}
