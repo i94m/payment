@@ -20,7 +20,7 @@ import { PanelError } from "@/components/data-list"
 import { getErrorMessage } from "@/lib/error"
 import { cn } from "@/lib/utils"
 import {
-  IconCheck, IconCopy, IconEye, IconEyeOff, IconKey, IconRefresh, IconShieldCheck,
+  IconCheck, IconCopy, IconKey, IconRefresh, IconShieldCheck,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard"
@@ -71,8 +71,8 @@ function SignOption({
   )
 }
 
-/** 对接信息一行：标签 + 值 + 可选操作（如密钥的眼睛按钮）+ 复制按钮。
- *  复制目标可单独传入：密钥行按当前「可见状态」复制（脱敏时复制脱敏值）。 */
+/** 对接信息一行：标签 + 值 + 可选操作 + 复制按钮。
+ *  复制目标可单独传入（如 RSA2 下密钥行不可复制时传空串），默认复制展示值。 */
 function IntegrationRow({
   label, value, copyValue, children,
 }: {
@@ -121,8 +121,6 @@ export function SecurityPage() {
   const [loading, setLoading] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
 
-  // MD5 密钥默认掩码，点眼睛查看明文
-  const [showSecret, setShowSecret] = React.useState(false)
   // 重置 MD5 密钥二次确认
   const [secretResetOpen, setSecretResetOpen] = React.useState(false)
   // 切换签名方式请求中（防连点）
@@ -160,9 +158,6 @@ export function SecurityPage() {
 
   const rsa2 = !!apiKey?.rsa2_enable
   const secret = apiKey?.api_secret || ""
-  const maskedSecret = secret
-    ? `${secret.slice(0, 4)}${"*".repeat(Math.max(secret.length - 8, 8))}${secret.slice(-4)}`
-    : ""
 
   // ---- 对接信息（可整段复制给接入方的纯文本）----
   const { copyToClipboard: copyIntegration, isCopied: integrationCopied } = useCopyToClipboard()
@@ -175,10 +170,9 @@ export function SecurityPage() {
       ? `${apiKey.channel_code.code} - ${apiKey.channel_code.name}`
       : apiKey.channel_code.code)
     : ""
-  // 复制跟随当前可见状态：脱敏时复制脱敏值，点眼睛后才复制明文
-  const visibleSecret = showSecret ? secret : maskedSecret
+  // 商户端密钥始终明文展示，逐项复制与整段复制都直接用原始值，不做任何掩码
   // RSA2 生效时没有可交付的共享密钥（私钥只在商户侧），不能把已停用的 MD5 密钥发出去
-  const secretValue = rsa2 ? "RSA2 签名（私钥由接入方自行保管）" : visibleSecret
+  const secretValue = rsa2 ? "RSA2 签名（私钥由接入方自行保管）" : secret
   const integrationFields: Array<[string, string]> = apiKey ? [
     ["商户名称", apiKey.username],
     ["商户号", String(apiKey.pid)],
@@ -206,7 +200,6 @@ export function SecurityPage() {
     try {
       const res = await securityApi.regenerateApiSecret()
       setApiKey((d) => (d ? { ...d, api_secret: res.api_secret } : d))
-      setShowSecret(true)
       toast.success("MD5 密钥已重置，请同步更新接入代码")
     } catch (err) {
       toast.error(getErrorMessage(err, "操作失败"))
@@ -367,22 +360,7 @@ export function SecurityPage() {
                             label={label}
                             value={value}
                             copyValue={cannotCopy ? "" : undefined}
-                          >
-                            {label === "API密钥" && !rsa2 && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="size-8"
-                                aria-label={showSecret ? "隐藏密钥" : "显示密钥"}
-                                title={showSecret ? "隐藏密钥" : "查看明文"}
-                                onClick={() => setShowSecret((v) => !v)}
-                              >
-                                {showSecret
-                                  ? <IconEyeOff className="size-4" />
-                                  : <IconEye className="size-4" />}
-                              </Button>
-                            )}
-                          </IntegrationRow>
+                          />
                         )
                       })}
                     </div>
@@ -393,7 +371,7 @@ export function SecurityPage() {
                           : "下单可携带 channel_code 指定通道范围（业务编码由运营另行提供）；不传则按平台默认路由。"}
                         {rsa2
                           ? "当前为 RSA2 签名，平台不保存私钥，对接信息中不包含密钥明文。"
-                          : "API 密钥默认脱敏，点眼睛查看明文后复制才会带明文。"}
+                          : "API 密钥为明文展示，逐项复制与一键复制都是原始值。"}
                       </p>
                     </div>
                   </CardContent>
@@ -480,18 +458,10 @@ export function SecurityPage() {
                       <div className="flex items-center gap-2">
                         <Input
                           readOnly
-                          value={showSecret ? secret : maskedSecret}
+                          value={secret}
                           placeholder="加载中"
                           className="min-w-0 flex-1 font-mono text-xs"
                         />
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label={showSecret ? "隐藏密钥" : "显示密钥"}
-                          onClick={() => setShowSecret((v) => !v)}
-                        >
-                          {showSecret ? <IconEyeOff className="size-4" /> : <IconEye className="size-4" />}
-                        </Button>
                         <CopyButton value={secret} />
                       </div>
                     </div>
