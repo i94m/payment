@@ -3,7 +3,7 @@ from typing import Optional
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlmodel import col, select
 
@@ -43,15 +43,28 @@ async def change_password(body: ChangePasswordRequest, auth: MerchantUser, sessi
     return suc("密码修改成功")
 
 
+def _is_test_code(c: ChannelCode) -> bool:
+    """是否测试编码：约定「测试」写在编码名称/备注里（如「测试通道」）。
+
+    没有独立的测试标记字段，只能用命名约定识别；对接信息只给客户一个编码，
+    测试编码优先，方便接入方先把链路跑通。
+    """
+    text = f"{c.name or ''} {c.remark or ''}".lower()
+    return "测试" in text or "test" in text
+
+
 @router.get("/apikey")
-async def get_apikey(request: Request, auth: MerchantUser, session: SessionDep, cache: CacheDep):
+async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
     """查看 API 密钥信息。
 
     - api_secret：MD5 签名密钥（未开启 RSA2 时生效；本人可反复查看/复制/重置）
     - rsa2_enable / public_key：RSA2 是否开启及商户公钥（开启后 MD5 失效）
     - platform_public_key：平台公钥（验 RSA2 通知签名用）
-    - 对接信息（面板「对接信息」一键复制用）：username / site_url /
-      channel_codes（当前启用的下游通道编码，编码 + 名称）/ channel_code_required
+    - 对接信息（面板「对接信息」一键复制用）：username /
+      channel_code（启用中的测试编码优先，否则第一个启用编码；无启用编码为 null）/
+      channel_code_required
+    - 下单/查询/文档地址的域名由前端取 `window.location.origin` 拼接，
+      后端不再下发 site_url（站点地址配置不等于用户实际访问的域名）
     """
     m = auth.user
     secret = await ensure_api_secret(session, m)
@@ -60,14 +73,14 @@ async def get_apikey(request: Request, auth: MerchantUser, session: SessionDep, 
         platform_public_key = derive_public_key(str(settings.get("platform_rsa_private_key") or ""))
     except ValueError:
         platform_public_key = ""
-    # 站点地址：优先取「站点配置 → 站点地址」，未配置时回退当前请求域名
-    site_url = str(settings.get("site_url") or str(request.base_url)).rstrip("/")
-    # 下游通道编码：只列启用中的编码（停用编码下单直接报错，不该出现在对接信息里）
+    # 下游通道编码：只取启用中的（停用编码下单直接报错，不该出现在对接信息里）；
+    # 对接信息只展示一个编码，测试编码优先，其次按编码排序取第一个
     codes = (await session.exec(
         select(ChannelCode)
         .where(ChannelCode.status == 1)
         .order_by(col(ChannelCode.code))
     )).all()
+    picked = next((c for c in codes if _is_test_code(c)), codes[0] if codes else None)
     return suc({
         "pid": m.pid,
         "username": m.username,
@@ -75,10 +88,9 @@ async def get_apikey(request: Request, auth: MerchantUser, session: SessionDep, 
         "public_key": pem_to_flat(m.public_key or ""),
         "rsa2_enable": bool(m.rsa2_enable),
         "platform_public_key": platform_public_key,
-        "site_url": site_url,
-        "channel_codes": [
-            {"code": c.code, "name": c.name or ""} for c in codes
-        ],
+        "channel_code": (
+            {"code": picked.code, "name": picked.name or ""} if picked else None
+        ),
         "channel_code_required": bool(m.channel_code_required),
     })
 

@@ -164,12 +164,13 @@ export function SecurityPage() {
 
   // ---- 对接信息（可整段复制给接入方的纯文本）----
   const { copyToClipboard: copyIntegration, isCopied: integrationCopied } = useCopyToClipboard()
-  const site = (apiKey?.site_url || "").replace(/\/+$/, "")
-  const codeText = (apiKey?.channel_codes || [])
-    .map((c) => (c.name ? `${c.code} - ${c.name}` : c.code))
-    .join("、")
-  const codeValue = codeText
-    || (apiKey?.channel_code_required ? "未配置（请联系平台）" : "不限制")
+  // 域名一律取当前访问页面的 origin：客户从哪个域名登录，拿到的就是哪个域名
+  const site = window.location.origin.replace(/\/+$/, "")
+  const codeValue = apiKey?.channel_code
+    ? (apiKey.channel_code.name
+      ? `${apiKey.channel_code.code} - ${apiKey.channel_code.name}`
+      : apiKey.channel_code.code)
+    : (apiKey?.channel_code_required ? "未配置（请联系平台）" : "不限制")
   // 复制跟随当前可见状态：脱敏时复制脱敏值，点眼睛后才复制明文
   const visibleSecret = showSecret ? secret : maskedSecret
   // RSA2 生效时没有可交付的共享密钥（私钥只在商户侧），不能把已停用的 MD5 密钥发出去
@@ -338,12 +339,12 @@ export function SecurityPage() {
                         {integrationCopied
                           ? <IconCheck className="size-4 text-green-500" />
                           : <IconCopy className="size-4" />}
-                        {"复制全部"}
+                        {"一键复制全部信息"}
                       </Button>
                     </CardAction>
                   </CardHeader>
                   <CardContent className="p-0">
-                    <div className="divide-y border-y">
+                    <div>
                       <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
                         {"【商户对接参数】"}
                       </div>
@@ -373,7 +374,7 @@ export function SecurityPage() {
                     </div>
                     <div className="px-4 py-2.5 text-xs text-muted-foreground">
                       {apiKey.channel_code_required
-                        ? "下单时必须携带 channel_code 参数（业务编码中任选一个）。"
+                        ? "下单时必须携带 channel_code 参数（即上方业务编码）。"
                         : "当前未强制 channel_code，不传时按平台默认路由。"}
                       {rsa2
                         ? "当前为 RSA2 签名，平台不保存私钥，对接信息中不包含密钥明文。"
