@@ -11,6 +11,16 @@ export interface ApiKeyData {
   channel_code: { code: string; name: string; is_test: boolean } | null
 }
 
+/** 商户端「支付通道」卡片：一条启用中的通道编码及其可用支付方式 */
+export interface MerchantChannelCode {
+  code: string
+  name: string
+  remark: string
+  is_test: boolean
+  // 该编码内启用中通道支持的支付方式（停用通道不计入；空数组=暂不可用）
+  pay_types: { code: string; name: string; icon: string }[]
+}
+
 export interface SignDebugResult {
   sign_content: string
   active_sign_type: "MD5" | "RSA2" // 当前生效算法（只返回该算法的期望签名）
@@ -31,6 +41,9 @@ export interface SettingItem {
 export const accountApi = {
   // ---- 商户端密钥/安全 ----
   apiKey: () => apiClient.get("/account/apikey") as Promise<ApiKeyData>,
+
+  // 商户端「支付通道」卡片：所有启用中的通道编码 + 各自可用的支付方式
+  channelCodes: () => apiClient.get("/account/channel-codes") as Promise<MerchantChannelCode[]>,
 
   // ---- admin 支付设置（KV） ----
   paySettings: () => apiClient.get("/setting") as Promise<{ items: SettingItem[] }>,

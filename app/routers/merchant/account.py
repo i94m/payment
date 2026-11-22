@@ -10,7 +10,7 @@ from sqlmodel import col, select
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import MerchantUser, hash_password, revoke_all_tokens, verify_password
 from app.lib.sign import derive_public_key, get_sign_content, make_md5_sign, pem_to_flat
-from app.models import ChannelCode, Merchant
+from app.models import Channel, ChannelCode, ChannelCodeItem, Merchant, PaymentType
 from app.responses import err, suc
 from app.services.apikey import ensure_api_secret, set_api_secret
 from app.services.settings import get_all_settings
@@ -82,6 +82,50 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
             {"code": picked.code, "name": picked.name or "", "is_test": True} if picked else None
         ),
     })
+
+
+@router.get("/channel-codes")
+async def list_channel_codes(auth: MerchantUser, session: SessionDep):
+    """商户端「支付通道」卡片：所有启用中的通道编码 + 每条编码可用的支付方式。
+
+    - 只列 `status=1` 的编码：停用编码下单直接报错，展示出来只会误导接入方
+    - 支付方式取自该编码内**启用中**的通道：停用通道不参与分流，列出来等于虚假可用
+    - 编码没有任何可用通道时 `pay_types` 为空数组，前端按「暂不可用」提示
+    """
+    codes = (await session.exec(
+        select(ChannelCode)
+        .where(col(ChannelCode.status) == 1)
+        .order_by(col(ChannelCode.id))
+    )).all()
+    if not codes:
+        return suc([])
+    # 编码 → 启用通道的支付方式 id 集合（去重后再按支付方式的展示顺序输出）
+    rows = (await session.exec(
+        select(ChannelCodeItem.code_id, Channel.payment_type_id)
+        .join(Channel, col(ChannelCodeItem.channel_id) == col(Channel.id))
+        .where(Channel.status == 1)
+    )).all()
+    type_ids = {type_id for _, type_id in rows if type_id}
+    types = []
+    if type_ids:
+        types = (await session.exec(
+            select(PaymentType)
+            .where(col(PaymentType.id).in_(type_ids), col(PaymentType.status) == 1)
+            .order_by(col(PaymentType.sort), col(PaymentType.id))
+        )).all()
+    code_types: dict[int, set[int]] = {}
+    for code_id, type_id in rows:
+        code_types.setdefault(code_id, set()).add(type_id)
+    return suc([{
+        "code": c.code,
+        "name": c.name or "",
+        "remark": c.remark or "",
+        "is_test": bool(c.is_test),
+        "pay_types": [
+            {"code": t.code, "name": t.name, "icon": t.icon or ""}
+            for t in types if t.id in code_types.get(c.id, set())
+        ],
+    } for c in codes])
 
 
 @router.post("/apikey/secret")

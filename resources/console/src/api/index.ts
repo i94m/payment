@@ -55,7 +55,7 @@ export type {
   PermissionSyncUpdated,
 } from "./permission"
 export { accountApi } from "./account"
-export type { ApiKeyData, SettingItem, SignDebugResult } from "./account"
+export type { ApiKeyData, MerchantChannelCode, SettingItem, SignDebugResult } from "./account"
 export { securityApi } from "./account"
 export { agentsApi } from "./agents"
 export type { AgentData, AgentListParams, AgentPerformanceRow, AgentPerformanceSummary } from "./agents"
