@@ -86,8 +86,7 @@ async def create_payment_order(request: Request, session: SessionDep, cache: Cac
     # 白名单未配置时不校验）
     request_host = _request_host(request)
     try:
-        order = await create_order(params, session, cache, request_host=request_host,
-                                   require_channel_code=True)
+        order = await create_order(params, session, cache, request_host=request_host)
     except ValueError as e:
         return api_response(code=-1, message=str(e), http_status=400)
     except InvalidOperation:

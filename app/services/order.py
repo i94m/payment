@@ -146,17 +146,13 @@ def _is_http_url(url: str) -> bool:
 # ============================================================
 
 async def create_order(params: dict, session: AsyncSession, cache: CacheClient | None = None,
-                       order_type: int = 0, agent_id: int = 0, request_host: str = "",
-                       require_channel_code: bool = False) -> Order:
+                       order_type: int = 0, agent_id: int = 0, request_host: str = "") -> Order:
     """建单（幂等）。同一商户同一 out_trade_no 返回已有订单。
 
     事务内无外部 IO。抛 ValueError 表示业务校验失败。
     order_type: 0=普通收款 1=余额充值（仅内部入口可传，开放 API 固定为 0）。
     agent_id:   归属代理（须为该商户名下启用代理，0=无）。
     request_host: 来源域名（支付域名白名单 enforcement，空=不校验）。
-    require_channel_code: 是否执行「商户必须传通道编码」校验。**只有下游开放 API 传 True**：
-        这个开关是给下游对接方的契约（默认对所有商户开启，商户级可个别豁免），
-        平台自己的收银台/收款页/余额充值不受影响。
     """
     pid = params.get("pid", "")
     out_trade_no = str(params.get("out_trade_no", "") or "").strip()
@@ -250,8 +246,8 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
     if not pay_type:
         raise ValueError("支付方式不存在或未启用")
 
-    # 通道编码：参数级校验（编码存在/启用 + 与本次支付方式有绑定），
-    # 运行时可用性（通道全局停用/限额/限速）留到 process_payment。
+    # 通道编码：可选参数，携带时做参数级校验（编码存在/启用 + 与本次支付方式有绑定），
+    # 未携带则按默认路由分流；运行时可用性（通道全局停用/限额/限速）留到 process_payment。
     code_row = None
     if channel_code:
         if not code_format_ok(channel_code):
@@ -262,8 +258,6 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
             raise ValueError("通道编码不存在或不可用")
         if not await code_supports_type(session, code_row.id, pay_type.id):
             raise ValueError("通道编码不支持当前支付方式")
-    elif require_channel_code and merchant.channel_code_required:
-        raise ValueError("缺少通道编码")
     channel_code_id = code_row.id if code_row else 0
 
     # 幂等：同商户同 out_trade_no 直接返回已有订单

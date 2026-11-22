@@ -1,7 +1,7 @@
 """通道编码加「测试编码」标记 channel_codes.is_test
 
-Revision ID: 0016
-Revises: 0015
+Revision ID: 0017
+Revises: 0016
 Create Date: 2026-11-22 11:40:00.000000
 
 商户端「对接信息」卡片只展示测试编码：原来按名称/备注含「测试」猜，现在改成显式标记。
@@ -19,8 +19,8 @@ import sqlalchemy as sa
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 
-revision: str = '0016'
-down_revision: Union[str, None] = '0015'
+revision: str = '0017'
+down_revision: Union[str, None] = '0016'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -36,7 +36,7 @@ def _add_column(table: str, column: sa.Column) -> None:
             bind.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {ddl}, ALGORITHM=INSTANT"))
             return
         except (OperationalError, ProgrammingError) as e:
-            print(f"[0016] INSTANT 加列不可用（{e.orig}），回落普通 ADD COLUMN：{table}.{column.name}")
+            print(f"[0017] INSTANT 加列不可用（{e.orig}），回落普通 ADD COLUMN：{table}.{column.name}")
     op.add_column(table, column)
 
 

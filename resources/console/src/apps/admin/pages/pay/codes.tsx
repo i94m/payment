@@ -48,11 +48,13 @@ interface MemberDraft {
   weight: number
 }
 
-// 编码表单校验：与后端 /channel-codes 的校验口径一致（编码格式/至少一个通道/权重模式非全零）
+// 编码表单校验：与后端 /channel-codes 的校验口径一致（编码格式/至少一个通道/权重百分比合计 100）
 // 放在前端是为了当场给提示，不把用户的重填成本留到提交之后。
 const memberSchema = z.object({
   channel_id: z.number(),
-  weight: z.number().int("权重必须是整数").min(0, "权重不能为负数"),
+  weight: z.number().int("权重必须是整数")
+    .min(0, "权重不能为负数")
+    .max(100, "权重不能超过 100（按百分比配置）"),
 })
 
 const codeSchema = z.object({
@@ -72,8 +74,19 @@ const codeSchema = z.object({
     ctx.addIssue({ code: "custom", path: ["members"], message: "请至少勾选一个通道" })
     return
   }
-  if (values.mode === 2 && !items.some((it) => it.weight > 0)) {
-    ctx.addIssue({ code: "custom", path: ["members"], message: "权重模式下至少一个通道的权重要大于 0" })
+  if (values.mode === 2) {
+    const total = items.reduce((sum, it) => sum + it.weight, 0)
+    if (total === 0) {
+      ctx.addIssue({
+        code: "custom", path: ["members"],
+        message: "权重模式下至少一个通道的权重要大于 0（各通道权重合计需为 100）",
+      })
+    } else if (total !== 100) {
+      ctx.addIssue({
+        code: "custom", path: ["members"],
+        message: `权重合计必须等于 100（当前 ${total}）`,
+      })
+    }
   }
 })
 
@@ -105,10 +118,15 @@ export function ChannelCodesPage() {
     defaultValues: emptyValues(),
   })
   const members = codeForm.watch("members")
-  // 权重模式已下线（只保留随机/轮询）：仅历史编码 mode=2 时仍显示权重列与权重项，
-  // 避免编辑老配置时把权重悄悄丢掉或静默改成随机
+  // 权重列只在「权重」模式出现：其它模式下权重不入候选排序（值仍随成员保留，
+  // 切回权重模式不用重新填），列表里历史权重也不会被清掉。
   const mode = codeForm.watch("mode")
   const showWeight = mode === 2
+  // 权重按百分比配置，合计必须 100：实时显示合计，并提供「平均分配 / 按比例归一到 100」
+  // 两个一键操作，免去「改一个通道就得手算其它通道」的重填成本。
+  const memberList = React.useMemo(() => Object.values(members ?? {}), [members])
+  const weightTotal = memberList.reduce((sum, m) => sum + (m?.weight ?? 0), 0)
+  const zeroWeightCount = memberList.filter((m) => !m?.weight).length
   // 「至少一个通道 / 权重全零」是整段的错误，挂在 members 上统一展示
   const membersError = (codeForm.formState.errors.members as { message?: string } | undefined)?.message
   const [deleteId, setDeleteId] = React.useState<number | null>(null)
@@ -181,9 +199,46 @@ export function ChannelCodesPage() {
   const toggleMember = (channelId: number) => {
     const next = { ...codeForm.getValues("members") }
     if (next[channelId]) delete next[channelId]
-    else next[channelId] = { channel_id: channelId, weight: 1 }
+    // 权重模式下新成员先给 0：合计 100 的既有配置不会被一条新通道顶破，
+    // 行内会标「未参与」，运营再分配占比（或点「平均分配」）。
+    else next[channelId] = { channel_id: channelId, weight: codeForm.getValues("mode") === 2 ? 0 : 1 }
     // 提交过一次后再改成员就实时复校验：用户看到「请至少勾选一个通道」后勾上能立刻消掉
     codeForm.setValue("members", next, { shouldDirty: true, shouldValidate: codeForm.formState.submitCount > 0 })
+  }
+
+  const commitMembers = (next: Record<string, MemberDraft>) => {
+    codeForm.setValue("members", next, { shouldDirty: true, shouldValidate: codeForm.formState.submitCount > 0 })
+  }
+
+  // 平均分配：3 个通道得到 34/33/33（余数从前往后各加 1，合计精确 100）
+  const distributeEvenly = () => {
+    const ids = Object.keys(members ?? {})
+    if (ids.length === 0) return
+    const base = Math.floor(100 / ids.length)
+    let rest = 100 - base * ids.length
+    const next = { ...codeForm.getValues("members") }
+    ids.forEach((id) => {
+      next[id] = { ...next[id], weight: base + (rest-- > 0 ? 1 : 0) }
+    })
+    commitMembers(next)
+  }
+
+  // 按当前比例归一到 100（向下取整 + 最后一条吃差额，保证合计恰好 100）；
+  // 权重为 0 的成员保持 0（摘流是显式选择，不参与归一）。
+  const normalizeTo100 = () => {
+    const list = memberList.filter((m) => m && m.weight > 0)
+    const total = list.reduce((sum, m) => sum + m.weight, 0)
+    if (total === 0) return
+    const next = { ...codeForm.getValues("members") }
+    let acc = 0
+    list.forEach((m, idx) => {
+      const w = idx === list.length - 1
+        ? 100 - acc
+        : Math.floor((m.weight / total) * 100)
+      acc += w
+      next[m.channel_id] = { ...next[m.channel_id], weight: w }
+    })
+    commitMembers(next)
   }
 
   const patchMember = (channelId: number, patch: Partial<MemberDraft>) => {
@@ -255,9 +310,18 @@ export function ChannelCodesPage() {
         accessorKey: "item_count",
         enableSorting: false,
         header: () => "关联通道",
-        cell: ({ row }) => (
-          <span className="text-sm tabular-nums">{row.original.item_count}</span>
-        ),
+        cell: ({ row }) => {
+          const isWeight = row.original.mode === 2
+          // 权重模式下把成员权重挂到悬浮提示：列表一眼能核对「谁占多少比例」
+          const tip = (row.original.members ?? [])
+            .map((m) => (isWeight ? `${m.channel_name} ${m.weight}%` : m.channel_name))
+            .join("\n")
+          return (
+            <span className="text-sm tabular-nums" title={tip || undefined}>
+              {row.original.item_count}
+            </span>
+          )
+        },
         meta: { headClassName: "w-[90px] text-right", cellClassName: "text-right" },
       },
       {
@@ -420,12 +484,13 @@ export function ChannelCodesPage() {
                       <SelectContent>
                         <SelectItem value="0">{"随机"}</SelectItem>
                         <SelectItem value="1">{"轮询"}</SelectItem>
-                        {/* 权重模式已下线：历史编码仍按权重分流，给个只读项避免编辑时被静默改成随机 */}
-                        {showWeight && <SelectItem value="2" disabled>{"权重（已停用）"}</SelectItem>}
+                        <SelectItem value="2">{"权重"}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FieldDescription className="text-xs">
-                      {showWeight ? "仍按历史权重分流" : "随机或依次轮询"}
+                      {showWeight
+                        ? "按权重百分比随机：同一编码内各通道权重合计 100，权重值就是命中概率；权重 0 的通道不参与分流"
+                        : "随机：每单随机选；轮询：依次轮流"}
                     </FieldDescription>
                   </Field>
                 )}
@@ -473,8 +538,8 @@ export function ChannelCodesPage() {
                 <FieldLabel>{"关联通道"}<RequiredMark /></FieldLabel>
                 <span className="text-xs text-muted-foreground">
                   {showWeight
-                    ? "勾选即参与分流，权重越大越易被选中"
-                    : "勾选即参与该编码分流"}
+                    ? "权重按百分比配置，同一编码内合计 100；权重 0 等于摘流"
+                    : "勾选后才会参与这个编码的分流"}
                 </span>
               </div>
               <div className={`max-h-[320px] overflow-y-auto rounded-md border${
@@ -488,7 +553,7 @@ export function ChannelCodesPage() {
                         {"通道"}
                       </th>
                       <th className="px-2 py-2 text-left">{"支付方式"}</th>
-                      {showWeight && <th className="w-[24%] px-2 py-2 text-right">{"权重"}</th>}
+                      {showWeight && <th className="w-[22%] px-2 py-2 text-right">{"权重（%）"}</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -527,15 +592,22 @@ export function ChannelCodesPage() {
                           </td>
                           {showWeight && (
                             <td className="px-2 py-1.5 text-right">
-                              <Input
-                                type="number"
-                                min={0}
-                                step={1}
-                                className="h-8 w-16 text-right"
-                                value={member ? member.weight : ""}
-                                disabled={!member}
-                                onChange={(e) => patchMember(ch.id, { weight: Number(e.target.value) || 0 })}
-                              />
+                              <div className="flex items-center justify-end gap-1">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  step={1}
+                                  className="h-8 w-16 text-right"
+                                  value={member ? member.weight : ""}
+                                  disabled={!member}
+                                  onChange={(e) => patchMember(ch.id, { weight: Number(e.target.value) || 0 })}
+                                />
+                                <span className="w-3 text-xs text-muted-foreground">%</span>
+                              </div>
+                              {member && member.weight === 0 && (
+                                <span className="text-xs text-muted-foreground">{"未参与"}</span>
+                              )}
                             </td>
                           )}
                         </tr>
@@ -544,6 +616,31 @@ export function ChannelCodesPage() {
                   </tbody>
                 </table>
               </div>
+              {showWeight && (
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className={weightTotal === 100 ? "text-muted-foreground" : "text-destructive"}>
+                    {`合计 ${weightTotal}%`}
+                    {weightTotal === 100
+                      ? "（各通道权重即分流占比）"
+                      : "，需等于 100"}
+                    {zeroWeightCount > 0 && `；${zeroWeightCount} 个通道未参与分流`}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={distributeEvenly}>
+                      {"平均分配"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={normalizeTo100}
+                      disabled={weightTotal === 0 || weightTotal === 100}
+                    >
+                      {"按比例归一到 100"}
+                    </Button>
+                  </div>
+                </div>
+              )}
               {membersError && <FieldError>{membersError}</FieldError>}
             </Field>
 

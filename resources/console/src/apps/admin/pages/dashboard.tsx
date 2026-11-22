@@ -5,7 +5,7 @@ import { Link } from "react-router-dom"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 import { dashboardApi } from "@/api"
-import type { AdminOverview, DayStat, HomeConfig, RatelimitStats } from "@/api/dashboard"
+import type { AdminOverview, DayStat, HomeConfig } from "@/api/dashboard"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { ListError } from "@/components/data-list/list-error"
 import { PayIcon } from "@/components/pay-icon"
@@ -24,8 +24,6 @@ import {
   IconGauge, IconCoin, IconUsers, IconChartBar, IconRefresh,
   IconTrendingUp, IconCalendarStats,
 } from "@tabler/icons-react"
-
-const RATELIMIT_LS_KEY = "ratelimit_last_channel"
 
 /** 首页统计自动轮询间隔（ms）与失败退避上限 */
 const REFRESH_MS = 10_000
@@ -168,12 +166,6 @@ export function DashboardPage() {
   const [routeSaved, setRouteSaved] = React.useState<Record<number, RouteForm>>({})
   const [routeSaving, setRouteSaving] = React.useState(false)
 
-  // 通道限速面板
-  const [rlChannel, setRlChannel] = React.useState<string>("")
-  const [rlValue, setRlValue] = React.useState<string>("")
-  const [rlStats, setRlStats] = React.useState<RatelimitStats | null>(null)
-  const [rlSaving, setRlSaving] = React.useState(false)
-
   const applyConfig = React.useCallback((cfg: HomeConfig) => {
     setConfig(cfg)
     const forms: Record<number, RouteForm> = Object.fromEntries(cfg.pay_types.map((pt) => {
@@ -188,21 +180,6 @@ export function DashboardPage() {
     }))
     setRouteForms(forms)
     setRouteSaved(forms)
-
-    // 通道限速：恢复最后选中通道，优先 localStorage，缺失时回退数据库
-    let last = ""
-    try { last = localStorage.getItem(RATELIMIT_LS_KEY) ?? "" } catch { /* ignore */ }
-    if (!last && cfg.ratelimit_last > 0) last = String(cfg.ratelimit_last)
-    const exists = !!last && cfg.channels.some((c) => String(c.id) === last)
-    const initial = exists ? last : ""
-    setRlChannel(initial)
-    const lim = initial ? (cfg.ratelimit[initial] ?? 0) : 0
-    setRlValue(lim > 0 ? String(lim) : "")
-    if (initial && lim > 0) {
-      dashboardApi.ratelimitStats(Number(initial)).then(setRlStats).catch(() => setRlStats({ show: 0 }))
-    } else {
-      setRlStats({ show: 0 })
-    }
   }, [])
 
   const [loadError, setLoadError] = React.useState<unknown>(null)
@@ -407,61 +384,6 @@ export function DashboardPage() {
     }
   }
 
-  // ---- 通道限速 ----
-  const loadRatelimit = (cid: string, map?: Record<string, number>) => {
-    const lim = (map ?? config?.ratelimit ?? {})[cid] ?? 0
-    setRlValue(lim > 0 ? String(lim) : "")
-    if (!cid || lim <= 0) { setRlStats({ show: 0 }); return }
-    setRlStats(null)
-    dashboardApi.ratelimitStats(Number(cid)).then(setRlStats).catch(() => setRlStats({ show: 0 }))
-  }
-
-  const onRatelimitChannelChange = (cid: string) => {
-    setRlChannel(cid)
-    if (cid) {
-      try { localStorage.setItem(RATELIMIT_LS_KEY, cid) } catch { /* ignore */ }
-      dashboardApi.saveRatelimitLast(Number(cid)).catch(() => {})
-    }
-    loadRatelimit(cid)
-  }
-
-  const saveRatelimit = async () => {
-    const cid = Number(rlChannel) || 0
-    if (!cid) {
-      // 「关闭」：一键关闭所有通道限速
-      setRlSaving(true)
-      try {
-        await dashboardApi.saveRatelimit({ channel_id: 0 })
-        try { localStorage.removeItem(RATELIMIT_LS_KEY) } catch { /* ignore */ }
-        toast.success("已关闭所有通道限速")
-        const cfg = await dashboardApi.homeConfig()
-        applyConfig(cfg)
-      } catch (e) {
-        toast.error(getErrorMessage(e, "操作失败"))
-      } finally {
-        setRlSaving(false)
-      }
-      return
-    }
-    const val = rlValue.trim()
-    if (val === "" || !/^[0-9]+$/.test(val)) {
-      toast.error("请输入正确的次数（非负整数）")
-      return
-    }
-    setRlSaving(true)
-    try {
-      await dashboardApi.saveRatelimit({ channel_id: cid, value: Number(val) })
-      toast.success("通道限速已保存")
-      const cfg = await dashboardApi.homeConfig()
-      setConfig(cfg)
-      loadRatelimit(String(cid), cfg.ratelimit)
-    } catch (e) {
-      toast.error(getErrorMessage(e, "操作失败"))
-    } finally {
-      setRlSaving(false)
-    }
-  }
-
   const paytypeMap = overview?.paytype ?? {}
   const channelMap = overview?.channel ?? {}
   // 今日统计表头图标：id → { code, icon }。icon 未配置时靠 code 走内置图标库兜底
@@ -509,9 +431,8 @@ export function DashboardPage() {
             })}
           </div>
 
-          {/* 交易统计 / 金额路由 / 通道限速 —— 与上方统计卡片同一套栅格（6 列），
-              分别占 3/2/1 列，边界与上一行卡片严格对齐；
-              网格默认 stretch，同一行内三张卡片高度永远一致 */}
+          {/* 交易统计 / 金额路由 —— 与上方统计卡片同一套栅格（6 列），
+              6xl 下一行各占 3 列；窄屏各占整行，边界与上一行卡片严格对齐。 */}
           <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @3xl/main:grid-cols-3 @6xl/main:grid-cols-6">
             <Card className="@xl/main:col-span-2 @3xl/main:col-span-3 @6xl/main:col-span-3">
               <CardHeader>
@@ -565,7 +486,7 @@ export function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card className="@3xl/main:col-span-2">
+            <Card className="@xl/main:col-span-2 @3xl/main:col-span-3 @6xl/main:col-span-3">
               <CardHeader>
                 <CardTitle>{"金额路由"}</CardTitle>
                 <CardDescription>{"区间固定走通道"}</CardDescription>
@@ -631,62 +552,6 @@ export function DashboardPage() {
                       })}
                     </TableBody>
                   </Table>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>{"通道限速"}</CardTitle>
-                <CardDescription>{"限制每分钟拉单次数"}</CardDescription>
-                <CardAction>
-                  {!loading && (config?.ratelimit[rlChannel] ?? 0) > 0 && (
-                    <Badge variant="secondary">1 分钟 × {config?.ratelimit[rlChannel]}</Badge>
-                  )}
-                </CardAction>
-              </CardHeader>
-              <CardContent className="flex flex-1 flex-col justify-center gap-3">
-                {loading ? (
-                  <div className="flex flex-col gap-2">
-                    <Skeleton className="h-9 w-full" />
-                    <Skeleton className="h-9 w-full" />
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex flex-col gap-1.5">
-                      {/* Radix Select 不支持空字符串 value，用 "off" 哨兵值代表「关闭」，回调时映射回 "" */}
-                      <Select
-                        value={rlChannel || "off"}
-                        onValueChange={(v) => onRatelimitChannelChange(v === "off" ? "" : v)}
-                      >
-                        <SelectTrigger size="sm" className="h-8 w-full min-w-0 text-xs" aria-label={"限速通道"}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="off">{"关闭（解除全部限速）"}</SelectItem>
-                          {(config?.channels ?? []).map((c) => (
-                            <SelectItem key={c.id} value={String(c.id)}>{c.name} (ID:{c.id})</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {/* 选「关闭」时无目标通道，次/分钟无意义，禁用（保存仍可用：一键解除全部限速） */}
-                      <Input className="h-8 w-full min-w-0 px-1.5 text-xs tabular-nums" placeholder={"次/分钟"} disabled={!rlChannel}
-                        aria-label={"每分钟拉单次数"}
-                        value={rlValue} onChange={(e) => setRlValue(e.target.value)} />
-                      <Button size="sm" className="h-8 shrink-0" disabled={rlSaving} onClick={saveRatelimit}>
-                        {rlSaving ? <Spinner className="size-3.5" /> : "保存"}
-                      </Button>
-                    </div>
-                    {rlStats?.show === 1 ? (
-                      <div className="rounded-md border bg-muted/30 px-2.5 py-1.5 text-xs text-muted-foreground tabular-nums">
-                        {`总单 ${rlStats.allnum ?? 0} · 成功 ${rlStats.success ?? 0} · 成功率 ${rlStats.rate ?? 0}%`}
-                      </div>
-                    ) : rlStats === null ? (
-                      <Skeleton className="h-7 w-full" />
-                    ) : null}
-                  </>
                 )}
               </CardContent>
             </Card>

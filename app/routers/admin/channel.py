@@ -684,6 +684,10 @@ async def channel_delete(channel_id: int, session: SessionDep, request: Request,
 # mode 是**编码级**策略（与通道自身的 mode 无关）。
 
 CODE_MODES = {0: "随机", 1: "轮询", 2: "权重"}
+# 权重按**百分比**配置：同一编码内各成员权重合计必须是 100，权重值本身就是分流占比
+# （与 epay 后台「通道:权重」的口径一致，运营不用再拿 1/3 这类相对值心算）。
+CODE_WEIGHT_SUM = 100
+CODE_WEIGHT_MAX = 100
 
 
 class ChannelCodeItemRequest(BaseModel):
@@ -734,10 +738,16 @@ async def _validate_code_payload(session, body: ChannelCodeRequest,
     for it in body.items:
         if it.weight < 0:
             return code, "权重不能为负数"
-    # 权重模式必须至少有一个正权重成员：全零会在抽签时退化（老实现永远选最后一条），
-    # 运营以为按权重分流、实际全量压一条通道，比报错危险
-    if body.mode == 2 and not any(it.weight > 0 for it in body.items):
-        return code, "权重模式下至少一个通道的权重要大于 0"
+        if it.weight > CODE_WEIGHT_MAX:
+            return code, f"权重不能超过 {CODE_WEIGHT_MAX}（权重按百分比配置）"
+    # 权重按百分比配置：合计必须 100，权重值即占比，运营一眼能核对。
+    # 全零同样落在这里（合计 0），单独给一句更具体的文案。
+    if body.mode == 2:
+        total = sum(it.weight for it in body.items)
+        if total == 0:
+            return code, "权重模式下至少一个通道的权重要大于 0（各通道权重合计需为 100）"
+        if total != CODE_WEIGHT_SUM:
+            return code, f"权重合计必须等于 {CODE_WEIGHT_SUM}（当前 {total}）"
     return code, ""
 
 
