@@ -3,13 +3,14 @@ from typing import Optional
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
+from sqlmodel import col, select
 
 from app.core.deps import CacheDep, SessionDep
 from app.core.security import MerchantUser, hash_password, revoke_all_tokens, verify_password
 from app.lib.sign import derive_public_key, get_sign_content, make_md5_sign, pem_to_flat
-from app.models import Merchant
+from app.models import ChannelCode, Merchant
 from app.responses import err, suc
 from app.services.apikey import ensure_api_secret, set_api_secret
 from app.services.settings import get_all_settings
@@ -43,12 +44,14 @@ async def change_password(body: ChangePasswordRequest, auth: MerchantUser, sessi
 
 
 @router.get("/apikey")
-async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
+async def get_apikey(request: Request, auth: MerchantUser, session: SessionDep, cache: CacheDep):
     """查看 API 密钥信息。
 
     - api_secret：MD5 签名密钥（未开启 RSA2 时生效；本人可反复查看/复制/重置）
     - rsa2_enable / public_key：RSA2 是否开启及商户公钥（开启后 MD5 失效）
     - platform_public_key：平台公钥（验 RSA2 通知签名用）
+    - 对接信息（面板「对接信息」一键复制用）：username / site_url /
+      channel_codes（当前启用的下游通道编码，编码 + 名称）/ channel_code_required
     """
     m = auth.user
     secret = await ensure_api_secret(session, m)
@@ -57,12 +60,26 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
         platform_public_key = derive_public_key(str(settings.get("platform_rsa_private_key") or ""))
     except ValueError:
         platform_public_key = ""
+    # 站点地址：优先取「站点配置 → 站点地址」，未配置时回退当前请求域名
+    site_url = str(settings.get("site_url") or str(request.base_url)).rstrip("/")
+    # 下游通道编码：只列启用中的编码（停用编码下单直接报错，不该出现在对接信息里）
+    codes = (await session.exec(
+        select(ChannelCode)
+        .where(ChannelCode.status == 1)
+        .order_by(col(ChannelCode.code))
+    )).all()
     return suc({
         "pid": m.pid,
+        "username": m.username,
         "api_secret": secret,
         "public_key": pem_to_flat(m.public_key or ""),
         "rsa2_enable": bool(m.rsa2_enable),
         "platform_public_key": platform_public_key,
+        "site_url": site_url,
+        "channel_codes": [
+            {"code": c.code, "name": c.name or ""} for c in codes
+        ],
+        "channel_code_required": bool(m.channel_code_required),
     })
 
 

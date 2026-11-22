@@ -2,10 +2,14 @@ import apiClient from "@/lib/api-client"
 
 export interface ApiKeyData {
   pid: number
+  username: string // 商户名称（登录用户名）
   api_secret: string // MD5 签名密钥（默认算法，32 位小写 hex）
   public_key: string // 商户 RSA 公钥（未配置为空串）
   rsa2_enable: boolean // 是否启用 RSA2（默认关闭；启用后 MD5 失效）
   platform_public_key: string // 平台公钥（由平台私钥派生，未配置为空串）
+  site_url: string // 站点地址（对接信息里的下单/查询/文档地址前缀）
+  channel_codes: { code: string; name: string }[] // 启用中的下游通道编码
+  channel_code_required: boolean // 开放 API 下单是否必须携带 channel_code
 }
 
 export interface SignDebugResult {
