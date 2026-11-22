@@ -7,7 +7,8 @@ export interface ApiKeyData {
   public_key: string // 商户 RSA 公钥（未配置为空串）
   rsa2_enable: boolean // 是否启用 RSA2（默认关闭；启用后 MD5 失效）
   platform_public_key: string // 平台公钥（由平台私钥派生，未配置为空串）
-  channel_code: { code: string; name: string } | null // 对接信息展示的单个启用编码（测试编码优先）
+  // 对接信息展示的业务编码：只给被标成测试编码且启用中的那条，没有则为 null（整行不展示）
+  channel_code: { code: string; name: string; is_test: boolean } | null
   channel_code_required: boolean // 开放 API 下单是否必须携带 channel_code
 }
 

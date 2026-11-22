@@ -64,6 +64,7 @@ const codeSchema = z.object({
   remark: z.string().trim().max(255, "备注最多 255 个字符"),
   mode: z.number(),
   status: z.number(),
+  is_test: z.boolean(),
   members: z.record(z.string(), memberSchema),
 }).superRefine((values, ctx) => {
   const items = Object.values(values.members)
@@ -79,7 +80,7 @@ const codeSchema = z.object({
 type CodeFormValues = z.infer<typeof codeSchema>
 
 const emptyValues = (): CodeFormValues => ({
-  code: "", name: "", remark: "", mode: 0, status: 1, members: {},
+  code: "", name: "", remark: "", mode: 0, status: 1, is_test: false, members: {},
 })
 
 /**
@@ -169,7 +170,7 @@ export function ChannelCodesPage() {
       setEditingId(id)
       codeForm.reset({
         code: detail.code, name: detail.name, remark: detail.remark,
-        mode: detail.mode, status: detail.status, members: memberMap,
+        mode: detail.mode, status: detail.status, is_test: detail.is_test, members: memberMap,
       })
       setDialogOpen(true)
     } catch (err) {
@@ -200,6 +201,7 @@ export function ChannelCodesPage() {
       remark: values.remark.trim(),
       mode: values.mode,
       status: values.status,
+      is_test: values.is_test,
       items: items.map((it, idx) => ({ ...it, sort: idx })),
     }
     setSaving(true)
@@ -271,6 +273,16 @@ export function ChannelCodesPage() {
         header: () => "昨日收款",
         cell: ({ row }) => secondaryCell(row.original.yesterday_amount ?? "-"),
         meta: { headClassName: "w-[100px] text-right", cellClassName: "text-right" },
+      },
+      {
+        accessorKey: "is_test",
+        enableSorting: false,
+        header: () => "用途",
+        cell: ({ row }) => (row.original.is_test
+          ? <Badge className="border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400">{"测试编码"}</Badge>
+          : <span className="text-sm text-muted-foreground">{"正式"}</span>
+        ),
+        meta: { headClassName: "w-[90px] text-center", cellClassName: "text-center" },
       },
       {
         accessorKey: "status",
@@ -432,6 +444,26 @@ export function ChannelCodesPage() {
                     </div>
                     <FieldDescription className="text-xs">
                       {"停用后下游再用这个编码下单会直接报错"}
+                    </FieldDescription>
+                  </Field>
+                )}
+              />
+              <Controller
+                name="is_test"
+                control={codeForm.control}
+                render={({ field }) => (
+                  <Field>
+                    <FieldLabel htmlFor="code-is-test">{"测试通道"}</FieldLabel>
+                    <div className="flex h-9 items-center gap-2">
+                      <Switch
+                        id="code-is-test"
+                        checked={field.value}
+                        onCheckedChange={(v) => field.onChange(v)}
+                      />
+                      <span className="text-sm text-muted-foreground">{field.value ? "测试编码" : "正式编码"}</span>
+                    </div>
+                    <FieldDescription className="text-xs">
+                      {"商户端「对接信息」只展示测试编码（多条时取 id 最小的一条，需启用）"}
                     </FieldDescription>
                   </Field>
                 )}
