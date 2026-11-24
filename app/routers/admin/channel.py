@@ -21,7 +21,12 @@ from app.core.security import AdminUser, AnyPermissionChecker, PermissionChecker
 from app.models import Channel, ChannelCode, ChannelCodeItem, Order, PaymentType, Plugin
 from app.responses import err, paginate, suc
 from app.services.balance import dmoney
-from app.services.channel import code_format_ok, get_channel_code, normalize_channel_code
+from app.services.channel import (
+    code_amount_text,
+    code_format_ok,
+    get_channel_code,
+    normalize_channel_code,
+)
 from app.services.crypto import decrypt_config, encrypt_config
 from app.services.plugin import PluginRegistry
 from app.services.plugin_interfaces import PluginMeta
@@ -704,11 +709,40 @@ class ChannelCodeRequest(BaseModel):
     status: int = 1
     # 测试编码：商户端「对接信息」只展示这条（允许多条，取 id 最小的一条启用编码）
     is_test: bool = False
+    # 编码级单笔金额区间（两端含，0=不限，两边都 0=不限制）
+    min_amount: str = "0.00"
+    max_amount: str = "0.00"
+    # 编码级商户费率（%）：空=不覆盖（走商户专属 / 通道费率）
+    fee_rate: str = ""
     items: list[ChannelCodeItemRequest] = []
 
 
 class ChannelCodeStatusRequest(BaseModel):
     status: int
+
+
+def _parse_code_limits(body: ChannelCodeRequest) -> tuple[Decimal, Decimal, Decimal | None, str]:
+    """解析并校验编码级限额/费率。返回 (min, max, fee_rate|None, 错误文案)。"""
+    try:
+        minv = dmoney(body.min_amount or "0.00")
+        maxv = dmoney(body.max_amount or "0.00")
+    except Exception:
+        return Decimal("0"), Decimal("0"), None, "金额限额格式错误"
+    if minv < 0 or maxv < 0:
+        return minv, maxv, None, "金额限额不能为负数"
+    # max=0 表示不限上限；min=0 表示不限下限，两者都 0 = 不限制
+    if maxv > 0 and minv > maxv:
+        return minv, maxv, None, f"金额下限不能大于上限（{minv} > {maxv}）"
+    fee = None
+    raw = (body.fee_rate or "").strip()
+    if raw:
+        try:
+            fee = dmoney(raw)
+        except Exception:
+            return minv, maxv, None, "费率格式错误"
+        if fee < 0 or fee > 100:
+            return minv, maxv, None, f"费率需在 0~100 之间（当前 {fee}）"
+    return minv, maxv, fee, ""
 
 
 async def _validate_code_payload(session, body: ChannelCodeRequest,
@@ -721,6 +755,9 @@ async def _validate_code_payload(session, body: ChannelCodeRequest,
         return code, "通道编码仅支持 1~32 位字母、数字、- 和 _"
     if body.mode not in CODE_MODES:
         return code, "策略取值不合法"
+    _, _, _, limit_error = _parse_code_limits(body)
+    if limit_error:
+        return code, limit_error
     dup = await get_channel_code(session, code)
     if dup and dup.id != exclude_id:
         return code, "通道编码已存在"
@@ -870,6 +907,10 @@ async def channel_code_list(session: SessionDep, page: int = Query(1, ge=1),
             "mode": c.mode,
             "status": c.status,
             "is_test": bool(c.is_test),
+            "min_amount": str(c.min_amount),
+            "max_amount": str(c.max_amount),
+            "amount_text": code_amount_text(c),
+            "fee_rate": str(c.fee_rate) if c.fee_rate is not None else "",
             "item_count": len(members),
             "members": [
                 _dump_code_item(it, channel_map.get(it.channel_id)) for it in members
@@ -905,6 +946,10 @@ async def channel_code_detail(code_id: int, session: SessionDep):
         "mode": c.mode,
         "status": c.status,
         "is_test": bool(c.is_test),
+        "min_amount": str(c.min_amount),
+        "max_amount": str(c.max_amount),
+        "amount_text": code_amount_text(c),
+        "fee_rate": str(c.fee_rate) if c.fee_rate is not None else "",
         "items": [_dump_code_item(it, channels.get(it.channel_id)) for it in items],
     })
 
@@ -914,6 +959,7 @@ async def channel_code_create(body: ChannelCodeRequest, session: SessionDep):
     code, msg = await _validate_code_payload(session, body)
     if msg:
         return err(-1, msg)
+    minv, maxv, fee, _ = _parse_code_limits(body)
     c = ChannelCode(
         code=code,
         name=(body.name or "").strip()[:64] or code,
@@ -921,6 +967,9 @@ async def channel_code_create(body: ChannelCodeRequest, session: SessionDep):
         mode=body.mode,
         status=1 if body.status == 1 else 0,
         is_test=bool(body.is_test),
+        min_amount=minv,
+        max_amount=maxv,
+        fee_rate=fee,
     )
     session.add(c)
     await session.commit()
@@ -938,12 +987,16 @@ async def channel_code_update(code_id: int, body: ChannelCodeRequest, session: S
     code, msg = await _validate_code_payload(session, body, exclude_id=code_id)
     if msg:
         return err(-1, msg)
+    minv, maxv, fee, _ = _parse_code_limits(body)
     c.code = code
     c.name = (body.name or "").strip()[:64] or code
     c.remark = (body.remark or "").strip()[:255] or None
     c.mode = body.mode
     c.status = 1 if body.status == 1 else 0
     c.is_test = bool(body.is_test)
+    c.min_amount = minv
+    c.max_amount = maxv
+    c.fee_rate = fee
     session.add(c)
     await _replace_code_items(session, code_id, body.items)
     await session.commit()

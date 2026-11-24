@@ -249,6 +249,67 @@ async def get_channel_code(session: AsyncSession, code: str) -> ChannelCode | No
     return (await session.exec(select(ChannelCode).where(ChannelCode.code == code))).first()
 
 
+# ---- 编码级单笔金额区间（0 = 不限，两端都 0 = 不限制） ----
+
+def amount_in_range(money: Decimal, min_amount: Decimal, max_amount: Decimal) -> bool:
+    """金额是否落在 [min, max]（两端含）。0 表示该端不限。"""
+    if min_amount and min_amount > 0 and money < min_amount:
+        return False
+    if max_amount and max_amount > 0 and money > max_amount:
+        return False
+    return True
+
+
+def code_amount_ok(code: ChannelCode, money: Decimal) -> bool:
+    """订单申报金额是否落在编码的限额区间内。"""
+    return amount_in_range(
+        dmoney(money),
+        dmoney(code.min_amount or 0),
+        dmoney(code.max_amount or 0),
+    )
+
+
+def code_amount_text(code: ChannelCode) -> str:
+    """限额展示文案（不含单位）：`1.00 ~ 9.00` / `≥ 5.00` / `≤ 100.00` / `不限`。
+
+    后台列表与商户端共用同一口径，避免两边各写一套把「0=不限」解释错。
+    """
+    lo = dmoney(code.min_amount or 0)
+    hi = dmoney(code.max_amount or 0)
+    if lo <= 0 and hi <= 0:
+        return "不限"
+    if hi <= 0:
+        return f"≥ {lo}"
+    if lo <= 0:
+        return f"≤ {hi}"
+    return f"{lo} ~ {hi}"
+
+
+def code_amount_error(code: ChannelCode) -> str:
+    """限额不通过时给下游的文案：说清区间，而不是笼统的「当前不可用」。"""
+    lo = dmoney(code.min_amount or 0)
+    hi = dmoney(code.max_amount or 0)
+    if hi <= 0:
+        return f"通道编码 {code.code} 单笔金额需不低于 {lo} 元"
+    if lo <= 0:
+        return f"通道编码 {code.code} 单笔金额需不高于 {hi} 元"
+    return f"通道编码 {code.code} 单笔金额需在 {lo} ~ {hi} 元之间"
+
+
+def effective_merchant_rate(code: ChannelCode | None,
+                            merchant_rate: Decimal | None) -> Decimal | None:
+    """生效商户费率优先级：商户专属费率 > 编码费率 > None（= 用通道自身费率兜底）。
+
+    `process_payment` 把返回值原样透传给选通道路由：返回 None 时由被选中通道的
+    `merchant_rate` 兜底，与加编码之前的行为完全一致。
+    """
+    if merchant_rate is not None:
+        return dmoney(merchant_rate)
+    if code is not None and code.fee_rate is not None:
+        return dmoney(code.fee_rate)
+    return None
+
+
 async def code_supports_type(session: AsyncSession, code_id: int, payment_type_id: int) -> bool:
     """编码下是否有与该支付方式绑定的通道（只看绑定关系，不看通道运行时状态）。
 

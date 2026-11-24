@@ -28,8 +28,11 @@ from app.services.channel import (
     ResolvedChannel,
     choose_channel,
     choose_channel_by_code,
+    code_amount_error,
+    code_amount_ok,
     code_format_ok,
     code_supports_type,
+    effective_merchant_rate,
     get_channel_code,
     normalize_channel_code,
 )
@@ -258,6 +261,10 @@ async def create_order(params: dict, session: AsyncSession, cache: CacheClient |
             raise ValueError("通道编码不存在或不可用")
         if not await code_supports_type(session, code_row.id, pay_type.id):
             raise ValueError("通道编码不支持当前支付方式")
+        # 编码级单笔限额：参数级拦掉，不建单（订单表不落「注定拉不起来」的单，
+        # 下游也不用等收银台/上游报错才发现金额越界）
+        if not code_amount_ok(code_row, money):
+            raise ValueError(code_amount_error(code_row))
     channel_code_id = code_row.id if code_row else 0
 
     # 幂等：同商户同 out_trade_no 直接返回已有订单
@@ -538,9 +545,16 @@ async def process_payment(
             _log.warning("拉起支付失败：通道编码已停用或不存在 trade_no=%s code=%s id=%s",
                          order.trade_no, order.channel_code, order.channel_code_id)
             return PayFlowResult(ok=False, error="通道编码不存在或不可用")
+        # 限额在建单时已校验，这里再判一次：订单可能是限额调整前建的待支付单，
+        # 配置收紧后不能再让它拉起（否则限额被存量订单绕过）
+        if not code_amount_ok(code_row, order.money):
+            _log.warning("拉起支付失败：金额超出编码限额 trade_no=%s code=%s money=%s",
+                         order.trade_no, order.channel_code, order.money)
+            return PayFlowResult(ok=False, error=code_amount_error(code_row))
         resolved = await choose_channel_by_code(
             session, cache, order.channel_code_id, order.payment_type_id, order.money,
-            merchant_rate=merchant.rate,
+            # 生效费率：商户专属费率 > 编码费率 > 通道费率（None 时由通道兜底）
+            merchant_rate=effective_merchant_rate(code_row, merchant.rate),
             # 测试单不占通道日限额/限速窗口，避免反复测试把通道测到自动关闭
             skip_limits=order.order_type == ORDER_TYPE_TEST,
         )
@@ -862,7 +876,12 @@ async def process_paid_order(
                 if channel is not None:
                     from app.models import Merchant as _M
                     m = await session.get(_M, order.merchant_id)
-                    rate = m.rate if (m and m.rate is not None) else channel.merchant_rate
+                    # 与 process_payment 同一优先级：商户专属 > 编码费率 > 通道费率
+                    code_row = (await session.get(ChannelCode, order.channel_code_id)
+                                if order.channel_code_id else None)
+                    rate = effective_merchant_rate(code_row, m.rate if m else None)
+                    if rate is None:
+                        rate = channel.merchant_rate
                     c_rate = channel.cost_rate
                 else:
                     rate = Decimal("0")

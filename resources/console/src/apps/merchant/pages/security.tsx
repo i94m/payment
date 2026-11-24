@@ -62,6 +62,28 @@ function IntegrationRow({
   )
 }
 
+/** 费率来源说明：商户端看到的是该商户实际生效的费率，不是「编码上写的那个数」 */
+const FEE_SOURCE_LABEL: Record<MerchantChannelCode["fee_rate_source"], string> = {
+  merchant: "我的专属费率（优先于编码费率）",
+  code: "编码费率",
+  channel: "按该编码内实际走的上游通道费率",
+  none: "",
+}
+
+/** 费率展示：单一费率或区间（编码内通道费率不一致时给区间，不假装只有一个值） */
+function feeRateText(c: MerchantChannelCode) {
+  if (!c.fee_rate_min) return ""
+  return c.fee_rate_min === c.fee_rate_max
+    ? `${c.fee_rate_min}%`
+    : `${c.fee_rate_min}% ~ ${c.fee_rate_max}%`
+}
+
+/** 限额展示：后端已按「0=不限」归一（`不限` / `≥ 5.00` / `1.00 ~ 9.00`） */
+function amountLimitText(c: MerchantChannelCode) {
+  const text = c.amount_text || "不限"
+  return text === "不限" ? text : `${text} 元`
+}
+
 export function SecurityPage() {
 
   const [apiKey, setApiKey] = React.useState<ApiKeyData | null>(null)
@@ -214,7 +236,7 @@ export function SecurityPage() {
                 <CardHeader>
                   <CardTitle>{"支付通道"}</CardTitle>
                   <CardDescription>
-                    {"当前已开启的通道编码，下单时把编码作为 channel_code 传入即可限定路由。"}
+                    {"当前已开启的通道编码，下单时把编码作为 channel_code 传入即可限定路由；单笔金额超出「单笔限额」会被直接拒绝，费率按该商户实际生效值展示。"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -237,6 +259,8 @@ export function SecurityPage() {
                         <TableRow>
                           <TableHead className="pl-4">{"通道编码"}</TableHead>
                           <TableHead>{"名称"}</TableHead>
+                          <TableHead className="text-right">{"单笔限额"}</TableHead>
+                          <TableHead className="text-right">{"费率"}</TableHead>
                           <TableHead className="pr-4">{"支付方式"}</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -266,6 +290,17 @@ export function SecurityPage() {
                               {c.remark && (
                                 <span className="mt-0.5 block text-xs text-muted-foreground">{c.remark}</span>
                               )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span className="text-sm tabular-nums">{amountLimitText(c)}</span>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span
+                                className="text-sm tabular-nums"
+                                title={FEE_SOURCE_LABEL[c.fee_rate_source] || undefined}
+                              >
+                                {feeRateText(c) || "—"}
+                              </span>
                             </TableCell>
                             <TableCell className="pr-4">
                               {c.pay_types.length > 0 ? (

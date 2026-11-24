@@ -17,6 +17,16 @@ export interface MerchantChannelCode {
   name: string
   remark: string
   is_test: boolean
+  /** 编码级单笔金额区间（0=不限；两端都 0=不限制） */
+  min_amount: string
+  max_amount: string
+  /** 限额展示文案：`1.00 ~ 9.00` / `≥ 5.00` / `≤ 100.00` / `不限` */
+  amount_text: string
+  /** 该商户实际生效的费率（%）：区间两端相同即为单一费率；空=未知 */
+  fee_rate_min: string
+  fee_rate_max: string
+  /** 费率来源：merchant=我的专属费率，code=编码费率，channel=按通道费率，none=未知 */
+  fee_rate_source: "merchant" | "code" | "channel" | "none"
   // 该编码内启用中通道支持的支付方式（停用通道不计入；空数组=暂不可用）
   pay_types: { code: string; name: string; icon: string }[]
 }

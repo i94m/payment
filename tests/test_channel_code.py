@@ -19,6 +19,7 @@ from app.models import (
     Channel,
     ChannelCode,
     ChannelCodeItem,
+    Merchant,
     Order,
     PaymentType,
     SystemAdmin,
@@ -64,9 +65,15 @@ async def _scoped_admin_headers(session, username: str, perms: tuple[str, ...]):
 
 
 async def _mk_code(session, channel_pairs: list[tuple[Channel, int]],
-                   code: str = "8088", mode: int = 0, status: int = 1) -> ChannelCode:
+                   code: str = "8088", mode: int = 0, status: int = 1,
+                   min_amount: str = "0.00", max_amount: str = "0.00",
+                   fee_rate: str | None = None) -> ChannelCode:
     """建编码主档 + 成员。channel_pairs = [(通道, 权重)]；勾选即启用，没有二级开关。"""
-    cc = ChannelCode(code=code, name=f"编码{code}", mode=mode, status=status)
+    cc = ChannelCode(
+        code=code, name=f"编码{code}", mode=mode, status=status,
+        min_amount=dmoney(min_amount), max_amount=dmoney(max_amount),
+        fee_rate=dmoney(fee_rate) if fee_rate is not None else None,
+    )
     session.add(cc)
     await session.commit()
     await session.refresh(cc)
@@ -657,3 +664,179 @@ async def test_code_page_dictionaries_need_only_their_own_permission(client, ses
     assert (await client.get("/admin-api/pay/types", headers=channel_only)).status_code == 200
     assert (await client.get("/admin-api/pay/channel-options",
                              headers=channel_only)).status_code == 200
+
+
+# ============================================================
+# 编码级限额与费率
+# ============================================================
+
+async def test_code_amount_limit_rejects_out_of_range_order(client, session, two_channels):
+    """超出编码限额 → 建单阶段直接拒绝（区间两端含），不落单。"""
+    seeded = two_channels
+    await _mk_code(session, [(seeded["channel"], 1)], min_amount="1.00", max_amount="9.00")
+
+    for i, money in enumerate(("0.99", "9.01", "100.00")):
+        data = await _post_order(client, f"CC-LIMIT-BAD-{i}", channel_code="8088", money=money)
+        assert data["code"] == -1, data
+        assert data["message"] == "通道编码 8088 单笔金额需在 1.00 ~ 9.00 元之间"
+    assert (await session.exec(select(Order))).first() is None
+
+    # 边界值属于区间内（两端含）
+    for i, money in enumerate(("1.00", "9.00")):
+        data = await _post_order(client, f"CC-LIMIT-OK-{i}", channel_code="8088", money=money)
+        assert data["code"] == 0, data
+        assert (data.get("data") or {}).get("trade_no")
+
+
+async def test_code_amount_limit_blocks_pending_order_launch(client, session, two_channels):
+    """限额收紧后，调整前建的待支付单也不能再拉起（否则限额被存量订单绕过）。"""
+    seeded = two_channels
+    cc = await _mk_code(session, [(seeded["channel"], 1)],
+                        min_amount="1.00", max_amount="9.00")
+    data = await _post_order(client, "CC-LIMIT-PENDING", channel_code="8088", money="5.00")
+    assert data["code"] == 0, data
+    trade_no = data["data"]["trade_no"]
+
+    cc.max_amount = dmoney("3.00")
+    session.add(cc)
+    await session.commit()
+
+    # refresh=true 才会重新走 process_payment（否则收银台复用已落库的上游支付信息）
+    r = await client.post("/cashier/pay",
+                          json={"trade_no": trade_no, "type": "alipay", "refresh": True})
+    body = r.json()
+    assert body["code"] == -1, body
+    assert body["message"] == "通道编码 8088 单笔金额需在 1.00 ~ 3.00 元之间"
+
+
+async def test_code_fee_rate_drives_order_accounting(client, session, two_channels):
+    """编码费率进入记账链路：商户专属费率 > 编码费率 > 通道费率。
+
+    - 编码 8088 设 1.20%，商户无专属费率 → 按编码费率（100 元到账 98.80）
+    - 编码 8089 不设费率 → 回落到通道费率 2%（到账 98.00）
+    - 商户专属费率 0.50% 时优先级最高 → 到账 99.50
+    """
+    seeded = two_channels
+    await _mk_code(session, [(seeded["channel"], 1)], code="8088", fee_rate="1.20")
+    await _mk_code(session, [(seeded["channel"], 1)], code="8089")
+
+    data = await _post_order(client, "CC-FEE-CODE", channel_code="8088", money="100.00")
+    assert data["code"] == 0, data
+    order = await _order_by_out_trade_no(session, "CC-FEE-CODE")
+    await session.refresh(order)
+    assert order.merchant_income == dmoney("98.80")   # 100 * (100-1.20)%
+    assert order.channel_cost == dmoney("1.00")       # 通道成本 1%
+    assert order.profit == dmoney("0.20")
+
+    data = await _post_order(client, "CC-FEE-CHANNEL", channel_code="8089", money="100.00")
+    assert data["code"] == 0, data
+    order = await _order_by_out_trade_no(session, "CC-FEE-CHANNEL")
+    await session.refresh(order)
+    assert order.merchant_income == dmoney("98.00")   # 通道 merchant_rate=2
+
+    # 商户专属费率优先于编码费率
+    merchant = (await session.exec(select(Merchant).where(Merchant.pid == 1001))).one()
+    merchant.rate = dmoney("0.50")
+    session.add(merchant)
+    await session.commit()
+
+    data = await _post_order(client, "CC-FEE-MERCHANT", channel_code="8088", money="100.00")
+    assert data["code"] == 0, data
+    order = await _order_by_out_trade_no(session, "CC-FEE-MERCHANT")
+    await session.refresh(order)
+    assert order.merchant_income == dmoney("99.50")
+
+
+async def test_admin_code_limit_and_fee_validation(client, session, two_channels):
+    """后台保存校验：金额下限>上限、负数、费率越界都被拒；合法值能落库并回显。"""
+    seeded = two_channels
+    headers = await _admin_headers(session)
+    base = {
+        "code": "8088", "name": "编码8088", "remark": "", "mode": 0, "status": 1,
+        "min_amount": "0.00", "max_amount": "0.00", "fee_rate": "",
+        "items": [{"channel_id": seeded["channel"].id, "weight": 1}],
+    }
+
+    r = await client.post("/admin-api/pay/channel-codes",
+                          json={**base, "min_amount": "9.00", "max_amount": "1.00"},
+                          headers=headers)
+    assert r.json()["code"] == -1
+    assert "金额下限不能大于上限" in r.json()["message"]
+
+    r = await client.post("/admin-api/pay/channel-codes",
+                          json={**base, "min_amount": "-1.00"}, headers=headers)
+    assert r.json()["code"] == -1
+    assert "不能为负数" in r.json()["message"]
+
+    # 小数金额也要能挡（dmoney 之前不能抛成 500）
+    r = await client.post("/admin-api/pay/channel-codes",
+                          json={**base, "min_amount": "abc"}, headers=headers)
+    assert r.json()["code"] == -1
+    assert "金额限额格式错误" in r.json()["message"]
+
+    r = await client.post("/admin-api/pay/channel-codes",
+                          json={**base, "fee_rate": "100.01"}, headers=headers)
+    assert r.json()["code"] == -1
+    assert "费率需在 0~100 之间" in r.json()["message"]
+
+    r = await client.post("/admin-api/pay/channel-codes",
+                          json={**base, "min_amount": "1.00", "max_amount": "9.00",
+                                "fee_rate": "1.25"},
+                          headers=headers)
+    assert r.json()["code"] == 0, r.text
+    code_id = r.json()["data"]["id"]
+
+    r = await client.get(f"/admin-api/pay/channel-codes/{code_id}", headers=headers)
+    detail = r.json()["data"]
+    assert detail["min_amount"] == "1.00"
+    assert detail["max_amount"] == "9.00"
+    assert detail["amount_text"] == "1.00 ~ 9.00"
+    assert detail["fee_rate"] == "1.25"
+
+    # 只设下限（上限 0=不限）也合法，展示为「≥ 5.00」
+    base["code"] = "8089"
+    r = await client.post("/admin-api/pay/channel-codes",
+                          json={**base, "min_amount": "5.00", "fee_rate": ""},
+                          headers=headers)
+    assert r.json()["code"] == 0, r.text
+    detail = (await client.get(f"/admin-api/pay/channel-codes/{r.json()['data']['id']}",
+                               headers=headers)).json()["data"]
+    assert detail["amount_text"] == "≥ 5.00"
+    assert detail["fee_rate"] == ""
+
+
+async def test_merchant_channel_codes_show_amount_limit_and_effective_rate(
+        client, session, two_channels):
+    """商户端「支付通道」下发限额与**实际生效**费率（专属 > 编码 > 通道）。"""
+    seeded = two_channels
+    await _mk_code(session, [(seeded["channel"], 1)], code="8088",
+                   min_amount="1.00", max_amount="9.00", fee_rate="1.20")
+    await _mk_code(session, [(seeded["channel2"], 1)], code="8089")
+
+    merchant = (await session.exec(select(Merchant).where(Merchant.pid == 1001))).one()
+    assert merchant.rate is None
+    tk = await issue_token(guard="merchant", user_id=merchant.id, session=session)
+    headers = {"Authorization": f"Bearer {tk.access_token}"}
+
+    data = (await client.get("/merchant-api/account/channel-codes", headers=headers)).json()["data"]
+    by_code = {c["code"]: c for c in data}
+
+    a = by_code["8088"]
+    assert a["amount_text"] == "1.00 ~ 9.00"
+    assert a["fee_rate_min"] == a["fee_rate_max"] == "1.20"
+    assert a["fee_rate_source"] == "code"
+
+    b = by_code["8089"]
+    assert b["amount_text"] == "不限"
+    # 未设编码费率 → 按编码内通道费率（two_channels 两条通道都是 2%）
+    assert b["fee_rate_min"] == b["fee_rate_max"] == "2.00"
+    assert b["fee_rate_source"] == "channel"
+
+    # 商户专属费率最高优先级：两条编码都显示该商户的 0.50%
+    merchant.rate = dmoney("0.50")
+    session.add(merchant)
+    await session.commit()
+    data = (await client.get("/merchant-api/account/channel-codes", headers=headers)).json()["data"]
+    for c in data:
+        assert c["fee_rate_min"] == c["fee_rate_max"] == "0.50", c
+        assert c["fee_rate_source"] == "merchant", c

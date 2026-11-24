@@ -182,6 +182,13 @@ export interface ChannelCodeData {
   status: number
   /** 测试编码：商户端「对接信息」只展示被标记的这条 */
   is_test: boolean
+  /** 编码级单笔金额区间（0=不限；min/max 都 0 = 不限制） */
+  min_amount: string
+  max_amount: string
+  /** 限额展示文案：`1.00 ~ 9.00` / `≥ 5.00` / `≤ 100.00` / `不限` */
+  amount_text: string
+  /** 编码级商户费率（%）；空=不覆盖（按商户专属 / 通道费率） */
+  fee_rate: string
   item_count: number
   members: ChannelCodeItemData[]
   today_count?: number
@@ -199,6 +206,10 @@ export interface ChannelCodeDetailData {
   mode: number
   status: number
   is_test: boolean
+  min_amount: string
+  max_amount: string
+  amount_text: string
+  fee_rate: string
   items: ChannelCodeItemData[]
 }
 
@@ -209,6 +220,11 @@ export interface ChannelCodePayload {
   mode: number
   status: number
   is_test: boolean
+  /** 单笔金额区间（0=不限，两端都 0=不限制） */
+  min_amount: string
+  max_amount: string
+  /** 编码费率（%），空串=不覆盖 */
+  fee_rate: string
   items: { channel_id: number; weight: number; sort?: number }[]
 }
 

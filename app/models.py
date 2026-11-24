@@ -345,6 +345,11 @@ class ChannelCode(SQLModel, table=True):
     - `status=0` 是编码总闸：停用后该编码下单直接报错，不回落默认路由
     - `is_test=1` 标记「测试编码」：商户端对接信息只展示这条（多条时取 id 最小的一条）。
       标记挂在业务编码而不是上游通道上 —— 卡片展示的是编码，标记要跟着被展示的那条走
+    - `min_amount` / `max_amount` 是**编码级单笔金额区间**（两端含，0=不限，两边都 0=不限制）：
+      超出范围直接拒绝建单/拉起，不进入通道选择 —— 编码是下游的产品边界，不能靠通道级
+      区间「恰好过滤掉」来兜底（那样只会报「编码当前不可用」）
+    - `fee_rate` 是**编码级商户费率**（%，空=不覆盖）：商户专属费率 > 编码费率 > 通道费率，
+      与订单记账使用的费率同一条链路，商户端展示的就是实际生效值
     """
     __tablename__ = "channel_codes"
     __table_args__ = (
@@ -359,6 +364,11 @@ class ChannelCode(SQLModel, table=True):
     mode: int = Field(default=0, sa_column=Column(SmallInteger, server_default=text("0"), nullable=False))  # 0=随机 1=轮询 2=权重
     status: int = Field(default=1, sa_column=Column(SmallInteger, server_default=text("1"), nullable=False))  # 1=启用 0=停用
     is_test: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))  # 1=测试编码
+    # 编码级单笔金额区间（两端含，0=不限；min=0 且 max=0 = 完全不限制）
+    min_amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
+    max_amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
+    # 编码级商户费率（%），NULL=不覆盖（按商户专属 / 通道费率）
+    fee_rate: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(5, 2)))
     created_at: Optional[datetime] = _ts_created()
     updated_at: Optional[datetime] = _ts_updated()
 
