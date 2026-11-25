@@ -22,7 +22,7 @@ import {
 import { TrendChart } from "@/components/trend-chart"
 import {
   IconGauge, IconCoin, IconUsers, IconChartBar, IconRefresh,
-  IconTrendingUp, IconCalendarStats,
+  IconTrendingUp, IconCalendarStats, IconPercentage,
 } from "@tabler/icons-react"
 
 /** 首页统计自动轮询间隔（ms）与失败退避上限 */
@@ -305,9 +305,19 @@ export function DashboardPage() {
       note: "今日实时汇总",
     },
     {
+      key: "today_deduct_count", label: "今日扣量", icon: IconPercentage,
+      value: overview?.today_deduct_count ?? 0, format: fmtCount, to: "",
+      note: "今日命中扣量笔数",
+    },
+    {
       key: "yesterday_deduct_money", label: "昨日预计收入", icon: IconCalendarStats,
       value: overview?.yesterday_deduct_money ?? 0, format: fmtMoney, to: "",
       note: "昨日全天汇总",
+    },
+    {
+      key: "yesterday_deduct_count", label: "昨日扣量", icon: IconPercentage,
+      value: overview?.yesterday_deduct_count ?? 0, format: fmtCount, to: "",
+      note: "昨日命中扣量笔数",
     },
     {
       key: "usermoney", label: "总计余额", icon: IconCoin,
@@ -405,8 +415,9 @@ export function DashboardPage() {
       ) : (
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-          {/* 统计卡片（shadcn dashboard-01 SectionCards 样式） */}
-          <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @3xl/main:grid-cols-3 @6xl/main:grid-cols-6">
+          {/* 统计卡片（shadcn dashboard-01 SectionCards 样式）：8 张，大屏 4 列 × 2 行
+              （收入 / 扣量成对排列，同一行的卡片口径可比） */}
+          <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @3xl/main:grid-cols-3 @6xl/main:grid-cols-4">
             {kpis.map((kpi) => {
               const inner = (
                 <Card key={kpi.key} className="@container/card bg-gradient-to-t from-primary/5 to-card shadow-xs dark:bg-card">
@@ -431,10 +442,10 @@ export function DashboardPage() {
             })}
           </div>
 
-          {/* 交易统计 / 金额路由 —— 与上方统计卡片同一套栅格（6 列），
-              6xl 下一行各占 3 列；窄屏各占整行，边界与上一行卡片严格对齐。 */}
-          <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @3xl/main:grid-cols-3 @6xl/main:grid-cols-6">
-            <Card className="@xl/main:col-span-2 @3xl/main:col-span-3 @6xl/main:col-span-3">
+          {/* 交易统计 / 金额路由 —— 与上方统计卡片同一套栅格（4 列），
+              6xl 下一行各占 2 列；窄屏各占整行，边界与上一行卡片严格对齐。 */}
+          <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @3xl/main:grid-cols-3 @6xl/main:grid-cols-4">
+            <Card className="@xl/main:col-span-2 @3xl/main:col-span-3 @6xl/main:col-span-2">
               <CardHeader>
                 <CardTitle>{"交易统计"}</CardTitle>
                 <CardDescription>{"近期成功率与已支付笔数实时汇总"}</CardDescription>
@@ -486,7 +497,7 @@ export function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card className="@xl/main:col-span-2 @3xl/main:col-span-3 @6xl/main:col-span-3">
+            <Card className="@xl/main:col-span-2 @3xl/main:col-span-3 @6xl/main:col-span-2">
               <CardHeader>
                 <CardTitle>{"金额路由"}</CardTitle>
                 <CardDescription>{"区间固定走通道"}</CardDescription>

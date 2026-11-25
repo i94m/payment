@@ -88,6 +88,8 @@ export interface ChannelData {
   day_limit: string
   day_limit_count: number
   sort: number
+  /** 默认通道：全平台唯一，商户端对接信息展示它的名称（不参与分流） */
+  is_default: boolean
   /** 调试日志开关：0=关 1=开 */
   debug_log: number
   config: Record<string, string> // 脱敏后的凭证
@@ -156,6 +158,8 @@ export interface ChannelOptionData {
   plugin_name: string
   payment_type_id: number
   status: number
+  /** 默认通道（全平台唯一） */
+  is_default: boolean
   /** 通道商户费率（%），编码模块展示用 */
   merchant_rate: string
 }
@@ -183,15 +187,11 @@ export interface ChannelCodeData {
   /** 0=随机 2=权重（轮询已下线） */
   mode: number
   status: number
-  /** 测试编码：商户端「对接信息」只展示被标记的这条 */
-  is_test: boolean
   /** 编码级单笔金额区间（0=不限；min/max 都 0 = 不限制） */
   min_amount: string
   max_amount: string
   /** 限额展示文案：`1.00 ~ 9.00` / `≥ 5.00` / `≤ 100.00` / `不限` */
   amount_text: string
-  /** 编码级商户费率（%）；空=不覆盖（按商户专属 / 通道费率） */
-  fee_rate: string
   item_count: number
   members: ChannelCodeItemData[]
   today_count?: number
@@ -208,11 +208,9 @@ export interface ChannelCodeDetailData {
   remark: string
   mode: number
   status: number
-  is_test: boolean
   min_amount: string
   max_amount: string
   amount_text: string
-  fee_rate: string
   items: ChannelCodeItemData[]
 }
 
@@ -221,13 +219,11 @@ export interface ChannelCodePayload {
   name: string
   remark: string
   mode: number
-  status: number
-  is_test: boolean
+  /** 不传 = 保持原状态（表单已去掉启用开关，编辑不会把停用编码改回启用）；创建默认启用 */
+  status?: number
   /** 单笔金额区间（0=不限，两端都 0=不限制） */
   min_amount: string
   max_amount: string
-  /** 编码费率（%），空串=不覆盖 */
-  fee_rate: string
   items: { channel_id: number; weight: number; sort?: number }[]
 }
 
@@ -282,6 +278,10 @@ export const payApi = {
   /** 通道列表「调试日志」开关：只改 debug_log，不触碰费率/限额等字段 */
   setChannelDebugLog: (id: number, enabled: boolean) =>
     apiClient.put(`/pay/channels/${id}/debug-log`, { enabled }),
+
+  /** 设为默认通道（全平台唯一）：只改 is_default，不触碰费率/限额/凭证 */
+  setChannelDefault: (id: number, enabled = true) =>
+    apiClient.put(`/pay/channels/${id}/default`, { enabled }) as Promise<{ id: number; is_default: boolean }>,
 
   // 全部通道今日/昨日收款统计（键为通道 id 字符串）
   channelStats: () => apiClient.get("/pay/channels/stats") as Promise<Record<string, ChannelStats>>,

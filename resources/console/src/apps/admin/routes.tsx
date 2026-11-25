@@ -6,6 +6,7 @@ import { RouteErrorBoundary } from "@/components/route-error-boundary"
 // 路由级懒加载：各页面拆成独立 chunk，首屏只加载当前路由对应代码。
 // 页面均为命名导出，需映射为 default（React.lazy 要求 default 导出）。
 const DashboardPage = lazy(() => import("./pages/dashboard").then((m) => ({ default: m.DashboardPage })))
+const PerformancePage = lazy(() => import("./pages/report/performance").then((m) => ({ default: m.PerformancePage })))
 const OrdersPage = lazy(() => import("./pages/trade/orders").then((m) => ({ default: m.OrdersPage })))
 const NotifyLogsPage = lazy(() => import("./pages/trade/notifylogs").then((m) => ({ default: m.NotifyLogsPage })))
 const MerchantsPage = lazy(() => import("./pages/merchants/index").then((m) => ({ default: m.MerchantsPage })))
@@ -36,6 +37,8 @@ export type PermissionRouteObject = RouteObject & {
 // permission 与后端 PERMISSION_TREE 的 key 对齐
 const pageRoutes: PermissionRouteObject[] = [
   { path: "/", element: <DashboardPage />, permission: "dashboard.view" },
+  // 总业绩统计：按天看收款/扣量/利润，与首页统计点同口径（权限沿用 dashboard.view）
+  { path: "/report/performance", element: <PerformancePage />, permission: "dashboard.view" },
   { path: "/user-center", element: <UserCenterPage /> },
   // 通知中心：按 message.view 权限放行（后端 message/* 接口同口径）
   { path: "/system/notifications", element: <AdminNotificationsPage />, permission: "message.view" },

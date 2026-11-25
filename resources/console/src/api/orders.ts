@@ -31,6 +31,8 @@ export interface OrderData {
   return_url?: string
   param?: string
   status: number
+  /** 扣量单：命中扣量（不入账、不返佣、不通知；后台可见，商户/代理端不可见） */
+  is_deducted?: boolean
   /** 退款状态：NONE 未退 / PARTIAL 部分退 / FULL 全额退（仅详情接口返回） */
   refund_status?: string
   /** 累计已退金额（仅详情接口返回） */
@@ -61,6 +63,8 @@ export interface OrderListParams {
   notify_status?: number | ""
   /** "start,end"（YYYY-MM-DD） */
   addtime?: string
+  /** 扣量筛选（admin）：""=全部 / "1"=仅扣量 / "0"=仅未扣量 */
+  is_deducted?: "" | "0" | "1"
   /** 下游通道编码筛选（admin）：按编码 ID */
   channel_code_id?: number
   channel_code?: string

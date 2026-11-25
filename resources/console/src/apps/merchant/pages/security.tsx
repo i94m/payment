@@ -4,7 +4,6 @@ import * as React from "react"
 import { accountApi } from "@/api"
 import type { ApiKeyData, MerchantChannelCode } from "@/api"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { CopyButton } from "@/components/ui/copy-button"
@@ -37,9 +36,9 @@ function IntegrationRow({
     }
   }
   return (
-    <div className="flex items-start gap-3 px-4 py-2.5">
-      <span className="w-16 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 break-all font-mono text-sm">
+    <div className="flex items-start gap-2 px-4 py-1">
+      <span className="w-14 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 break-all font-mono text-[13px]">
         {value || "-"}
       </span>
       <div className="flex shrink-0 items-center">
@@ -47,7 +46,7 @@ function IntegrationRow({
         <Button
           size="icon"
           variant="ghost"
-          className="size-8"
+          className="size-7"
           aria-label={`复制${label}`}
           title={`复制${label}`}
           disabled={!target}
@@ -64,8 +63,7 @@ function IntegrationRow({
 
 /** 费率来源说明：商户端看到的是该商户实际生效的费率，不是「编码上写的那个数」 */
 const FEE_SOURCE_LABEL: Record<MerchantChannelCode["fee_rate_source"], string> = {
-  merchant: "我的专属费率（优先于编码费率）",
-  code: "编码费率",
+  merchant: "我的专属费率（优先于通道费率）",
   channel: "按该编码内实际走的上游通道费率",
   none: "",
 }
@@ -125,12 +123,13 @@ export function SecurityPage() {
   const { copyToClipboard: copyIntegration, isCopied: integrationCopied } = useCopyToClipboard()
   // 域名一律取当前访问页面的 origin：客户从哪个域名登录，拿到的就是哪个域名
   const site = window.location.origin.replace(/\/+$/, "")
-  // 业务编码只展示后台标了「测试编码」的那条（由后端挑选，前端不判断用途）；
-  // 没有标记时这一行整行不展示，也不回退到正式编码。
-  const codeValue = apiKey?.channel_code
-    ? (apiKey.channel_code.name
-      ? `${apiKey.channel_code.code} - ${apiKey.channel_code.name}`
-      : apiKey.channel_code.code)
+  // 默认通道由后台指定（全平台唯一），只做展示：让接入方知道平台当前主用哪条。
+  // 没有设置时这一行整行不展示。
+  const defaultChannel = apiKey?.default_channel
+  const channelValue = defaultChannel
+    ? (defaultChannel.payment_type
+      ? `${defaultChannel.name}（${defaultChannel.payment_type}）`
+      : defaultChannel.name)
     : ""
   // 商户端密钥始终明文展示，逐项复制与整段复制都直接用原始值，不做任何掩码
   // RSA2 生效时没有可交付的共享密钥（私钥只在商户侧），不能把已停用的 MD5 密钥发出去
@@ -139,8 +138,8 @@ export function SecurityPage() {
     ["商户名称", apiKey.username],
     ["商户号", String(apiKey.pid)],
     ["API密钥", secretValue],
-    // 只有被标记为测试编码时才占一行；缺这一行不影响其它字段与整段复制
-    ...(codeValue ? [["业务编码", codeValue] as [string, string]] : []),
+    // 没有默认通道时不占这一行；缺这一行不影响其它字段与整段复制
+    ...(channelValue ? [["默认通道", channelValue] as [string, string]] : []),
     ["下单地址", `${site}/api/orders`],
     ["查询地址", `${site}/api/orders/{trade_no}`],
     ["对接文档", `${site}/docs`],
@@ -183,7 +182,7 @@ export function SecurityPage() {
                   <CardHeader>
                     <CardTitle>{"对接信息"}</CardTitle>
                     <CardDescription>
-                      {"可直接复制发送给接入方，内容为「字段：值」纯文本（非表格/HTML）。"}
+                      {"可直接复制发送给接入方（「字段：值」纯文本）。"}
                     </CardDescription>
                     <CardAction>
                       <Button
@@ -201,7 +200,7 @@ export function SecurityPage() {
                   </CardHeader>
                   <CardContent className="p-0">
                     <div>
-                      <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
+                      <div className="px-4 pt-1 pb-0.5 text-xs font-medium text-muted-foreground">
                         {"【商户对接参数】"}
                       </div>
                       {integrationFields.map(([label, value]) => {
@@ -217,10 +216,10 @@ export function SecurityPage() {
                         )
                       })}
                     </div>
-                    <div className="space-y-1 px-4 py-2.5 text-xs text-muted-foreground">
+                    <div className="space-y-1 px-4 py-1.5 text-xs text-muted-foreground">
                       <p>
-                        {apiKey.channel_code
-                          ? "下单时携带 channel_code（即上方业务编码，全部可用编码见下方「支付通道」），只在该编码绑定的通道内分流；不传则按平台默认路由。"
+                        {apiKey.default_channel
+                          ? "「默认通道」为平台当前主用通道，仅作对接参考；下单可携带 channel_code 指定通道范围（全部可用编码见下方「支付通道」），不传则按平台默认路由。"
                           : "下单可携带 channel_code 指定通道范围（全部可用编码见下方「支付通道」）；不传则按平台默认路由。"}
                         {rsa2
                           ? "当前为 RSA2 签名，平台不保存私钥，对接信息中不包含密钥明文。"
@@ -279,14 +278,7 @@ export function SecurityPage() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span className="text-sm">{c.name || "—"}</span>
-                                {c.is_test && (
-                                  <Badge className="border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400">
-                                    {"测试"}
-                                  </Badge>
-                                )}
-                              </div>
+                              <span className="text-sm">{c.name || "—"}</span>
                               {c.remark && (
                                 <span className="mt-0.5 block text-xs text-muted-foreground">{c.remark}</span>
                               )}

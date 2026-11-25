@@ -7,8 +7,8 @@ export interface ApiKeyData {
   public_key: string // 商户 RSA 公钥（未配置为空串）
   rsa2_enable: boolean // 是否启用 RSA2（默认关闭；启用后 MD5 失效）
   platform_public_key: string // 平台公钥（由平台私钥派生，未配置为空串）
-  // 对接信息展示的业务编码：只给被标成测试编码且启用中的那条，没有则为 null（整行不展示）
-  channel_code: { code: string; name: string; is_test: boolean } | null
+  // 对接信息展示的默认通道（全平台唯一、启用中），没有则为 null（整行不展示）
+  default_channel: { name: string; payment_type: string } | null
 }
 
 /** 商户端「支付通道」卡片：一条启用中的通道编码及其可用支付方式 */
@@ -16,7 +16,6 @@ export interface MerchantChannelCode {
   code: string
   name: string
   remark: string
-  is_test: boolean
   /** 编码级单笔金额区间（0=不限；两端都 0=不限制） */
   min_amount: string
   max_amount: string
@@ -25,8 +24,8 @@ export interface MerchantChannelCode {
   /** 该商户实际生效的费率（%）：区间两端相同即为单一费率；空=未知 */
   fee_rate_min: string
   fee_rate_max: string
-  /** 费率来源：merchant=我的专属费率，code=编码费率，channel=按通道费率，none=未知 */
-  fee_rate_source: "merchant" | "code" | "channel" | "none"
+  /** 费率来源：merchant=我的专属费率，channel=按通道费率，none=未知 */
+  fee_rate_source: "merchant" | "channel" | "none"
   // 该编码内启用中通道支持的支付方式（停用通道不计入；空数组=暂不可用）
   pay_types: { code: string; name: string; icon: string }[]
 }

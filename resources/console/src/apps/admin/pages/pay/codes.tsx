@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { UnitInput } from "@/components/ui/unit-input"
 import { Field, FieldLabel, FieldDescription, FieldError, RequiredMark } from "@/components/ui/field"
-import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -91,13 +90,9 @@ const codeSchema = z.object({
   name: z.string().trim().max(64, "名称最多 64 个字符"),
   remark: z.string().trim().max(255, "备注最多 255 个字符"),
   mode: z.number(),
-  status: z.number(),
-  is_test: z.boolean(),
   // 单笔金额区间（两端含，0=不限，两边都 0=不限制）
   min_amount: z.string().trim(),
   max_amount: z.string().trim(),
-  // 编码费率（%），留空=不覆盖（按商户专属 / 通道费率）
-  fee_rate: z.string().trim(),
   members: z.record(z.string(), memberSchema),
 }).superRefine((values, ctx) => {
   const min = parseNum(values.min_amount)
@@ -110,12 +105,6 @@ const codeSchema = z.object({
   }
   if (!Number.isNaN(min) && !Number.isNaN(max) && max > 0 && min > max) {
     ctx.addIssue({ code: "custom", path: ["max_amount"], message: "金额下限不能大于上限" })
-  }
-  if (values.fee_rate) {
-    const fee = parseNum(values.fee_rate)
-    if (Number.isNaN(fee) || fee < 0 || fee > 100) {
-      ctx.addIssue({ code: "custom", path: ["fee_rate"], message: "费率需在 0~100 之间" })
-    }
   }
   const items = Object.values(values.members)
   if (items.length === 0) {
@@ -141,8 +130,8 @@ const codeSchema = z.object({
 type CodeFormValues = z.infer<typeof codeSchema>
 
 const emptyValues = (): CodeFormValues => ({
-  code: "", name: "", remark: "", mode: 0, status: 1, is_test: false,
-  min_amount: "0.00", max_amount: "0.00", fee_rate: "", members: {},
+  code: "", name: "", remark: "", mode: 0,
+  min_amount: "0.00", max_amount: "0.00", members: {},
 })
 
 /**
@@ -239,9 +228,7 @@ export function ChannelCodesPage() {
         code: detail.code, name: detail.name, remark: detail.remark,
         // 轮询已下线：存量 mode=1 的编码按随机展示（运行时同样走随机分支），保存即归一为 0
         mode: detail.mode === 1 ? 0 : detail.mode,
-        status: detail.status, is_test: detail.is_test,
         min_amount: detail.min_amount, max_amount: detail.max_amount,
-        fee_rate: detail.fee_rate,
         members: memberMap,
       })
       setDialogOpen(true)
@@ -309,12 +296,10 @@ export function ChannelCodesPage() {
       name: values.name.trim(),
       remark: values.remark.trim(),
       mode: values.mode,
-      status: values.status,
-      is_test: values.is_test,
-      // 空串按 0 落库（0=不限），费率留空=不覆盖（后端按 NULL 存）
+      // 状态不随表单提交：编辑时保持原状态（停用编码不会被顺手改回启用），新建由后端默认启用
+      // 空串按 0 落库（0=不限）
       min_amount: values.min_amount || "0.00",
       max_amount: values.max_amount || "0.00",
-      fee_rate: values.fee_rate,
       items: items.map((it, idx) => ({ ...it, sort: idx })),
     }
     setSaving(true)
@@ -374,13 +359,6 @@ export function ChannelCodesPage() {
         meta: { headClassName: "w-[120px] text-right", cellClassName: "text-right" },
       },
       {
-        accessorKey: "fee_rate",
-        enableSorting: false,
-        header: () => "费率",
-        cell: ({ row }) => secondaryCell(row.original.fee_rate ? `${row.original.fee_rate}%` : "按通道"),
-        meta: { headClassName: "w-[80px] text-right", cellClassName: "text-right" },
-      },
-      {
         accessorKey: "item_count",
         enableSorting: false,
         header: () => "关联通道",
@@ -420,16 +398,6 @@ export function ChannelCodesPage() {
         header: () => "昨日收款",
         cell: ({ row }) => secondaryCell(row.original.yesterday_amount ?? "-"),
         meta: { headClassName: "w-[100px] text-right", cellClassName: "text-right" },
-      },
-      {
-        accessorKey: "is_test",
-        enableSorting: false,
-        header: () => "用途",
-        cell: ({ row }) => (row.original.is_test
-          ? <Badge className="border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-400">{"测试编码"}</Badge>
-          : <span className="text-sm text-muted-foreground">{"正式"}</span>
-        ),
-        meta: { headClassName: "w-[90px] text-center", cellClassName: "text-center" },
       },
       {
         accessorKey: "status",
@@ -514,7 +482,7 @@ export function ChannelCodesPage() {
         </div>
       </div>
 
-      {/* 编码编辑：主档 + 成员（权重 / 是否启用） */}
+      {/* 编码编辑：主档 + 成员（权重） */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen} disablePointerDismissal>
         <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -525,8 +493,8 @@ export function ChannelCodesPage() {
           </DialogHeader>
 
           <form onSubmit={codeForm.handleSubmit(submit)} className="space-y-4">
-            {/* 四列栅格：编码/名称各占半行；策略占 1/2，是否启用、测试通道各占 1/4，同一行铺满。
-                窄屏回退两列：编码/名称/策略各占整行，两个开关并排各占半行 */}
+            {/* 四列栅格：编码/名称各占半行；策略与两个金额各占 1/4，同一行铺满。
+                窄屏回退两列：编码/名称/策略各占整行，两个金额并排各占半行 */}
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               <Controller
                 name="code"
@@ -634,68 +602,6 @@ export function ChannelCodesPage() {
                     {fieldState.error
                       ? <FieldError>{fieldState.error.message}</FieldError>
                       : <FieldDescription className="text-xs">{"0 = 不限"}</FieldDescription>}
-                  </Field>
-                )}
-              />
-              <Controller
-                name="fee_rate"
-                control={codeForm.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid} className="col-span-2">
-                    <FieldLabel htmlFor="code-fee-rate">{"费率"}</FieldLabel>
-                    <UnitInput
-                      {...field}
-                      id="code-fee-rate"
-                      unit="%"
-                      type="number"
-                      min={0}
-                      max={100}
-                      step="0.01"
-                      inputClassName="text-right tabular-nums"
-                      placeholder={"留空 = 按通道费率"}
-                      aria-invalid={fieldState.invalid || undefined}
-                    />
-                    {fieldState.error
-                      ? <FieldError>{fieldState.error.message}</FieldError>
-                      : <FieldDescription className="text-xs">
-                        {"该编码下商户的结算费率；留空则按商户专属费率 / 通道费率"}
-                      </FieldDescription>}
-                  </Field>
-                )}
-              />
-              <Controller
-                name="status"
-                control={codeForm.control}
-                render={({ field }) => (
-                  <Field className="col-span-1">
-                    <FieldLabel htmlFor="code-status">{"是否启用"}</FieldLabel>
-                    <div className="flex h-9 items-center gap-2">
-                      <Switch
-                        id="code-status"
-                        checked={field.value === 1}
-                        onCheckedChange={(v) => field.onChange(v ? 1 : 0)}
-                      />
-                      <span className="text-sm text-muted-foreground">{field.value === 1 ? "启用" : "停用"}</span>
-                    </div>
-                    <FieldDescription className="text-xs">{"停用后该编码不能下单"}</FieldDescription>
-                  </Field>
-                )}
-              />
-              <Controller
-                name="is_test"
-                control={codeForm.control}
-                render={({ field }) => (
-                  <Field className="col-span-1">
-                    <FieldLabel htmlFor="code-is-test">{"测试通道"}</FieldLabel>
-                    <div className="flex h-9 items-center gap-2">
-                      <Switch
-                        id="code-is-test"
-                        checked={field.value}
-                        onCheckedChange={(v) => field.onChange(v)}
-                      />
-                      <span className="text-sm text-muted-foreground">{field.value ? "测试编码" : "正式编码"}</span>
-                    </div>
-                    <FieldDescription className="text-xs">{"仅用于对接联调"}</FieldDescription>
                   </Field>
                 )}
               />

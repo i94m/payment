@@ -2,7 +2,7 @@ import {
   IconGauge, IconListDetails, IconBuildingStore, IconHistory,
   IconReceipt, IconSpeakerphone, IconRoute,
   IconAdjustments, IconPlugConnected, IconBell,
-  IconCreditCard, IconShieldLock, IconRocket,
+  IconCreditCard, IconShieldLock, IconRocket, IconChartHistogram,
 } from "@tabler/icons-react"
 import type { MenuSection } from "@/apps/merchant/sidebar"
 
@@ -13,6 +13,8 @@ export function getAdminMenu(): MenuSection[] {
     {
       items: [
         { title: "数据统计", url: "/", icon: IconGauge, permission: "dashboard.view" },
+        // 总业绩统计：按天看收入（收款/扣量/平台利润），权限沿用 dashboard.view
+        { title: "总业绩统计", url: "/report/performance", icon: IconChartHistogram, permission: "dashboard.view" },
         // 通知中心：按 message.view 权限显隐（后端 message/* 接口同口径）
         { title: "通知中心", url: "/system/notifications", icon: IconBell, permission: "message.view" },
       ],

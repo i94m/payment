@@ -32,7 +32,7 @@ import {
 } from "@/components/data-list/"
 import type { ActionItem } from "@/components/data-list/"
 import {
-  IconSearch, IconRefresh, IconBell, IconRefreshDot, IconDownload, IconEye,
+  IconSearch, IconRefresh, IconBell, IconRefreshDot, IconDownload, IconEye, IconCheck,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
@@ -74,6 +74,8 @@ export function OrdersPage() {
   // 订单类型：""=全部类型（默认）/ "0" 正式收款 / "1" 余额充值 / "2" 测试单
   const [orderType, setOrderType] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState("")
+  // 扣量筛选：""=全部 / "1"=仅扣量 / "0"=仅未扣量（后台独有；商户端/代理端不接收）
+  const [deductFilter, setDeductFilter] = React.useState("")
   const [notifyFilter, setNotifyFilter] = React.useState("")
   const [startDate, setStartDate] = React.useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = React.useState<Date | undefined>(undefined)
@@ -81,6 +83,8 @@ export function OrdersPage() {
   const [detailOrder, setDetailOrder] = React.useState<OrderData | null>(null)
   const [actionTradeNo, setActionTradeNo] = React.useState<string | null>(null)
   const [actionType, setActionType] = React.useState<"refill" | "notify" | null>(null)
+  // 补单确认文案要区分扣量单（回补入账 + 补发通知，不是普通记账）
+  const [actionDeducted, setActionDeducted] = React.useState(false)
   const [summaryMoney, setSummaryMoney] = React.useState("")
 
   const filterParams = React.useMemo(() => {
@@ -96,13 +100,14 @@ export function OrdersPage() {
     if (typeCode.trim()) params.type = typeCode.trim()
     if (orderType) params.order_type = orderType
     if (statusFilter !== "") params.status = Number(statusFilter)
+    if (deductFilter !== "") params.is_deducted = deductFilter
     if (notifyFilter !== "") params.notify_status = Number(notifyFilter)
     if (startDate && endDate) {
       params.addtime = `${format(startDate, "yyyy-MM-dd")},${format(endDate, "yyyy-MM-dd")}`
     }
     return params
   }, [outTradeNo, merchantId, channelId, channelCodeId, typeCode, orderType,
-      statusFilter, notifyFilter, startDate, endDate])
+      statusFilter, deductFilter, notifyFilter, startDate, endDate])
 
   // 日期区间是成对参数：只选一端会被后端静默忽略，这里显式提示而不是「查了没反应」
   const applyFilterParams = () => {
@@ -128,7 +133,8 @@ export function OrdersPage() {
 
   const handleReset = () => {
     setKeyword(""); setOutTradeNo(""); setMerchantId(""); setOrderType(""); setChannelCodeId("")
-    setStatusFilter(""); setNotifyFilter(""); setStartDate(undefined); setEndDate(undefined)
+    setStatusFilter(""); setDeductFilter(""); setNotifyFilter("")
+    setStartDate(undefined); setEndDate(undefined)
     applyFilters()
   }
 
@@ -234,6 +240,20 @@ export function OrdersPage() {
         meta: { headClassName: "w-[80px] text-center", cellClassName: "text-center" },
       },
       {
+        accessorKey: "is_deducted",
+        enableSorting: false,
+        header: () => "扣量",
+        // 命中扣量的订单：不入账、不返佣、不通知，但后台要能看见（对号）
+        cell: ({ row }) => (row.original.is_deducted
+          ? (
+            <span className="inline-flex text-emerald-600 dark:text-emerald-400" title={"扣量单（不入账 / 不返佣 / 不通知）"}>
+              <IconCheck className="size-4" />
+            </span>
+          )
+          : <span className="text-sm text-muted-foreground">{"—"}</span>),
+        meta: { headClassName: "w-[60px] text-center", cellClassName: "text-center" },
+      },
+      {
         accessorKey: "created_at",
         enableSorting: false,
         header: () => "创建时间",
@@ -255,7 +275,10 @@ export function OrdersPage() {
         ...(canRefill ? [{
           label: "补单",
           icon: <IconRefreshDot className="size-4" />,
-          onClick: (item: OrderData) => { setActionType("refill"); setActionTradeNo(item.trade_no) },
+          onClick: (item: OrderData) => {
+            setActionType("refill"); setActionTradeNo(item.trade_no)
+            setActionDeducted(!!item.is_deducted)
+          },
         }] : []),
         ...(canNotify ? [{
           label: "重发通知",
@@ -276,6 +299,7 @@ export function OrdersPage() {
       if (mid !== undefined) params.merchant_id = String(mid)
       if (orderType) params.order_type = orderType
       if (statusFilter !== "") params.status = statusFilter
+      if (deductFilter !== "") params.is_deducted = deductFilter
       if (notifyFilter !== "") params.notify_status = notifyFilter
       if (startDate && endDate) {
         params.addtime = `${format(startDate, "yyyy-MM-dd")},${format(endDate, "yyyy-MM-dd")}`
@@ -288,7 +312,11 @@ export function OrdersPage() {
   }
 
   const actionTitle = actionType === "refill" ? "补单" : "重发通知"
-  const actionMessage = actionType === "refill" ? "确认手动补单？将跳过上游验证直接记账。"
+  const actionMessage = actionType === "refill"
+    ? (actionDeducted
+      // 扣量单补单走 undo_deduct：补入账 + 补返佣 + 排队补发通知
+      ? "确认给这笔扣量单补单？将回补商户入账、补返佣并补发通知。"
+      : "确认手动补单？将跳过上游验证直接记账。")
     : "确认重发商户异步通知？"
 
   const runAction = async () => {
@@ -300,13 +328,14 @@ export function OrdersPage() {
     refresh()
     setActionTradeNo(null)
     setActionType(null)
+    setActionDeducted(false)
   }
 
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         <FilterCard>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3 items-end">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 items-end">
             <div className="col-span-1">
               <Input
                 placeholder={"平台订单号"}
@@ -386,6 +415,24 @@ export function OrdersPage() {
                 {ORDER_STATUS_OPTIONS.map((o) => (
                   <SelectItem key={String(o.value)} value={String(o.value)}>{o.label}</SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={deductFilter || "_all"}
+              onValueChange={(v) => setDeductFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部扣量状态" },
+                { value: "1", label: "扣量单" },
+                { value: "0", label: "未扣量" },
+              ]}
+            >
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue placeholder={"扣量"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">{"全部扣量状态"}</SelectItem>
+                <SelectItem value="1">{"扣量单"}</SelectItem>
+                <SelectItem value="0">{"未扣量"}</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -472,7 +519,7 @@ export function OrdersPage() {
       {/* 补单/通知确认 */}
       <ConfirmDialog
         open={!!actionTradeNo}
-        onOpenChange={(open) => { if (!open) { setActionTradeNo(null); setActionType(null) } }}
+        onOpenChange={(open) => { if (!open) { setActionTradeNo(null); setActionType(null); setActionDeducted(false) } }}
         title={actionTitle}
         description={actionMessage}
         variant="warning"
@@ -504,9 +551,18 @@ function OrderDetailTable({ order }: { order: OrderData }) {
         { label: "商品名称", value: order.subject, wrap: true },
       ],
       [
+        // 扣量单在后台可见（对商户/代理端仍是「未支付」口径）
+        { label: "扣量", value: order.is_deducted
+          ? <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+            <IconCheck className="size-4" />{"扣量单（不入账 / 不返佣 / 不通知）"}
+          </span>
+          : "否" },
         { label: "商户", value: order.merchant_username || String(order.merchant_id ?? "") },
+      ],
+      [
         { label: "支付方式", value: order.type_name || order.type,
           icon: <PayIcon code={order.type} icon={order.type_icon} /> },
+        { label: "通道插件", value: order.plugin_name },
       ],
       [
         { label: "金额", value: `¥${order.money}` },
@@ -517,28 +573,28 @@ function OrderDetailTable({ order }: { order: OrderData }) {
         { label: "平台利润", value: order.profit ? `¥${order.profit}` : "" },
       ],
       [
-        { label: "通道插件", value: order.plugin_name },
         { label: "通道编码", value: order.channel_code || "", mono: true },
-      ],
-      [
         { label: "上游订单号", value: order.api_trade_no, mono: true, wrap: true },
+      ],
+      [
         { label: "商户订单号", value: order.out_trade_no, mono: true, wrap: true },
-      ],
-      [
         { label: "买家账号", value: order.buyer_id, wrap: true },
+      ],
+      [
         { label: "客户端 IP", value: order.client_ip, mono: true },
-      ],
-      [
         { label: "通知次数", value: String(order.notify_count ?? 0) },
+      ],
+      [
         { label: "创建时间", value: order.created_at },
-      ],
-      [
         { label: "支付时间", value: order.paid_at },
-        { label: "过期时间", value: order.expire_at },
       ],
       [
+        { label: "过期时间", value: order.expire_at },
         { label: "回跳地址", value: order.return_url, mono: true, wrap: true },
+      ],
+      [
         { label: "扩展参数", value: order.param, mono: true, wrap: true },
+        { label: "通道 ID", value: order.channel_id ? String(order.channel_id) : "" },
       ],
     ]} />
   )

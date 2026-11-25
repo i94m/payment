@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useNavigate } from "react-router-dom"
 import { merchantsApi, merchantSecurityApi } from "@/api"
 import type { MerchantData } from "@/api"
 import { Button } from "@/components/ui/button"
@@ -104,7 +103,7 @@ function validateRandomRange(min: string, max: string, integerOnly: boolean): st
   return null
 }
 
-/** 商户专属费率（%）：留空 = 不占用（回落到编码费率 / 通道费率），填写需 0~100 */
+/** 商户专属费率（%）：留空 = 不占用（回落到通道费率），填写需 0~100 */
 const rateField = z.string().trim().refine((v) => {
   if (!v) return true
   const n = Number(v)
@@ -136,12 +135,12 @@ function IntegrationRow({ label, value, copyValue }: {
   copyValue?: string
 }) {
   return (
-    <div className="flex items-start gap-3 px-4 py-2.5">
-      <span className="w-16 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 break-all font-mono text-sm">{value || "-"}</span>
+    <div className="flex items-start gap-2 px-4 py-1">
+      <span className="w-14 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 break-all font-mono text-[13px]">{value || "-"}</span>
       <CopyButton
         value={copyValue ?? value}
-        className="size-8"
+        className="size-7"
         aria-label={`复制${label}`}
         title={`复制${label}`}
         disabled={!value}
@@ -158,8 +157,8 @@ function IntegrationRow({ label, value, copyValue }: {
  * 是同一份文本。区别只有一处——后台**直接展示明文密钥**（需求方明确要求不脱敏），
  * 明文来自详情接口 `GET /admin-api/merchant/{id}`，列表接口不下发。
  *
- * 业务编码只展示后台标了「测试编码」（is_test）的那条，由后端挑选；没有就整行不展示，
- * 不回退正式编码。地址取当前访问页面的 origin。
+ * 默认通道由后台「支付通道」列表指定（全平台唯一），没有就整行不展示。
+ * 地址取当前访问页面的 origin。行高比标准卡片紧凑（一屏看全所有字段）。
  */
 function MerchantIntegrationCard({ data, canReset, onReset }: {
   data: MerchantData
@@ -172,16 +171,17 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
   const secretValue = data.rsa2_enable
     ? "RSA2 签名（私钥由接入方自行保管）"
     : (data.api_secret || "")
-  const codeValue = data.channel_code
-    ? (data.channel_code.name
-      ? `${data.channel_code.code} - ${data.channel_code.name}`
-      : data.channel_code.code)
+  const defaultChannel = data.default_channel
+  const channelValue = defaultChannel
+    ? (defaultChannel.payment_type
+      ? `${defaultChannel.name}（${defaultChannel.payment_type}）`
+      : defaultChannel.name)
     : ""
   const fields: Array<[string, string]> = [
     ["商户名称", data.username],
     ["商户号", String(data.pid)],
     ["API密钥", secretValue],
-    ...(codeValue ? [["业务编码", codeValue] as [string, string]] : []),
+    ...(channelValue ? [["默认通道", channelValue] as [string, string]] : []),
     ["下单地址", `${site}/api/orders`],
     ["查询地址", `${site}/api/orders/{trade_no}`],
     ["对接文档", `${site}/docs`],
@@ -202,7 +202,7 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
       <CardHeader>
         <CardTitle>{"对接信息"}</CardTitle>
         <CardDescription>
-          {"直接复制发送给接入方；格式与商户端「API 信息」页一致。"}
+          {"格式与商户端「API 信息」页一致，可直接复制发送。"}
         </CardDescription>
         <CardAction className="flex items-center gap-2">
           <Badge variant={data.rsa2_enable ? "default" : "secondary"}>
@@ -222,8 +222,8 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent className="p-0">
-        <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
+      <CardContent className="p-0 pb-1">
+        <div className="px-4 pt-1 pb-0.5 text-xs font-medium text-muted-foreground">
           {"【商户对接参数】"}
         </div>
         {fields.map(([label, value]) => (
@@ -235,7 +235,6 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
 }
 
 export function MerchantsPage() {
-  const navigate = useNavigate()
   const hasPermission = usePermission()
 
   // ---- 筛选 ----
@@ -672,14 +671,12 @@ export function MerchantsPage() {
         { label: "API密钥", onClick: (item) => openDetail(item) },
         { label: "调整余额", onClick: (item) => { setBalanceTarget(item); setBalanceAmount(""); setBalanceRemark("") } },
         { label: "登录", title: "SSO 一键登录商户后台", onClick: (item) => submitSso(item) },
-        { label: "订单", onClick: (item) => navigate(`/trade/orders?merchant_id=${item.id}`) },
-        { label: "结算", onClick: (item) => navigate(`/settle?merchant_id=${item.id}`) },
         { label: "重置密码", onClick: (item) => { setPwdValue(""); setPwdTarget(item) } },
         // 编辑入口恒定显示：弹窗里的状态开关受 MERCHANT_STATUS_ENABLED 控制，
         // 但「费率」不受开关约束，隐藏入口会让商户专属费率无处可填。
         { label: "编辑", onClick: (item: MerchantData) => { setEditingId(item.id); setFormOpen(true) } },
         { label: "删除", variant: "destructive", title: "删除商户", onClick: (item) => setDeleteTarget(item) },
-      ] as ActionItem<MerchantData>[], { width: 500 }),
+      ] as ActionItem<MerchantData>[], { width: 420 }),
     ],
   })
 
@@ -1022,7 +1019,7 @@ export function MerchantsPage() {
           { type: "input", name: "password", label: "密码", placeholder: "密码", span: "full", required: true, props: { autoComplete: "new-password", spellCheck: false } },
           {
             type: "input", name: "rate", label: "费率", unit: "%", span: "full",
-            placeholder: "留空 = 按编码 / 通道费率",
+            placeholder: "留空 = 按通道费率",
             props: { type: "number", min: 0, max: 100, step: "0.01", inputMode: "decimal" },
           },
           ...(MERCHANT_STATUS_ENABLED ? ([{
@@ -1064,7 +1061,7 @@ export function MerchantsPage() {
           { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", props: { disabled: true } },
           {
             type: "input", name: "rate", label: "费率", unit: "%", span: "full",
-            placeholder: "留空 = 按编码 / 通道费率",
+            placeholder: "留空 = 按通道费率",
             props: { type: "number", min: 0, max: 100, step: "0.01", inputMode: "decimal" },
           },
           ...(MERCHANT_STATUS_ENABLED ? ([{
