@@ -22,16 +22,18 @@ export function NotificationBell() {
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative size-8"
-          onClick={() => navigate("/system/notifications")}>
-          <IconBell className="size-4" />
-          {count > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium leading-none text-destructive-foreground">
-              {count > 99 ? "99+" : count}
-            </span>
-          )}
-        </Button>
+      <TooltipTrigger
+        render={
+          <Button variant="ghost" size="icon" className="relative size-8"
+            onClick={() => navigate("/system/notifications")} />
+        }
+      >
+        <IconBell className="size-4" />
+        {count > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium leading-none text-destructive-foreground">
+            {count > 99 ? "99+" : count}
+          </span>
+        )}
       </TooltipTrigger>
       <TooltipContent>通知中心</TooltipContent>
     </Tooltip>

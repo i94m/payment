@@ -25,11 +25,9 @@ export function ThemeToggle() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-8">
-          <CurrentIcon className="size-4" />
-          <span className="sr-only">切换主题</span>
-        </Button>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="size-8" />}>
+        <CurrentIcon className="size-4" />
+        <span className="sr-only">切换主题</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-32">
         {MODES.map((m) => (

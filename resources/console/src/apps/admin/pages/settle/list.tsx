@@ -167,7 +167,14 @@ export function SettlePage() {
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         <FilterCard>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 items-end max-w-2xl">
-            <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
+            <Select
+              value={statusFilter || "_all"}
+              onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部状态" },
+                ...settleStatusOptions.map((o) => ({ value: String(o.value), label: o.label })),
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"状态"} />
               </SelectTrigger>

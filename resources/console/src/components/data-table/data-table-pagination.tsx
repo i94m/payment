@@ -97,6 +97,7 @@ export function DataTablePagination<TData>({
               // 且留在越界页码上会向后端请求空页
               table.setPagination({ pageIndex: 0, pageSize: Number(value) })
             }}
+            items={sizeOptions.map((size) => ({ value: `${size}`, label: `${size}` }))}
           >
             <SelectTrigger className="h-8 w-[70px]">
               <SelectValue placeholder={`${pageSize}`} />

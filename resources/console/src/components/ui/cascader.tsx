@@ -433,9 +433,7 @@ export function Cascader({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild disabled={disabled}>
-        {triggerElement}
-      </PopoverTrigger>
+      <PopoverTrigger nativeButton={false} render={triggerElement} disabled={disabled} />
       <PopoverContent
         className={cn("w-auto p-0", popupClassName)}
         align="start"

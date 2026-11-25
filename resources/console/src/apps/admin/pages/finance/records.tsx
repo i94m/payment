@@ -216,7 +216,11 @@ export function AdminRecordsPage() {
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         <FilterCard>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
-            <Select value={searchField || "_all"} onValueChange={(v) => setSearchField(v === "_all" ? "" : v)}>
+            <Select
+              value={searchField || "_all"}
+              onValueChange={(v) => setSearchField(v === "_all" ? "" : v)}
+              items={searchFieldOptions.map((o) => ({ value: o.value || "_all", label: o.label }))}
+            >
               <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {searchFieldOptions.map((o) => (
@@ -240,7 +244,14 @@ export function AdminRecordsPage() {
               value={merchantId}
               onChange={(e) => setMerchantId(digitsOnly(e.target.value))}
             />
-            <Select value={bizType || "_all"} onValueChange={(v) => setBizType(v === "_all" ? "" : v)}>
+            <Select
+              value={bizType || "_all"}
+              onValueChange={(v) => setBizType(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部类型" },
+                ...bizTypeOptions.map((o) => ({ value: o.value, label: o.label })),
+              ]}
+            >
               <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="_all">{"全部类型"}</SelectItem>

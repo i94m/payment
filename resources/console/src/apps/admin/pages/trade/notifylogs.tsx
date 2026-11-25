@@ -142,7 +142,15 @@ export function NotifyLogsPage() {
                 onKeyDown={(e) => { if (e.key === "Enter") applyFilters() }}
               />
             </div>
-            <Select value={kindFilter || "_all"} onValueChange={(v) => setKindFilter(v === "_all" ? "" : v)}>
+            <Select
+              value={kindFilter || "_all"}
+              onValueChange={(v) => setKindFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部类型" },
+                { value: "merchant", label: "通知商户" },
+                { value: "upstream", label: "上游回调" },
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"类型"} />
               </SelectTrigger>
@@ -152,7 +160,15 @@ export function NotifyLogsPage() {
                 <SelectItem value="upstream">{"上游回调"}</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={successFilter || "_all"} onValueChange={(v) => setSuccessFilter(v === "_all" ? "" : v)}>
+            <Select
+              value={successFilter || "_all"}
+              onValueChange={(v) => setSuccessFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部状态" },
+                { value: "1", label: "成功" },
+                { value: "0", label: "失败" },
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"结果"} />
               </SelectTrigger>

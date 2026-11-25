@@ -32,10 +32,12 @@ export function HeaderActions() {
       {APP_MODULE === "admin" && hasPermission("message.view") && <NotificationBell />}
       <ThemeToggle />
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button variant="ghost" size="icon" className="size-8 hidden md:inline-flex" onClick={toggleFullscreen}>
-            {isFullscreen ? <IconArrowsMinimize className="size-4" /> : <IconArrowsMaximize className="size-4" />}
-          </Button>
+        <TooltipTrigger
+          render={
+            <Button variant="ghost" size="icon" className="size-8 hidden md:inline-flex" onClick={toggleFullscreen} />
+          }
+        >
+          {isFullscreen ? <IconArrowsMinimize className="size-4" /> : <IconArrowsMaximize className="size-4" />}
         </TooltipTrigger>
         <TooltipContent>{isFullscreen ? "退出全屏" : "全屏"}</TooltipContent>
       </Tooltip>

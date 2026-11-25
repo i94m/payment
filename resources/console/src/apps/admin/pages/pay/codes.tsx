@@ -386,7 +386,15 @@ export function ChannelCodesPage() {
                 onChange={(e) => setKeyword(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") applyFilters() }}
               />
-              <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
+              <Select
+                value={statusFilter || "_all"}
+                onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}
+                items={[
+                  { value: "_all", label: "全部状态" },
+                  { value: "1", label: "已启用" },
+                  { value: "0", label: "已停用" },
+                ]}
+              >
                 <SelectTrigger className="h-9 w-[140px]">
                   <SelectValue placeholder={"状态"} />
                 </SelectTrigger>
@@ -424,9 +432,8 @@ export function ChannelCodesPage() {
       </div>
 
       {/* 编码编辑：主档 + 成员（权重 / 是否启用） */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto"
-                       onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen} disablePointerDismissal>
+        <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? "修改通道编码" : "新增通道编码"}</DialogTitle>
             <DialogDescription>
@@ -479,7 +486,15 @@ export function ChannelCodesPage() {
                 render={({ field }) => (
                   <Field className="col-span-2">
                     <FieldLabel htmlFor="code-mode">{"策略"}</FieldLabel>
-                    <Select value={String(field.value)} onValueChange={(v) => field.onChange(Number(v))}>
+                    <Select
+                      value={String(field.value)}
+                      onValueChange={(v) => field.onChange(Number(v))}
+                      items={[
+                        { value: "0", label: "随机" },
+                        { value: "1", label: "轮询" },
+                        { value: "2", label: "权重" },
+                      ]}
+                    >
                       <SelectTrigger id="code-mode" className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="0">{"随机"}</SelectItem>

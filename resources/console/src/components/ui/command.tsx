@@ -60,7 +60,7 @@ function CommandDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <CommandPrimitive className="flex flex-col overflow-hidden">
-          {children}
+          {children as React.ReactNode}
         </CommandPrimitive>
       </DialogContent>
     </Dialog>

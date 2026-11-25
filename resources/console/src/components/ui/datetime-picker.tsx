@@ -231,12 +231,9 @@ export function DateTimePicker({
     );
   }, [displayValue, hideTime, use12HourFormat, locale]);
 
-  return (
-    <Popover open={open} onOpenChange={setOpen} modal={modal}>
-      <PopoverTrigger asChild>
-        {renderTrigger ? (
-          renderTrigger({ value: displayValue, open, timezone, disabled, use12HourFormat, setOpen })
-        ) : (
+  const triggerElement = (renderTrigger ? (
+    renderTrigger({ value: displayValue, open, timezone, disabled, use12HourFormat, setOpen })
+  ) : (
           <div
             className={cn(
               'flex w-full cursor-pointer items-center h-9 ps-3 pe-1 font-normal border border-input rounded-md text-sm shadow-sm',
@@ -270,8 +267,11 @@ export function DateTimePicker({
               </Button>
             )}
           </div>
-        )}
-      </PopoverTrigger>
+  )) as React.ReactElement
+
+  return (
+    <Popover open={open} onOpenChange={setOpen} modal={modal}>
+      <PopoverTrigger nativeButton={renderTrigger ? undefined : false} render={triggerElement} />
       <PopoverContent className="w-auto p-2">
         <div className="flex items-center justify-between">
           <div className="text-md font-bold ms-2 flex items-center cursor-pointer">
@@ -687,13 +687,9 @@ function TimePicker({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" aria-expanded={open} className="justify-between">
-          <Clock className="mr-2 size-4" />
+      <PopoverTrigger render={<Button variant="outline" role="combobox" aria-expanded={open} className="justify-between" />}><Clock className="mr-2 size-4" />
           {display}
-          <ChevronDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
+          <ChevronDownIcon className="ml-2 size-4 shrink-0 opacity-50" /></PopoverTrigger>
       <PopoverContent className="p-0" side="top">
         <div className="flex-col gap-2 p-2">
           <div className="flex h-56 grow">

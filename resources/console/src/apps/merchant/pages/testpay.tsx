@@ -114,6 +114,7 @@ export function TestPayPage() {
                         value={field.value}
                         onValueChange={field.onChange}
                         disabled={typesLoading || types.length === 0}
+                        items={types.map((t) => ({ value: t.code, label: t.name }))}
                       >
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder={typesLoading ? "加载中…" : "请选择支付方式"} />
@@ -180,11 +181,13 @@ export function TestPayPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {payUrl && (
-                  <Button asChild variant="outline">
-                    <a href={payUrl} target="_blank" rel="noreferrer">
-                      <IconExternalLink className="size-4" />
-                      {"重新打开支付页"}
-                    </a>
+                  <Button
+                    variant="outline"
+                    nativeButton={false}
+                    render={<a href={payUrl} target="_blank" rel="noreferrer" />}
+                  >
+                    <IconExternalLink className="size-4" />
+                    {"重新打开支付页"}
                   </Button>
                 )}
                 {rawPayInfo && (

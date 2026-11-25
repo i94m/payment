@@ -104,6 +104,7 @@ function MerchantProfileCard() {
                     <Select
                       value={field.value !== undefined ? String(field.value) : undefined}
                       onValueChange={(v) => field.onChange(Number(v))}
+                      items={SETTLE_TYPE_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
                     >
                       <SelectTrigger id="settle_type" className="w-full">
                         <SelectValue placeholder="请选择结算方式" />
@@ -243,8 +244,8 @@ function AdminAccountCard() {
       </div>
 
       {/* Change Password Modal */}
-      <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
-        <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={passwordOpen} onOpenChange={setPasswordOpen} disablePointerDismissal>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{"修改密码"}</DialogTitle>
           </DialogHeader>

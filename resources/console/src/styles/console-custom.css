@@ -1,0 +1,86 @@
+/* ============================================================
+   Console 自定义样式
+   ------------------------------------------------------------
+   从 index.css 抽出的项目级定制：
+   - 左侧菜单选中态 / 子菜单缩进与高度
+   - Collapsible 展开动画（Base UI 使用 data-open）
+   - 页面切换动画
+   - NProgress 主题色
+   ============================================================ */
+
+/* ---- 左侧菜单选中态 ---- */
+[data-sidebar="menu-button"][data-active] {
+    background-color: var(--sidebar-accent) !important;
+    color: var(--primary) !important;
+    font-weight: 500;
+}
+
+[data-sidebar="menu-sub-button"][data-active] {
+    background-color: var(--sidebar-accent) !important;
+    color: var(--primary) !important;
+    font-weight: 500;
+}
+
+/* ---- 子菜单：缩进 + 高度（与一级菜单宽度对齐） ---- */
+[data-slot="sidebar-menu-sub"] {
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0;
+    padding-right: 0;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+    transform: none;
+}
+
+[data-slot="sidebar-menu-sub-button"] {
+    height: 2.25rem;
+    min-height: 2.25rem;
+    padding-left: 2rem;
+}
+
+/* ---- Collapsible 展开动画 ---- */
+.collapsible-content {
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 200ms ease-out;
+}
+.collapsible-content[data-open] {
+    grid-template-rows: 1fr;
+}
+.collapsible-content > * {
+    overflow: hidden;
+}
+
+/* ---- 页面切换动画 ---- */
+@keyframes page-slide-in {
+    from {
+        opacity: 0;
+        transform: translateX(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+.animate-page-slide-in {
+    animation: page-slide-in 0.18s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+    .animate-page-slide-in {
+        animation: none;
+    }
+}
+
+/* ---- NProgress ---- */
+#nprogress .bar {
+    background: var(--primary) !important;
+    height: 2px;
+}
+#nprogress .peg {
+    box-shadow: 0 0 10px var(--primary), 0 0 5px var(--primary) !important;
+}
+#nprogress .spinner-icon {
+    border-top-color: var(--primary) !important;
+    border-left-color: var(--primary) !important;
+}

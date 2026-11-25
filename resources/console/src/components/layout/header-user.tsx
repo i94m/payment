@@ -20,15 +20,13 @@ export function HeaderUser() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-9 gap-1.5 px-1.5">
-          <Avatar className="size-7 rounded-lg">
-            <AvatarImage src="" alt={name} />
-            <AvatarFallback className="rounded-lg bg-primary/10 text-xs text-primary">{initial}</AvatarFallback>
-          </Avatar>
-          <span className="hidden max-w-28 truncate text-sm lg:inline">{name}</span>
-          <IconChevronDown className="hidden size-3.5 text-muted-foreground lg:block" />
-        </Button>
+      <DropdownMenuTrigger render={<Button variant="ghost" className="h-9 gap-1.5 px-1.5" />}>
+        <Avatar className="size-7 rounded-lg">
+          <AvatarImage src="" alt={name} />
+          <AvatarFallback className="rounded-lg bg-primary/10 text-xs text-primary">{initial}</AvatarFallback>
+        </Avatar>
+        <span className="hidden max-w-28 truncate text-sm lg:inline">{name}</span>
+        <IconChevronDown className="hidden size-3.5 text-muted-foreground lg:block" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6} className="min-w-56 rounded-lg">
         <UserMenuContent />

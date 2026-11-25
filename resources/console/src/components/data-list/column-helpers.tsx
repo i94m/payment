@@ -67,14 +67,16 @@ export function actionsColumn<T>(
         ))}
         {menuActions.length > 0 && (
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className="h-7 w-7 p-0 text-muted-foreground"
-                title={"更多操作"}
-              >
-                <IconDots className="size-4" />
-              </Button>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  className="h-7 w-7 p-0 text-muted-foreground"
+                  title={"更多操作"}
+                />
+              }
+            >
+              <IconDots className="size-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-36">
               {menuActions.map((action, i) => (

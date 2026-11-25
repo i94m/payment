@@ -296,7 +296,15 @@ export function OrdersPage() {
               onChange={(e) => setOutTradeNo(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSearch() }}
             />
-            <Select value={orderType || "_all"} onValueChange={(v) => setOrderType(v === "_all" ? "" : v)}>
+            <Select
+              value={orderType || "_all"}
+              onValueChange={(v) => setOrderType(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部类型" },
+                { value: "0", label: "正式收款" },
+                { value: "2", label: "测试单" },
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"订单类型"} />
               </SelectTrigger>
@@ -306,7 +314,14 @@ export function OrdersPage() {
                 <SelectItem value="2">{"测试单"}</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
+            <Select
+              value={statusFilter || "_all"}
+              onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部状态" },
+                ...ORDER_STATUS_OPTIONS.map((o) => ({ value: String(o.value), label: o.label })),
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"状态"} />
               </SelectTrigger>

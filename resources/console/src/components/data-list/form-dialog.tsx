@@ -95,10 +95,9 @@ export function FormDialog({
   const title = editingId ? (editTitle ?? "Edit") : (createTitle ?? "Create")
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} disablePointerDismissal>
       <DialogContent
         className={width ?? "sm:max-w-3xl max-h-[90vh] overflow-y-auto"}
-        onInteractOutside={(e) => e.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>

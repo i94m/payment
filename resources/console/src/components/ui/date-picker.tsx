@@ -46,20 +46,14 @@ function DatePicker({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
+      <PopoverTrigger render={<Button variant="outline"
           disabled={disabled}
           className={cn(
             "w-full justify-start text-left font-normal",
             !value && "text-muted-foreground",
             className
-          )}
-        >
-          <CalendarIcon className="mr-2 size-4" />
-          {value ? format(value, displayFormat ?? "yyyy-MM-dd") : placeholder}
-        </Button>
-      </PopoverTrigger>
+          )} />}><CalendarIcon className="mr-2 size-4" />
+          {value ? format(value, displayFormat ?? "yyyy-MM-dd") : placeholder}</PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
         {pickerMode === "year" ? (
           <YearGrid value={value} onSelect={handleSelect} />
@@ -206,17 +200,13 @@ function DateRangePicker({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
+      <PopoverTrigger render={<Button variant="outline"
           disabled={disabled}
           className={cn(
             "w-full justify-start text-left font-normal",
             !value[0] && !value[1] && "text-muted-foreground",
             className
-          )}
-        >
-          <CalendarIcon className="mr-2 size-4" />
+          )} />}><CalendarIcon className="mr-2 size-4" />
           {value[0] ? (
             <>
               {format(value[0], fmt)}
@@ -225,9 +215,7 @@ function DateRangePicker({
             </>
           ) : (
             startPlaceholder
-          )}
-        </Button>
-      </PopoverTrigger>
+          )}</PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
         <Calendar
           mode="range"

@@ -26,9 +26,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild size="lg" tooltip={"数据统计"}>
-              <Brand inSidebar />
-            </SidebarMenuButton>
+            <SidebarMenuButton size="lg" tooltip={"数据统计"} render={<Brand inSidebar />} />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
@@ -47,11 +45,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     if (item.external) {
                       return (
                         <SidebarMenuItem key={item.title}>
-                          <SidebarMenuButton asChild tooltip={item.title} size="lg">
-                            <a href={item.url} target="_blank" rel="noreferrer">
-                              <item.icon className="shrink-0" />
-                              <span className="truncate group-data-[collapsible=icon]:hidden">{item.title}</span>
-                            </a>
+                          <SidebarMenuButton
+                            tooltip={item.title}
+                            size="lg"
+                            render={
+                              <a href={item.url} target="_blank" rel="noreferrer" />
+                            }
+                          >
+                            <item.icon className="shrink-0" />
+                            <span className="truncate group-data-[collapsible=icon]:hidden">{item.title}</span>
                           </SidebarMenuButton>
                         </SidebarMenuItem>
                       )
@@ -60,15 +62,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     return (
                       <SidebarMenuItem key={item.title}>
                         <SidebarMenuButton
-                          asChild
                           tooltip={item.title}
                           size="lg"
                           isActive={active}
+                          render={<Link to={item.url} />}
                         >
-                          <Link to={item.url}>
-                            <item.icon className="shrink-0" />
-                            <span className="truncate group-data-[collapsible=icon]:hidden">{item.title}</span>
-                          </Link>
+                          <item.icon className="shrink-0" />
+                          <span className="truncate group-data-[collapsible=icon]:hidden">{item.title}</span>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     )

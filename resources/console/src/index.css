@@ -251,65 +251,6 @@
     }
 }
 
-/* Sidebar active state */
-[data-sidebar="menu-button"][data-active] {
-    background-color: var(--sidebar-accent) !important;
-    color: var(--primary) !important;
-    font-weight: 500;
-}
-[data-sidebar="menu-sub-button"][data-active] {
-    background-color: var(--sidebar-accent) !important;
-    color: var(--primary) !important;
-    font-weight: 500;
-}
-
-/* Collapsible animation */
-.collapsible-content {
-    overflow: hidden;
-    display: grid;
-    grid-template-rows: 0fr;
-    transition: grid-template-rows 200ms ease-out;
-}
-.collapsible-content[data-state="open"] {
-    grid-template-rows: 1fr;
-}
-.collapsible-content > * {
-    overflow: hidden;
-}
-
-/* Page slide-in animation */
-@keyframes page-slide-in {
-    from {
-        opacity: 0;
-        transform: translateX(12px);
-    }
-    to {
-        opacity: 1;
-        transform: translateX(0);
-    }
-}
-.animate-page-slide-in {
-    animation: page-slide-in 0.18s ease-out both;
-}
-@media (prefers-reduced-motion: reduce) {
-    .animate-page-slide-in {
-        animation: none;
-    }
-}
-
-/* NProgress */
-#nprogress .bar {
-    background: var(--primary) !important;
-    height: 2px;
-}
-#nprogress .peg {
-    box-shadow: 0 0 10px var(--primary), 0 0 5px var(--primary) !important;
-}
-#nprogress .spinner-icon {
-    border-top-color: var(--primary) !important;
-    border-left-color: var(--primary) !important;
-}
-
 /* ===== Utilities required by the Attachment component ===== */
 
 /* Hide the scrollbar without disabling scroll. */

@@ -668,7 +668,14 @@ export function ChannelsPage() {
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         <FilterCard>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 items-end max-w-2xl">
-            <Select value={typeFilter || "_all"} onValueChange={(v) => setTypeFilter(v === "_all" ? "" : v)}>
+            <Select
+              value={typeFilter || "_all"}
+              onValueChange={(v) => setTypeFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部支付方式" },
+                ...payTypes.map((pt) => ({ value: String(pt.id), label: pt.name })),
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"支付方式"} />
               </SelectTrigger>
@@ -684,7 +691,14 @@ export function ChannelsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={pluginFilter || "_all"} onValueChange={(v) => setPluginFilter(v === "_all" ? "" : v)}>
+            <Select
+              value={pluginFilter || "_all"}
+              onValueChange={(v) => setPluginFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部支付插件" },
+                ...plugins.map((p) => ({ value: p.name, label: pluginLabel(p) })),
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"支付插件"} />
               </SelectTrigger>
@@ -710,15 +724,17 @@ export function ChannelsPage() {
             </div>
             <div className="flex items-center gap-2">
               <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing}
-                          aria-label={"刷新插件"}>
-                    <IconRefresh className={`size-4 ${syncing ? "animate-spin" : ""}`} />
-                    {"刷新插件"}
-                    <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
-                      {plugins.length}
-                    </Badge>
-                  </Button>
+                <TooltipTrigger
+                  render={
+                    <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing}
+                            aria-label={"刷新插件"} />
+                  }
+                >
+                  <IconRefresh className={`size-4 ${syncing ? "animate-spin" : ""}`} />
+                  {"刷新插件"}
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] tabular-nums">
+                    {plugins.length}
+                  </Badge>
                 </TooltipTrigger>
                 <TooltipContent side="top">{"重新扫描插件目录，刷新插件列表"}</TooltipContent>
               </Tooltip>
@@ -726,12 +742,14 @@ export function ChannelsPage() {
               {canUploadPlugin && (
                 <>
                   <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button size="sm" variant="outline" onClick={() => uploadRef.current?.click()}
-                              disabled={uploading} aria-label={"上传插件"}>
-                        <IconUpload className={`size-4 ${uploading ? "animate-pulse" : ""}`} />
-                        {uploading ? "上传中…" : "上传插件"}
-                      </Button>
+                    <TooltipTrigger
+                      render={
+                        <Button size="sm" variant="outline" onClick={() => uploadRef.current?.click()}
+                                disabled={uploading} aria-label={"上传插件"} />
+                      }
+                    >
+                      <IconUpload className={`size-4 ${uploading ? "animate-pulse" : ""}`} />
+                      {uploading ? "上传中…" : "上传插件"}
                     </TooltipTrigger>
                     <TooltipContent side="top">{"上传插件包（仅支持 .zip）"}</TooltipContent>
                   </Tooltip>
@@ -758,8 +776,8 @@ export function ChannelsPage() {
       </div>
 
       {/* 新建/编辑通道 */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen} disablePointerDismissal>
+        <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? "编辑通道" : "新增通道"}</DialogTitle>
           </DialogHeader>
@@ -771,7 +789,11 @@ export function ChannelsPage() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={field.name}>{"支付方式"}<RequiredMark /></FieldLabel>
-                    <Select value={field.value || undefined} onValueChange={(v) => { field.onChange(v); onTypeChange(v) }}>
+                    <Select
+                      value={field.value || undefined}
+                      onValueChange={(v) => { field.onChange(v); onTypeChange(v) }}
+                      items={payTypes.map((pt) => ({ value: String(pt.id), label: `${pt.name}（${pt.code}）` }))}
+                    >
                       <SelectTrigger id={field.name} className="w-full" aria-invalid={fieldState.invalid || undefined}><SelectValue placeholder={"选择支付方式"} /></SelectTrigger>
                       <SelectContent>
                         {payTypes.map((pt) => (
@@ -794,7 +816,11 @@ export function ChannelsPage() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={field.name}>{"支付插件"}<RequiredMark /></FieldLabel>
-                    <Select value={field.value || undefined} onValueChange={(v) => { field.onChange(v); onPluginChange(v) }}>
+                    <Select
+                      value={field.value || undefined}
+                      onValueChange={(v) => { field.onChange(v); onPluginChange(v) }}
+                      items={availablePlugins.map((p) => ({ value: p.name, label: pluginLabel(p) }))}
+                    >
                       <SelectTrigger id={field.name} className="w-full" aria-invalid={fieldState.invalid || undefined}><SelectValue placeholder={"选择支付插件"} /></SelectTrigger>
                       <SelectContent>
                         {availablePlugins.length === 0 && (
@@ -867,7 +893,11 @@ export function ChannelsPage() {
                                 placeholder={input.placeholder}
                               />
                             ) : input.type === "select" ? (
-                              <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                              <Select
+                                value={field.value ?? ""}
+                                onValueChange={field.onChange}
+                                items={inputOptions(input).map((o) => ({ value: o.value, label: o.label }))}
+                              >
                                 <SelectTrigger
                                   id={field.name}
                                   className="w-full"
@@ -909,8 +939,8 @@ export function ChannelsPage() {
       </Dialog>
 
       {/* 测试支付：建测试单打开支付页，走完整回调链路 */}
-      <Dialog open={!!testChannel} onOpenChange={(open) => { if (!open) setTestChannel(null) }}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={!!testChannel} onOpenChange={(open) => { if (!open) setTestChannel(null) }} disablePointerDismissal>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"测试支付"}{testChannel ? ` - ${testChannel.name}` : ""}</DialogTitle>
           </DialogHeader>
@@ -955,8 +985,14 @@ export function ChannelsPage() {
                   <Badge variant="secondary" className="shrink-0">{"测试单"}</Badge>
                 </div>
                 {/^https?:\/\//.test(testResult.pay_info || "") && testResult.pay_type !== "html" && (
-                  <Button asChild variant="outline" size="sm" className="h-7">
-                    <a href={testResult.pay_info} target="_blank" rel="noreferrer">{"打开支付页"}</a>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7"
+                    nativeButton={false}
+                    render={<a href={testResult.pay_info} target="_blank" rel="noreferrer" />}
+                  >
+                    {"打开支付页"}
                   </Button>
                 )}
                 {(testResult.pay_type === "qrcode" || testResult.pay_type === "html") && (

@@ -40,14 +40,16 @@ function ColorPickerField({
   return (
     <div className={cn("flex items-center gap-2", className)}>
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            disabled={disabled}
-            className="size-9 shrink-0 rounded-md border shadow-xs transition-colors hover:opacity-80 disabled:opacity-50"
-            style={{ backgroundColor: isValid ? inputVal : "#ffffff" }}
-          />
-        </PopoverTrigger>
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              disabled={disabled}
+              className="size-9 shrink-0 rounded-md border shadow-xs transition-colors hover:opacity-80 disabled:opacity-50"
+              style={{ backgroundColor: isValid ? inputVal : "#ffffff" }}
+            />
+          }
+        />
         <PopoverContent className="w-auto p-3" align="start">
           <div className="grid grid-cols-5 gap-1.5 mb-3">
             {presetColors.map((c) => (

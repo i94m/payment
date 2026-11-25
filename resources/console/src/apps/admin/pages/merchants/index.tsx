@@ -906,7 +906,11 @@ export function MerchantsPage() {
               onChange={(e) => setKeyword2(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") applyFilters() }}
             />
-            <Select value={dstatus || "_all"} onValueChange={(v) => setDstatus(v === "_all" ? "" : v)}>
+            <Select
+              value={dstatus || "_all"}
+              onValueChange={(v) => setDstatus(v === "_all" ? "" : v)}
+              items={dstatusOptions.map((o) => ({ value: o.value || "_all", label: o.label }))}
+            >
               <SelectTrigger className="h-9 w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {dstatusOptions.map((o) => (
@@ -1064,8 +1068,8 @@ export function MerchantsPage() {
       />
 
       {/* 调整余额 */}
-      <Dialog open={!!balanceTarget} onOpenChange={(open) => !open && setBalanceTarget(null)}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={!!balanceTarget} onOpenChange={(open) => !open && setBalanceTarget(null)} disablePointerDismissal>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"调整余额"}</DialogTitle>
             <DialogDescription>
@@ -1161,8 +1165,8 @@ export function MerchantsPage() {
       </Dialog>
 
       {/* 重置登录密码（管理员直接输入新密码） */}
-      <Dialog open={!!pwdTarget} onOpenChange={(open) => { if (!open) setPwdTarget(null) }}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={!!pwdTarget} onOpenChange={(open) => { if (!open) setPwdTarget(null) }} disablePointerDismissal>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"重置密码"} - {pwdTarget?.username}</DialogTitle>
             <DialogDescription>{"输入新密码后立即生效，该商户现有登录会话将全部失效"}</DialogDescription>
@@ -1200,8 +1204,8 @@ export function MerchantsPage() {
 
       {/* 随机金额（单个） */}
       {RANDOM_AMOUNT_ENABLED && (
-      <Dialog open={!!randomTarget} onOpenChange={(open) => !open && setRandomTarget(null)}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={!!randomTarget} onOpenChange={(open) => !open && setRandomTarget(null)} disablePointerDismissal>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"随机金额"} - {randomTarget?.username}</DialogTitle>
             <DialogDescription>{"在区间内随机生成买家实付金额；关闭「整数」时支持两位小数"}</DialogDescription>
@@ -1250,8 +1254,8 @@ export function MerchantsPage() {
       )}
 
       {/* 扣量（单个）：商户级开关 + 每 N 笔扣 1 + 起扣金额 */}
-      <Dialog open={!!deductTarget} onOpenChange={(open) => !open && setDeductTarget(null)}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={!!deductTarget} onOpenChange={(open) => !open && setDeductTarget(null)} disablePointerDismissal>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"扣量"} - {deductTarget?.username}</DialogTitle>
             <DialogDescription>
@@ -1304,8 +1308,8 @@ export function MerchantsPage() {
 
       {/* 限流（单个） */}
       {RANDOM_AMOUNT_ENABLED && (
-      <Dialog open={!!ratelimitTarget} onOpenChange={(open) => !open && setRatelimitTarget(null)}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={!!ratelimitTarget} onOpenChange={(open) => !open && setRatelimitTarget(null)} disablePointerDismissal>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"限流"} - {ratelimitTarget?.username}</DialogTitle>
             <DialogDescription>{"同一付款人 IP 1 分钟内最多为该商户创建的订单数，填 0 或留空表示不限制。用于防止收款链接被爬虫/脚本刷单"}</DialogDescription>
@@ -1323,15 +1327,19 @@ export function MerchantsPage() {
       )}
 
       {/* 修改结算账号 */}
-      <Dialog open={!!settleTarget} onOpenChange={(open) => !open && setSettleTarget(null)}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={!!settleTarget} onOpenChange={(open) => !open && setSettleTarget(null)} disablePointerDismissal>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"修改结算账号"} - {settleTarget?.username}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid gap-2">
               <Label>{"结算方式"}</Label>
-              <Select value={settleTypeValue} onValueChange={setSettleTypeValue}>
+              <Select
+                value={settleTypeValue}
+                onValueChange={setSettleTypeValue}
+                items={settleTypeOptions.map((o) => ({ value: String(o.value), label: o.label }))}
+              >
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {settleTypeOptions.map((o) => (
@@ -1357,8 +1365,8 @@ export function MerchantsPage() {
       </Dialog>
 
       {/* 高级搜索 */}
-      <Dialog open={advanceOpen} onOpenChange={setAdvanceOpen}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={advanceOpen} onOpenChange={setAdvanceOpen} disablePointerDismissal>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"高级搜索"}</DialogTitle>
           </DialogHeader>
@@ -1386,8 +1394,8 @@ export function MerchantsPage() {
 
       {/* 批量随机金额 */}
       {RANDOM_AMOUNT_ENABLED && (
-      <Dialog open={batchRandomOpen} onOpenChange={setBatchRandomOpen}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={batchRandomOpen} onOpenChange={setBatchRandomOpen} disablePointerDismissal>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"批量随机金额"}</DialogTitle>
             <DialogDescription>{"在区间内随机生成付款金额；开启「整数」时为整数"}</DialogDescription>
@@ -1441,8 +1449,8 @@ export function MerchantsPage() {
       )}
 
       {/* 批量扣量 */}
-      <Dialog open={batchDeductOpen} onOpenChange={setBatchDeductOpen}>
-        <DialogContent className="sm:max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={batchDeductOpen} onOpenChange={setBatchDeductOpen} disablePointerDismissal>
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{"批量扣量"}</DialogTitle>
             <DialogDescription>{"作用于所有未锁定的商户；开启时必须填写频次，否则开了也永不扣"}</DialogDescription>

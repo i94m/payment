@@ -329,7 +329,16 @@ export function OrdersPage() {
               value={merchantId}
               onChange={(e) => setMerchantId(digitsOnly(e.target.value))}
             />
-            <Select value={orderType || "_all"} onValueChange={(v) => setOrderType(v === "_all" ? "" : v)}>
+            <Select
+              value={orderType || "_all"}
+              onValueChange={(v) => setOrderType(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部类型" },
+                { value: "0", label: "正式收款" },
+                { value: "1", label: "余额充值" },
+                { value: "2", label: "测试单" },
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"订单类型"} />
               </SelectTrigger>
@@ -341,7 +350,14 @@ export function OrdersPage() {
               </SelectContent>
             </Select>
             <Select value={channelCodeId || "_all"}
-                    onValueChange={(v) => setChannelCodeId(v === "_all" ? "" : v)}>
+                    onValueChange={(v) => setChannelCodeId(v === "_all" ? "" : v)}
+                    items={[
+                      { value: "_all", label: "全部编码" },
+                      ...channelCodes.map((c) => ({
+                        value: String(c.id),
+                        label: c.name && c.name !== c.code ? `${c.code}（${c.name}）` : c.code,
+                      })),
+                    ]}>
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"通道编码"} />
               </SelectTrigger>
@@ -354,7 +370,14 @@ export function OrdersPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
+            <Select
+              value={statusFilter || "_all"}
+              onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部状态" },
+                ...ORDER_STATUS_OPTIONS.map((o) => ({ value: String(o.value), label: o.label })),
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"状态"} />
               </SelectTrigger>
@@ -365,7 +388,16 @@ export function OrdersPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={notifyFilter || "_all"} onValueChange={(v) => setNotifyFilter(v === "_all" ? "" : v)}>
+            <Select
+              value={notifyFilter || "_all"}
+              onValueChange={(v) => setNotifyFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部通知状态" },
+                { value: "0", label: "未通知" },
+                { value: "1", label: "已通知" },
+                { value: "2", label: "通知失败" },
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"通知状态"} />
               </SelectTrigger>

@@ -23,10 +23,10 @@ export function MobileNav({ sections }: { sections: MenuSection[] }) {
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="size-9 lg:hidden" aria-label="打开菜单">
-          <IconMenu2 className="size-5" />
-        </Button>
+      <SheetTrigger
+        render={<Button variant="ghost" size="icon" className="size-9 lg:hidden" aria-label="打开菜单" />}
+      >
+        <IconMenu2 className="size-5" />
       </SheetTrigger>
       <SheetContent side="left" className="gap-0 p-0">
         <SheetHeader className="border-b px-4 py-3">

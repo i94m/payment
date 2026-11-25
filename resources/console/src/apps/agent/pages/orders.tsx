@@ -124,7 +124,14 @@ export function OrdersPage() {
               value={endDate}
               onChange={setEndDate}
             />
-            <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
+            <Select
+              value={statusFilter || "_all"}
+              onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部状态" },
+                ...ORDER_STATUS_OPTIONS.map((o) => ({ value: String(o.value), label: o.label })),
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"状态"} />
               </SelectTrigger>

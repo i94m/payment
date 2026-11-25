@@ -233,21 +233,15 @@ export function SimpleTimePicker({
 
   return (
     <Popover open={open} onOpenChange={setOpen} modal={modal}>
-      <PopoverTrigger asChild>
-        <div
-          role="combobox"
+      <PopoverTrigger nativeButton={false} render={<div role="combobox"
           aria-expanded={open}
           className={cn(
             'flex h-9 px-3 items-center justify-between cursor-pointer font-normal border border-input rounded-md text-sm shadow-sm',
             disabled && 'opacity-50 cursor-not-allowed'
           )}
-          tabIndex={0}
-        >
-          <Clock className="mr-2 size-4" />
+          tabIndex={0} />}><Clock className="mr-2 size-4" />
           {display}
-          <ChevronDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
-        </div>
-      </PopoverTrigger>
+          <ChevronDownIcon className="ml-2 size-4 shrink-0 opacity-50" /></PopoverTrigger>
       <PopoverContent className="p-0" side="top">
         <div className="flex-col gap-2 p-2">
           <div className="flex h-56 grow">

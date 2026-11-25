@@ -200,6 +200,7 @@ function renderField(
         <Select
           value={String(field.value ?? "")}
           onValueChange={field.onChange}
+          items={config.options?.map((opt) => ({ value: String(opt.value), label: String(opt.label) }))}
         >
           <SelectTrigger id={config.name} className="w-full" disabled={disabled}>
             <SelectValue placeholder={config.placeholder} />

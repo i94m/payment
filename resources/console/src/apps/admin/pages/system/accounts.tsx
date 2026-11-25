@@ -291,7 +291,15 @@ export function AccountsPage() {
                 onKeyDown={(e) => { if (e.key === "Enter") applyFilters() }}
               />
             </div>
-            <Select value={statusFilter || "_all"} onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}>
+            <Select
+              value={statusFilter || "_all"}
+              onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部状态" },
+                { value: "normal", label: "正常" },
+                { value: "forbid", label: "禁用" },
+              ]}
+            >
               <SelectTrigger className="h-9 w-full">
                 <SelectValue placeholder={"状态"} />
               </SelectTrigger>
@@ -341,8 +349,8 @@ export function AccountsPage() {
       </div>
 
       {/* 新建/编辑账号 */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen} disablePointerDismissal>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingId ? "编辑账号" : "新增账号"}</DialogTitle>
           </DialogHeader>
@@ -459,9 +467,9 @@ export function AccountsPage() {
       <Dialog
         open={syncOpen}
         onOpenChange={(open) => { if (!syncing) setSyncOpen(open) }}
+        disablePointerDismissal
       >
         <DialogContent
-          onInteractOutside={(e) => e.preventDefault()}
           className="w-[calc(100%-2rem)] sm:max-w-lg"
         >
           <DialogHeader>

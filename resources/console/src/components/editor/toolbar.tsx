@@ -45,6 +45,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -74,16 +75,18 @@ function ToolbarButton({
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Toggle
-          size="sm"
-          pressed={!!pressed}
-          disabled={disabled}
-          aria-label={label}
-          onPressedChange={() => onClick()}
-        >
-          {children}
-        </Toggle>
+      <TooltipTrigger
+        render={
+          <Toggle
+            size="sm"
+            pressed={!!pressed}
+            disabled={disabled}
+            aria-label={label}
+            onPressedChange={() => onClick()}
+          />
+        }
+      >
+        {children}
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
@@ -106,11 +109,11 @@ function BlockMenu({ editor }: { editor: Editor }) {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button type="button" variant="ghost" size="sm" className="gap-1 px-2 text-xs">
-          {label}
-          <IconChevronDown className="size-3.5 opacity-60" />
-        </Button>
+      <DropdownMenuTrigger
+        render={<Button type="button" variant="ghost" size="sm" className="gap-1 px-2 text-xs" />}
+      >
+        {label}
+        <IconChevronDown className="size-3.5 opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-36">
         <DropdownMenuItem onClick={() => editor.chain().focus().setParagraph().run()}>
@@ -154,18 +157,16 @@ function ColorMenu({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Toggle size="sm" pressed={open} aria-label={label}>
-              <span className="relative flex items-center">
-                {icon}
-                <span
-                  className="absolute -bottom-0.5 left-0 h-0.5 w-3.5 rounded-full"
-                  style={{ backgroundColor: value || "currentColor" }}
-                />
-              </span>
-            </Toggle>
-          </PopoverTrigger>
+        <TooltipTrigger
+          render={<PopoverTrigger render={<Toggle size="sm" pressed={open} aria-label={label} />} />}
+        >
+          <span className="relative flex items-center">
+            {icon}
+            <span
+              className="absolute -bottom-0.5 left-0 h-0.5 w-3.5 rounded-full"
+              style={{ backgroundColor: value || "currentColor" }}
+            />
+          </span>
         </TooltipTrigger>
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>
@@ -247,12 +248,10 @@ function LinkMenu({ editor }: { editor: Editor }) {
       }}
     >
       <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Toggle size="sm" pressed={active} aria-label="链接">
-              <IconLink />
-            </Toggle>
-          </PopoverTrigger>
+        <TooltipTrigger
+          render={<PopoverTrigger render={<Toggle size="sm" pressed={active} aria-label="链接" />} />}
+        >
+          <IconLink />
         </TooltipTrigger>
         <TooltipContent>链接</TooltipContent>
       </Tooltip>
@@ -294,12 +293,10 @@ function TableMenu({ editor, pressed }: { editor: Editor; pressed: boolean }) {
   return (
     <DropdownMenu>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Toggle size="sm" pressed={pressed} aria-label="表格">
-              <IconTable />
-            </Toggle>
-          </DropdownMenuTrigger>
+        <TooltipTrigger
+          render={<DropdownMenuTrigger render={<Toggle size="sm" pressed={pressed} aria-label="表格" />} />}
+        >
+          <IconTable />
         </TooltipTrigger>
         <TooltipContent>表格</TooltipContent>
       </Tooltip>
@@ -309,33 +306,37 @@ function TableMenu({ editor, pressed }: { editor: Editor; pressed: boolean }) {
           插入表格
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs text-muted-foreground">行</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => editor.chain().focus().addRowBefore().run()}>
-          <IconRowInsertTop className="size-4" />
-          上方插入行
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => editor.chain().focus().addRowAfter().run()}>
-          <IconRowInsertBottom className="size-4" />
-          下方插入行
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => editor.chain().focus().deleteRow().run()}>
-          <IconRowRemove className="size-4" />
-          删除当前行
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-xs text-muted-foreground">行</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => editor.chain().focus().addRowBefore().run()}>
+            <IconRowInsertTop className="size-4" />
+            上方插入行
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => editor.chain().focus().addRowAfter().run()}>
+            <IconRowInsertBottom className="size-4" />
+            下方插入行
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => editor.chain().focus().deleteRow().run()}>
+            <IconRowRemove className="size-4" />
+            删除当前行
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="text-xs text-muted-foreground">列</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => editor.chain().focus().addColumnBefore().run()}>
-          <IconColumnInsertLeft className="size-4" />
-          左侧插入列
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => editor.chain().focus().addColumnAfter().run()}>
-          <IconColumnInsertRight className="size-4" />
-          右侧插入列
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => editor.chain().focus().deleteColumn().run()}>
-          <IconColumnRemove className="size-4" />
-          删除当前列
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="text-xs text-muted-foreground">列</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => editor.chain().focus().addColumnBefore().run()}>
+            <IconColumnInsertLeft className="size-4" />
+            左侧插入列
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => editor.chain().focus().addColumnAfter().run()}>
+            <IconColumnInsertRight className="size-4" />
+            右侧插入列
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => editor.chain().focus().deleteColumn().run()}>
+            <IconColumnRemove className="size-4" />
+            删除当前列
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeaderRow().run()}>
           切换表头行
@@ -387,7 +388,7 @@ export function EditorToolbar({
   })
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <div className="flex flex-wrap items-center gap-0.5 border-b bg-muted/30 px-2 py-1.5">
       <ToolbarButton label="撤销" disabled={!state.canUndo} onClick={() => editor.chain().focus().undo().run()}>
         <IconArrowBackUp />

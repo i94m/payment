@@ -520,10 +520,14 @@ export function DashboardPage() {
                               </span>
                             </TableCell>
                             <TableCell className="w-[33%] py-1.5 pr-2">
-                              {/* Radix Select 不支持空字符串 value，用 "off" 哨兵值代表「不启用」 */}
+                              {/* Select 不支持空字符串 value，用 "off" 哨兵值代表「不启用」 */}
                               <Select
                                 value={form.channel ? String(form.channel) : "off"}
                                 onValueChange={(v) => setForm({ channel: v === "off" ? 0 : Number(v) })}
+                                items={[
+                                  { value: "off", label: "不启用" },
+                                  ...channels.map((c) => ({ value: String(c.id), label: `${c.name} (ID:${c.id})` })),
+                                ]}
                               >
                                 <SelectTrigger size="sm" className="h-8 w-full min-w-0 text-xs">
                                   <SelectValue />

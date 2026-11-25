@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import { Link, useLocation } from "react-router-dom"
 import { IconExternalLink } from "@tabler/icons-react"
 import {
@@ -30,6 +31,8 @@ import { cn } from "@/lib/utils"
 export function TopNav() {
   const currentPath = useLocation().pathname
   const sections = useMenuSections()
+  // 顶部菜单「点击展开」：忽略 hover 触发的展开/收起，只响应点击与键盘
+  const [openGroup, setOpenGroup] = React.useState<string | null>(null)
 
   // query 不参与高亮（与侧边栏按 pathname 判断保持一致）
   const isActive = (url: string) => url.split("?")[0] === currentPath
@@ -47,32 +50,36 @@ export function TopNav() {
         <MobileNav sections={sections} />
         <Brand className="mr-2 h-9 min-w-0 rounded-md px-3 hover:bg-muted/60 lg:mr-4" />
 
-        <NavigationMenu viewport={false} className="hidden flex-1 justify-start lg:flex">
+        <NavigationMenu
+          value={openGroup}
+          onValueChange={(value, details) => {
+            if (value !== null && details.reason === "trigger-hover") return
+            setOpenGroup(value as string | null)
+          }}
+          className="hidden flex-1 justify-start lg:flex"
+        >
           <NavigationMenuList className="justify-start gap-0.5">
             {directItems.map((item) => {
               const active = isActive(item.url)
               return (
                 <NavigationMenuItem key={`${item.title}-${item.url}`}>
                   <NavigationMenuLink
-                    asChild
                     data-active={active}
+                    render={
+                      item.external ? (
+                        <a href={item.url} target="_blank" rel="noreferrer" />
+                      ) : (
+                        <Link to={item.url} />
+                      )
+                    }
                     className={cn(
                       navigationMenuTriggerStyle(),
                       "h-9 gap-1.5 px-3",
                       active && "bg-muted/60 text-primary",
                     )}
                   >
-                    {item.external ? (
-                      <a href={item.url} target="_blank" rel="noreferrer">
-                        <item.icon className="size-4 shrink-0" />
-                        <span>{item.title}</span>
-                      </a>
-                    ) : (
-                      <Link to={item.url}>
-                        <item.icon className="size-4 shrink-0" />
-                        <span>{item.title}</span>
-                      </Link>
-                    )}
+                    <item.icon className="size-4 shrink-0" />
+                    <span>{item.title}</span>
                   </NavigationMenuLink>
                 </NavigationMenuItem>
               )
@@ -81,38 +88,33 @@ export function TopNav() {
             {groups.map((section) => {
               const groupActive = section.items.some((item) => isActive(item.url))
               return (
-                <NavigationMenuItem key={section.label}>
-                  {/* 顶部菜单改为「点击展开」：Radix 默认在 pointermove 时展开子菜单，
-                      这里 preventDefault 掉内建的 hover 展开（composeEventHandlers 会跳过），
-                      点击（onItemSelect）与键盘 Enter/Space 仍然按开关处理。 */}
+                <NavigationMenuItem key={section.label} value={section.label}>
                   <NavigationMenuTrigger
-                    onPointerMove={(e) => e.preventDefault()}
                     className={cn("h-9 px-3", groupActive && "bg-muted/60 text-primary")}
                   >
                     {section.label}
                   </NavigationMenuTrigger>
-                  <NavigationMenuContent className="w-56 p-1.5 md:w-56">
+                  <NavigationMenuContent className="w-56 p-1.5">
                     <ul className="grid gap-0.5">
                       {section.items.map((item) => {
                         const active = isActive(item.url)
                         return (
                           <li key={item.title}>
                             <NavigationMenuLink
-                              asChild
                               data-active={active}
+                              render={
+                                item.external ? (
+                                  <a href={item.url} target="_blank" rel="noreferrer" />
+                                ) : (
+                                  <Link to={item.url} />
+                                )
+                              }
                               className={cn("gap-2", active && "font-medium text-primary")}
                             >
-                              {item.external ? (
-                                <a href={item.url} target="_blank" rel="noreferrer">
-                                  <item.icon className="size-4 shrink-0" />
-                                  <span className="truncate">{item.title}</span>
-                                  <IconExternalLink className="ml-auto size-3.5 text-muted-foreground" />
-                                </a>
-                              ) : (
-                                <Link to={item.url}>
-                                  <item.icon className="size-4 shrink-0" />
-                                  <span className="truncate">{item.title}</span>
-                                </Link>
+                              <item.icon className="size-4 shrink-0" />
+                              <span className="truncate">{item.title}</span>
+                              {item.external && (
+                                <IconExternalLink className="ml-auto size-3.5 text-muted-foreground" />
                               )}
                             </NavigationMenuLink>
                           </li>
