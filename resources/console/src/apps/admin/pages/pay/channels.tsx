@@ -782,12 +782,14 @@ export function ChannelsPage() {
             <DialogTitle>{editingId ? "编辑通道" : "新增通道"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={submit}>
-            <div className="grid grid-cols-2 gap-3">
+            {/* 四列栅格：支付方式/插件各占半行；通道名称占 1/2，商户费率、成本费率各占 1/4，同一行铺满。
+                窄屏回退两列：支付方式/插件/通道名称各占整行，两个费率并排各占半行 */}
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
               <Controller
                 name="payment_type_id"
                 control={channelForm.control}
                 render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
+                  <Field data-invalid={fieldState.invalid} className="col-span-2">
                     <FieldLabel htmlFor={field.name}>{"支付方式"}<RequiredMark /></FieldLabel>
                     <Select
                       value={field.value || undefined}
@@ -814,7 +816,7 @@ export function ChannelsPage() {
                 name="plugin_name"
                 control={channelForm.control}
                 render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
+                  <Field data-invalid={fieldState.invalid} className="col-span-2">
                     <FieldLabel htmlFor={field.name}>{"支付插件"}<RequiredMark /></FieldLabel>
                     <Select
                       value={field.value || undefined}
@@ -862,7 +864,7 @@ export function ChannelsPage() {
                 name="merchant_rate"
                 control={channelForm.control}
                 render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
+                  <Field data-invalid={fieldState.invalid} className="col-span-1">
                     <FieldLabel htmlFor={field.name}>{"商户费率(%)"}</FieldLabel>
                     <Input
                       id={field.name}
@@ -873,7 +875,7 @@ export function ChannelsPage() {
                     />
                     {fieldState.error
                       ? <FieldError>{fieldState.error.message}</FieldError>
-                      : <FieldDescription className="text-xs">{"商户到账按此费率折算；商户有专属费率时以专属为准，0 = 不抽成"}</FieldDescription>}
+                      : <FieldDescription className="text-xs">{"到账按此折算，0 = 不抽成；专属费率优先"}</FieldDescription>}
                   </Field>
                 )}
               />
@@ -881,7 +883,7 @@ export function ChannelsPage() {
                 name="cost_rate"
                 control={channelForm.control}
                 render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid}>
+                  <Field data-invalid={fieldState.invalid} className="col-span-1">
                     <FieldLabel htmlFor={field.name}>{"成本费率(%)"}</FieldLabel>
                     <Input
                       id={field.name}
@@ -892,7 +894,7 @@ export function ChannelsPage() {
                     />
                     {fieldState.error
                       ? <FieldError>{fieldState.error.message}</FieldError>
-                      : <FieldDescription className="text-xs">{"给上游的成本，只影响平台利润统计，不从商户到账里扣"}</FieldDescription>}
+                      : <FieldDescription className="text-xs">{"给上游的成本，只算平台利润，不从到账扣"}</FieldDescription>}
                   </Field>
                 )}
               />
@@ -904,7 +906,7 @@ export function ChannelsPage() {
               {/* 插件凭证（按 inputs schema 动态渲染）：编辑即明文，不再提供显示/隐藏按钮。
                   标题放在边框模块之上，模块内只放说明与字段。 */}
               {currentInputs.length > 0 && (
-                <div className="col-span-2 space-y-2">
+                <div className="col-span-2 sm:col-span-4 space-y-2">
                   <p className="text-sm font-medium">{"通道凭证"}</p>
                   <div className="space-y-2 rounded-lg border p-3">
                     {!canRevealConfig && (
