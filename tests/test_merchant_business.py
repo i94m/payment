@@ -319,3 +319,47 @@ async def test_admin_reset_password_with_plain_input(client, seeded, session):
         f"/admin-api/merchant/{m.id}/resetpwd", json={}, headers=headers)
     assert resp.json()["code"] == 0
     assert len(resp.json()["data"]["password"]) == 10
+
+
+@pytest.mark.asyncio
+async def test_admin_merchant_rate_field(client, seeded, session):
+    """商户专属费率：可设置、可清除（空串回落编码/通道）、省略字段不改动、越界拒绝。"""
+    headers = await _admin_headers(session)
+
+    # 新增商户直接带费率
+    resp = await client.post("/admin-api/merchant", headers=headers, json={
+        "username": "rate_merchant", "password": "123456", "rate": "1.50"})
+    body = resp.json()
+    assert body["code"] == 0, body
+    assert body["data"]["rate"] == "1.50"
+    mid = body["data"]["id"]
+
+    # 改费率
+    resp = await client.put(f"/admin-api/merchant/{mid}", json={"rate": "2.35"}, headers=headers)
+    assert resp.json()["code"] == 0
+    assert resp.json()["data"]["rate"] == "2.35"
+
+    # 其他弹窗只传状态时不能把费率冲掉（不传 rate = 不改）
+    resp = await client.put(f"/admin-api/merchant/{mid}", json={"status": 1}, headers=headers)
+    assert resp.json()["data"]["rate"] == "2.35"
+
+    # 空串 = 清除专属费率：回落编码费率 / 通道费率，而不是 0%
+    resp = await client.put(f"/admin-api/merchant/{mid}", json={"rate": ""}, headers=headers)
+    assert resp.json()["code"] == 0
+    assert resp.json()["data"]["rate"] == ""
+    m = await session.get(Merchant, mid)
+    await session.refresh(m)
+    assert m.rate is None
+
+    # 越界 / 非法值拒绝
+    for bad in ("101", "-0.01", "abc"):
+        resp = await client.put(f"/admin-api/merchant/{mid}", json={"rate": bad}, headers=headers)
+        assert resp.json()["code"] == -1, bad
+    await session.refresh(m)
+    assert m.rate is None  # 被拒的写入不落库
+
+    # 新增时越界同样拒绝（不能被 pid 冲突重试吞成「创建冲突」）
+    resp = await client.post("/admin-api/merchant", headers=headers, json={
+        "username": "rate_bad", "password": "123456", "rate": "150"})
+    assert resp.json()["code"] == -1
+    assert "0~100" in resp.json()["message"]

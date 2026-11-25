@@ -103,10 +103,18 @@ function validateRandomRange(min: string, max: string, integerOnly: boolean): st
   return null
 }
 
+/** 商户专属费率（%）：留空 = 不占用（回落到编码费率 / 通道费率），填写需 0~100 */
+const rateField = z.string().trim().refine((v) => {
+  if (!v) return true
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 0 && n <= 100
+}, "费率需在 0~100 之间")
+
 const recordSchema = z.object({
   username: z.string().min(2, "用户名至少 2 位"),
   // 后端创建即 hash 入库，空密码会导致无法登录的账号
   password: z.string().min(6, "密码至少 6 位"),
+  rate: rateField,
   status: z.boolean(),
   pay_status: z.boolean(),
   settle_status: z.boolean(),
@@ -114,6 +122,7 @@ const recordSchema = z.object({
 
 const editSchema = z.object({
   username: z.string(),
+  rate: rateField,
   status: z.boolean(),
   pay_status: z.boolean(),
   settle_status: z.boolean(),
@@ -416,6 +425,18 @@ export function MerchantsPage() {
         meta: { headClassName: "w-[110px] text-right", cellClassName: "text-right" },
       },
       {
+        // 商户专属费率（%）：空 = 不占用专属费率，回落到编码 / 通道费率
+        accessorKey: "rate",
+        enableSorting: false,
+        header: () => "费率",
+        cell: ({ row }) => (
+          <span className="text-sm tabular-nums text-muted-foreground">
+            {row.original.rate ? `${row.original.rate}%` : "按通道"}
+          </span>
+        ),
+        meta: { headClassName: "w-[80px] text-right", cellClassName: "text-right" },
+      },
+      {
         // 结算账号/姓名（点击弹出快捷修改；微信/QQ 带类型前缀）
         accessorKey: "settle_account",
         enableSorting: false,
@@ -653,13 +674,11 @@ export function MerchantsPage() {
         { label: "订单", onClick: (item) => navigate(`/trade/orders?merchant_id=${item.id}`) },
         { label: "结算", onClick: (item) => navigate(`/settle?merchant_id=${item.id}`) },
         { label: "重置密码", onClick: (item) => { setPwdValue(""); setPwdTarget(item) } },
-        // 编辑弹窗只有状态/支付/结算三个开关，暂时隐藏时也收起入口
-        ...(MERCHANT_STATUS_ENABLED ? [{
-          label: "编辑",
-          onClick: (item: MerchantData) => { setEditingId(item.id); setFormOpen(true) },
-        }] : []),
+        // 编辑入口恒定显示：弹窗里的状态开关受 MERCHANT_STATUS_ENABLED 控制，
+        // 但「费率」不受开关约束，隐藏入口会让商户专属费率无处可填。
+        { label: "编辑", onClick: (item: MerchantData) => { setEditingId(item.id); setFormOpen(true) } },
         { label: "删除", variant: "destructive", title: "删除商户", onClick: (item) => setDeleteTarget(item) },
-      ] as ActionItem<MerchantData>[], { width: MERCHANT_STATUS_ENABLED ? 500 : 440 }),
+      ] as ActionItem<MerchantData>[], { width: 500 }),
     ],
   })
 
@@ -1000,6 +1019,11 @@ export function MerchantsPage() {
         fields={[
           { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", required: true, props: { autoComplete: "off" } },
           { type: "input", name: "password", label: "密码", placeholder: "密码", span: "full", required: true, props: { autoComplete: "new-password", spellCheck: false } },
+          {
+            type: "input", name: "rate", label: "费率（%）", span: "full",
+            placeholder: "留空 = 按编码 / 通道费率",
+            props: { type: "number", min: 0, max: 100, step: "0.01", inputMode: "decimal" },
+          },
           ...(MERCHANT_STATUS_ENABLED ? ([{
             type: "switch-group", name: "switch_group", span: "full",
             items: [
@@ -1010,13 +1034,14 @@ export function MerchantsPage() {
           }] as FormFieldConfig[]) : []),
         ]}
         defaultValues={() => ({
-          username: "", password: "",
+          username: "", password: "", rate: "",
           status: true, pay_status: true, settle_status: true,
         })}
         onSubmit={async (_id, values) => {
           await merchantsApi.create({
             username: values.username,
             password: values.password,
+            rate: values.rate,
             status: values.status ? 1 : 0,
             pay_status: values.pay_status ? 1 : 0,
             settle_status: values.settle_status ? 1 : 0,
@@ -1036,6 +1061,11 @@ export function MerchantsPage() {
         width="sm:max-w-sm"
         fields={[
           { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", props: { disabled: true } },
+          {
+            type: "input", name: "rate", label: "费率（%）", span: "full",
+            placeholder: "留空 = 按编码 / 通道费率",
+            props: { type: "number", min: 0, max: 100, step: "0.01", inputMode: "decimal" },
+          },
           ...(MERCHANT_STATUS_ENABLED ? ([{
             type: "switch-group", name: "switch_group", span: "full",
             items: [
@@ -1046,17 +1076,20 @@ export function MerchantsPage() {
           }] as FormFieldConfig[]) : []),
         ]}
         defaultValues={() => ({
-          username: "",
+          username: "", rate: "",
           status: true, pay_status: true, settle_status: true,
         })}
         fetchDetail={(id) => merchantsApi.get(id).then((d) => ({
           username: d.username,
+          rate: d.rate,
           status: d.status === 1,
           pay_status: d.pay_status === 1,
           settle_status: d.settle_status === 1,
         }) as unknown as Record<string, unknown>)}
         onSubmit={async (id, values) => {
           if (id) await merchantsApi.update(id, {
+            // 空串 = 清除专属费率（后端显式处理），留空不会把已有值改成 0
+            rate: values.rate ?? "",
             status: values.status ? 1 : 0,
             pay_status: values.pay_status ? 1 : 0,
             settle_status: values.settle_status ? 1 : 0,
