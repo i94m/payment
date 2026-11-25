@@ -214,7 +214,7 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
               {"重置"}
             </Button>
           )}
-          <Button size="sm" variant="outline" onClick={copyAll}>
+          <Button size="sm" onClick={copyAll}>
             {isCopied
               ? <IconCheck className="size-4 text-green-500" />
               : <IconCopy className="size-4" />}

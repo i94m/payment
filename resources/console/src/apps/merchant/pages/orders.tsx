@@ -60,9 +60,9 @@ const REFUND_LABELS: Record<string, string> = {
   FULL: "全额退款",
 }
 
-/** 通知状态：-1 失败 / 0 成功 / ≥1 重试中；未支付订单不展示 */
+/** 通知状态：-1 失败 / 0 成功 / ≥1 重试中；未支付订单留空（空值不画横杠） */
 function NotifyStatusCell({ status, notifyStatus }: { status: number; notifyStatus?: number }) {
-  if (status !== 1) return <span className="text-xs text-muted-foreground">—</span>
+  if (status !== 1) return null
   const ns = notifyStatus ?? 0
   const map = {
     failed: { label: "失败", cls: NOTIFY_STATUS_CLASS.failed },
@@ -218,7 +218,7 @@ export function OrdersPage() {
         header: () => "商户到账",
         cell: ({ row }) => (
           <span className="text-sm tabular-nums">
-            {row.original.merchant_income ? `¥${row.original.merchant_income}` : "—"}
+            {row.original.merchant_income ? `¥${row.original.merchant_income}` : ""}
           </span>
         ),
         meta: { headClassName: "w-[100px] text-right", cellClassName: "text-right" },
@@ -444,7 +444,7 @@ function MerchantOrderDetailTable({ order }: { order: OrderDetailData }) {
     : "未退款"
 
   return (
-    <DetailTable rows={[
+    <DetailTable blankEmpty rows={[
       [
         { label: "状态", value: (
           <span className="inline-flex flex-wrap items-center gap-1.5">

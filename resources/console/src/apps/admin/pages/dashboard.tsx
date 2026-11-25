@@ -305,14 +305,15 @@ export function DashboardPage() {
       note: "今日实时汇总",
     },
     {
-      key: "today_deduct_count", label: "今日扣量", icon: IconPercentage,
-      value: overview?.today_deduct_count ?? 0, format: fmtCount, to: "",
-      note: "今日命中扣量笔数",
-    },
-    {
       key: "yesterday_deduct_money", label: "昨日预计收入", icon: IconCalendarStats,
       value: overview?.yesterday_deduct_money ?? 0, format: fmtMoney, to: "",
       note: "昨日全天汇总",
+    },
+    // 同类指标相邻：今日/昨日收入在前，今日/昨日扣量紧随其后
+    {
+      key: "today_deduct_count", label: "今日扣量", icon: IconPercentage,
+      value: overview?.today_deduct_count ?? 0, format: fmtCount, to: "",
+      note: "今日命中扣量笔数",
     },
     {
       key: "yesterday_deduct_count", label: "昨日扣量", icon: IconPercentage,

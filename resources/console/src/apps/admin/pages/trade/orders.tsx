@@ -45,7 +45,8 @@ import { usePermission } from "@/hooks/use-permission"
 import { useSearchParams } from "react-router-dom"
 
 function moneyCell(v: string | null | undefined) {
-  if (!v) return <span className="text-sm text-muted-foreground">—</span>
+  // 空值留空：待支付单没有实付/利润，不需要占位符撑出「有一行数据」的错觉
+  if (!v) return null
   return <span className="text-sm tabular-nums">¥{v}</span>
 }
 
@@ -177,7 +178,7 @@ export function OrdersPage() {
         accessorKey: "merchant_username",
         enableSorting: false,
         header: () => "商户",
-        cell: ({ row }) => secondaryCell(row.original.merchant_username || row.original.merchant_id || "—"),
+        cell: ({ row }) => secondaryCell(row.original.merchant_username || row.original.merchant_id || ""),
         meta: { headClassName: "min-w-[90px]" },
       },
       {
@@ -200,7 +201,8 @@ export function OrdersPage() {
         cell: ({ row }) => (
           row.original.channel_code
             ? <span className="font-mono text-xs">{row.original.channel_code}</span>
-            : <span className="text-sm text-muted-foreground">—</span>
+            // 未走编码路由的订单留空，不展示占位横杠
+            : null
         ),
         meta: { headClassName: "w-[90px]" },
       },
@@ -243,14 +245,15 @@ export function OrdersPage() {
         accessorKey: "is_deducted",
         enableSorting: false,
         header: () => "扣量",
-        // 命中扣量的订单：不入账、不返佣、不通知，但后台要能看见（对号）
+        // 命中扣量的订单：不入账、不返佣、不通知，但后台要能看见（对号）；
+        // 非扣量就是「没有这个标记」，留空而不是画横杠
         cell: ({ row }) => (row.original.is_deducted
           ? (
             <span className="inline-flex text-emerald-600 dark:text-emerald-400" title={"扣量单（不入账 / 不返佣 / 不通知）"}>
               <IconCheck className="size-4" />
             </span>
           )
-          : <span className="text-sm text-muted-foreground">{"—"}</span>),
+          : null),
         meta: { headClassName: "w-[60px] text-center", cellClassName: "text-center" },
       },
       {
@@ -540,7 +543,7 @@ function OrderDetailTable({ order }: { order: OrderData }) {
       : null
 
   return (
-    <DetailTable rows={[
+    <DetailTable blankEmpty rows={[
       [
         { label: "状态", value: (
           <span className="inline-flex flex-wrap items-center gap-1.5">

@@ -15,9 +15,13 @@ export type DetailCell = {
 /**
  * 详情弹窗通用的「字段 / 值」表：
  * - 桌面一行两组，窄屏自动退化成一行一组，避免四列挤在一起；
- * - 空值统一渲染成正文尺寸的「—」，不跟着 mono 单元格变成等宽小字号。
+ * - 空值默认渲染成正文尺寸的「—」，不跟着 mono 单元格变成等宽小字号；
+ *   `blankEmpty` 时改为一律留空（订单这类「本来就没有值」的记录用）。
  */
-export function DetailTable({ rows }: { rows: Array<[DetailCell, DetailCell]> }) {
+export function DetailTable({ rows, blankEmpty = false }: {
+  rows: Array<[DetailCell, DetailCell]>
+  blankEmpty?: boolean
+}) {
   return (
     <dl className={[
       "grid grid-cols-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border text-sm",
@@ -27,9 +31,9 @@ export function DetailTable({ rows }: { rows: Array<[DetailCell, DetailCell]> })
     ].join(" ")}>
       {rows.flatMap(([left, right], i) => [
         <DetailLabel key={`l${i}`} cell={left} />,
-        <DetailValue key={`v${i}`} cell={left} />,
+        <DetailValue key={`v${i}`} cell={left} blankEmpty={blankEmpty} />,
         <DetailLabel key={`l${i}r`} cell={right} divided />,
-        <DetailValue key={`v${i}r`} cell={right} divided />,
+        <DetailValue key={`v${i}r`} cell={right} divided blankEmpty={blankEmpty} />,
       ])}
     </dl>
   )
@@ -43,7 +47,7 @@ function DetailLabel({ cell, divided }: { cell: DetailCell; divided?: boolean })
   )
 }
 
-function DetailValue({ cell, divided }: { cell: DetailCell; divided?: boolean }) {
+function DetailValue({ cell, divided, blankEmpty }: { cell: DetailCell; divided?: boolean; blankEmpty?: boolean }) {
   const empty = cell.value === undefined || cell.value === null || cell.value === ""
   return (
     <dd className={[
@@ -54,7 +58,7 @@ function DetailValue({ cell, divided }: { cell: DetailCell; divided?: boolean })
     ].join(" ")}
         title={typeof cell.value === "string" && cell.value ? cell.value : undefined}>
       {empty ? (
-        <span className="text-muted-foreground">—</span>
+        blankEmpty ? null : <span className="text-muted-foreground">—</span>
       ) : cell.icon ? (
         <span className="inline-flex items-center gap-1.5">{cell.icon}{cell.value}</span>
       ) : cell.value}

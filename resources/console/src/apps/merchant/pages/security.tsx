@@ -182,12 +182,11 @@ export function SecurityPage() {
                   <CardHeader>
                     <CardTitle>{"对接信息"}</CardTitle>
                     <CardDescription>
-                      {"可直接复制发送给接入方（「字段：值」纯文本）。"}
+                      {"可直接复制发送给接入方。"}
                     </CardDescription>
                     <CardAction>
                       <Button
                         size="sm"
-                        variant="outline"
                         onClick={doCopyIntegration}
                         disabled={!integrationText}
                       >
@@ -215,16 +214,6 @@ export function SecurityPage() {
                           />
                         )
                       })}
-                    </div>
-                    <div className="space-y-1 px-4 py-1.5 text-xs text-muted-foreground">
-                      <p>
-                        {apiKey.default_channel
-                          ? "「默认通道」为平台当前主用通道，仅作对接参考；下单可携带 channel_code 指定通道范围（全部可用编码见下方「支付通道」），不传则按平台默认路由。"
-                          : "下单可携带 channel_code 指定通道范围（全部可用编码见下方「支付通道」）；不传则按平台默认路由。"}
-                        {rsa2
-                          ? "当前为 RSA2 签名，平台不保存私钥，对接信息中不包含密钥明文。"
-                          : "API 密钥为明文展示，逐项复制与一键复制都是原始值。"}
-                      </p>
                     </div>
                   </CardContent>
                 </Card>
