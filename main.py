@@ -97,12 +97,18 @@ app = FastAPI(
     openapi_url=None,
 )
 
-# 跨域
+# 跨域：允许任意来源。APP_CORS_ORIGINS 留空或含 * 时一律按「全开」处理
+# （空值不再等于「一个都不允许」）；显式写死域名列表时才收窄。
 _origins = [o.strip() for o in config.APP_CORS_ORIGINS.split(",") if o.strip()]
+_allow_any_origin = not _origins or "*" in _origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_origins,
-    allow_credentials=len(_origins) == 1 and _origins[0] == "*",
+    allow_origins=[] if _allow_any_origin else _origins,
+    # 用正则匹配一切来源而不是字面量 *：Starlette 对 * 会直接回 Access-Control-Allow-Origin: *
+    # （与 allow_credentials 互斥，带 cookie 的响应会被浏览器判为无效），
+    # 走正则才会回显请求方 Origin，任意来源 + 携带凭证都能成立。
+    allow_origin_regex=".*" if _allow_any_origin else None,
+    allow_credentials=_allow_any_origin,
     allow_methods=["*"],
     allow_headers=["*"],
 )
