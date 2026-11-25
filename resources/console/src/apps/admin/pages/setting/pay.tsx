@@ -5,6 +5,8 @@ import { accountApi } from "@/api"
 import type { SettingItem } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
+import { splitUnitLabel } from "@/lib/unit"
 import { Switch } from "@/components/ui/switch"
 import { Field, FieldError, FieldLabel, RequiredMark } from "@/components/ui/field"
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -89,28 +91,36 @@ function SettingField({ item, control, clearError, disabled }: {
       <Controller
         name={item.key}
         control={control}
-        render={({ field, fieldState }) => (
-          <Field data-invalid={fieldState.invalid}>
-            <FieldLabel htmlFor={`setting-${item.key}`} className="text-sm">
-              {item.label}
-              {isRequiredType(item.type) && <RequiredMark />}
-            </FieldLabel>
-            <Input
-              id={`setting-${item.key}`}
-              type={inputType(item.type)}
-              step={item.type === "decimal" || item.type === "float" ? "0.01" : undefined}
-              disabled={disabled}
-              value={field.value ?? ""}
-              onChange={(e) => { field.onChange(e.target.value); clearError() }}
-              placeholder={"请输入"}
-              aria-invalid={fieldState.invalid || undefined}
-            />
-            {item.description && (
-              <p className="text-xs leading-relaxed text-muted-foreground">{item.description}</p>
-            )}
-            {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
-          </Field>
-        )}
+        render={({ field, fieldState }) => {
+          // 「结算最低金额（元）」这类标签：单位挪进输入框后缀，标签只留名称
+          const { label, unit } = splitUnitLabel(item.label)
+          const inputProps = {
+            id: `setting-${item.key}`,
+            type: inputType(item.type),
+            step: item.type === "decimal" || item.type === "float" ? "0.01" : undefined,
+            disabled,
+            value: field.value ?? "",
+            onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+              field.onChange(e.target.value)
+              clearError()
+            },
+            placeholder: "请输入",
+            "aria-invalid": fieldState.invalid || undefined,
+          }
+          return (
+            <Field data-invalid={fieldState.invalid}>
+              <FieldLabel htmlFor={`setting-${item.key}`} className="text-sm">
+                {label}
+                {isRequiredType(item.type) && <RequiredMark />}
+              </FieldLabel>
+              {unit ? <UnitInput unit={unit} {...inputProps} /> : <Input {...inputProps} />}
+              {item.description && (
+                <p className="text-xs leading-relaxed text-muted-foreground">{item.description}</p>
+              )}
+              {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}
+            </Field>
+          )
+        }}
       />
     </div>
   )

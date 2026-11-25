@@ -5,6 +5,7 @@ import { testPayApi } from "@/api"
 import type { TestPayResult, TestPayType } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -154,8 +155,9 @@ export function TestPayPage() {
                   render={({ field, fieldState }) => (
                     <Field data-invalid={fieldState.invalid}>
                       <FieldLabel htmlFor={field.name}>{"支付金额"}<RequiredMark /></FieldLabel>
-                      <Input
+                      <UnitInput
                         id={field.name}
+                        unit="元"
                         type="number" min="0.01" max="1000" step="0.01"
                         value={field.value ?? ""}
                         onChange={(e) => field.onChange(e.target.value)}

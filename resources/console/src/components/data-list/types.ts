@@ -32,6 +32,8 @@ export interface FormFieldConfig {
   /** 必填：Label 后追加红色 * */
   required?: boolean
   placeholder?: string
+  /** 输入框单位（元 / % / 分钟…）：用 InputGroup 后缀展示，标签里不再写单位 */
+  unit?: string
   span?: "full" | "half"
   options?: SelectOption[]
   /** type=switch-group / checkbox-group 时的选项（一行展示，值为 boolean） */

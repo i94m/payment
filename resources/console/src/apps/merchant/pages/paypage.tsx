@@ -4,7 +4,7 @@ import * as React from "react"
 import { paypageApi } from "@/api"
 import type { PaypageSettings } from "@/api"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { CopyableInput } from "@/components/ui/copy-button"
@@ -148,7 +148,7 @@ export function PaypageMchPage() {
                     render={({ field, fieldState }) => (
                       <Field data-invalid={fieldState.invalid}>
                         <FieldLabel htmlFor={field.name}>{"最小金额"}{randomEnable && <RequiredMark />}</FieldLabel>
-                        <Input id={field.name} inputMode="decimal" value={field.value ?? ""}
+                        <UnitInput id={field.name} unit="元" inputMode="decimal" value={field.value ?? ""}
                           placeholder={randomInteger ? "如 1" : "如 1.50"}
                           onChange={(e) => field.onChange(e.target.value)} disabled={!randomEnable || formDisabled}
                           aria-invalid={fieldState.invalid || undefined} />
@@ -162,7 +162,7 @@ export function PaypageMchPage() {
                     render={({ field, fieldState }) => (
                       <Field data-invalid={fieldState.invalid}>
                         <FieldLabel htmlFor={field.name}>{"最大金额"}{randomEnable && <RequiredMark />}</FieldLabel>
-                        <Input id={field.name} inputMode="decimal" value={field.value ?? ""}
+                        <UnitInput id={field.name} unit="元" inputMode="decimal" value={field.value ?? ""}
                           placeholder={randomInteger ? "如 100" : "如 9.90"}
                           onChange={(e) => field.onChange(e.target.value)} disabled={!randomEnable || formDisabled}
                           aria-invalid={fieldState.invalid || undefined} />
@@ -191,8 +191,8 @@ export function PaypageMchPage() {
                     control={form.control}
                     render={({ field, fieldState }) => (
                       <Field data-invalid={fieldState.invalid}>
-                        <FieldLabel htmlFor={field.name}>{"建单限流/分钟"}</FieldLabel>
-                        <Input id={field.name} inputMode="numeric" value={field.value} placeholder={"如 10，0=不限"}
+                        <FieldLabel htmlFor={field.name}>{"建单限流"}</FieldLabel>
+                        <UnitInput id={field.name} unit="次/分钟" inputMode="numeric" value={field.value} placeholder={"如 10，0=不限"}
                           onChange={(e) => field.onChange(Number(e.target.value) || 0)} disabled={formDisabled}
                           aria-invalid={fieldState.invalid || undefined} />
                         {fieldState.error?.message && <FieldError>{fieldState.error.message}</FieldError>}

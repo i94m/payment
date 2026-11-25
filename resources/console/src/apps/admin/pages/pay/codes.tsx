@@ -15,6 +15,7 @@ import type {
 } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
 import { Field, FieldLabel, FieldDescription, FieldError, RequiredMark } from "@/components/ui/field"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
@@ -596,13 +597,14 @@ export function ChannelCodesPage() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid} className="col-span-1">
                     <FieldLabel htmlFor="code-min-amount">{"金额下限"}</FieldLabel>
-                    <Input
+                    <UnitInput
                       {...field}
                       id="code-min-amount"
+                      unit="元"
                       type="number"
                       min={0}
                       step="0.01"
-                      className="text-right tabular-nums"
+                      inputClassName="text-right tabular-nums"
                       placeholder={"0.00"}
                       aria-invalid={fieldState.invalid || undefined}
                     />
@@ -618,13 +620,14 @@ export function ChannelCodesPage() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid} className="col-span-1">
                     <FieldLabel htmlFor="code-max-amount">{"金额上限"}</FieldLabel>
-                    <Input
+                    <UnitInput
                       {...field}
                       id="code-max-amount"
+                      unit="元"
                       type="number"
                       min={0}
                       step="0.01"
-                      className="text-right tabular-nums"
+                      inputClassName="text-right tabular-nums"
                       placeholder={"0.00"}
                       aria-invalid={fieldState.invalid || undefined}
                     />
@@ -639,15 +642,16 @@ export function ChannelCodesPage() {
                 control={codeForm.control}
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid} className="col-span-2">
-                    <FieldLabel htmlFor="code-fee-rate">{"费率（%）"}</FieldLabel>
-                    <Input
+                    <FieldLabel htmlFor="code-fee-rate">{"费率"}</FieldLabel>
+                    <UnitInput
                       {...field}
                       id="code-fee-rate"
+                      unit="%"
                       type="number"
                       min={0}
                       max={100}
                       step="0.01"
-                      className="text-right tabular-nums"
+                      inputClassName="text-right tabular-nums"
                       placeholder={"留空 = 按通道费率"}
                       aria-invalid={fieldState.invalid || undefined}
                     />
@@ -718,7 +722,7 @@ export function ChannelCodesPage() {
                       </th>
                       <th className="px-2 py-2 text-left">{"支付方式"}</th>
                       <th className="w-[92px] px-2 py-2 text-right">{"商户费率"}</th>
-                      {showWeight && <th className="w-[20%] px-2 py-2 text-right">{"权重（%）"}</th>}
+                      {showWeight && <th className="w-[20%] px-2 py-2 text-right">{"权重"}</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -762,18 +766,20 @@ export function ChannelCodesPage() {
                           </td>
                           {showWeight && (
                             <td className="px-2 py-1.5 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                <Input
+                              <div className="flex items-center justify-end">
+                                <UnitInput
+                                  unit="%"
                                   type="number"
                                   min={0}
                                   max={100}
                                   step={1}
-                                  className="h-8 w-16 text-right"
+                                  className="h-8 w-20"
+                                  inputClassName="h-8 pr-1 text-right"
+                                  addonClassName="px-1.5 text-xs"
                                   value={member ? member.weight : ""}
                                   disabled={!member}
                                   onChange={(e) => patchMember(ch.id, { weight: Number(e.target.value) || 0 })}
                                 />
-                                <span className="w-3 text-xs text-muted-foreground">%</span>
                               </div>
                               {member && member.weight === 0 && (
                                 <span className="text-xs text-muted-foreground">{"未参与"}</span>

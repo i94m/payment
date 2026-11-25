@@ -9,6 +9,7 @@ import { payApi } from "@/api"
 import type { ChannelData, ChannelStats, ChannelTestDebug, ChannelTestPayResult, PluginData, PaymentTypeData, PluginInput } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
@@ -866,9 +867,10 @@ export function ChannelsPage() {
                 control={channelForm.control}
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid} className="col-span-1">
-                    <FieldLabel htmlFor={field.name}>{"商户费率(%)"}</FieldLabel>
-                    <Input
+                    <FieldLabel htmlFor={field.name}>{"商户费率"}</FieldLabel>
+                    <UnitInput
                       id={field.name}
+                      unit="%"
                       type="number" min="0" max="100" step="0.01"
                       value={field.value ?? ""}
                       onChange={(e) => field.onChange(e.target.value)}
@@ -883,9 +885,10 @@ export function ChannelsPage() {
                 control={channelForm.control}
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid} className="col-span-1">
-                    <FieldLabel htmlFor={field.name}>{"成本费率(%)"}</FieldLabel>
-                    <Input
+                    <FieldLabel htmlFor={field.name}>{"成本费率"}</FieldLabel>
+                    <UnitInput
                       id={field.name}
+                      unit="%"
                       type="number" min="0" max="100" step="0.01"
                       value={field.value ?? ""}
                       onChange={(e) => field.onChange(e.target.value)}
@@ -1005,8 +1008,9 @@ export function ChannelsPage() {
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid}>
                     <FieldLabel htmlFor={field.name}>{"订单金额"}<RequiredMark /></FieldLabel>
-                    <Input
+                    <UnitInput
                       id={field.name}
+                      unit="元"
                       type="number" min="0.01" step="0.01"
                       value={field.value ?? ""}
                       onChange={(e) => field.onChange(e.target.value)}

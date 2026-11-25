@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -1020,7 +1021,7 @@ export function MerchantsPage() {
           { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", required: true, props: { autoComplete: "off" } },
           { type: "input", name: "password", label: "密码", placeholder: "密码", span: "full", required: true, props: { autoComplete: "new-password", spellCheck: false } },
           {
-            type: "input", name: "rate", label: "费率（%）", span: "full",
+            type: "input", name: "rate", label: "费率", unit: "%", span: "full",
             placeholder: "留空 = 按编码 / 通道费率",
             props: { type: "number", min: 0, max: 100, step: "0.01", inputMode: "decimal" },
           },
@@ -1062,7 +1063,7 @@ export function MerchantsPage() {
         fields={[
           { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", props: { disabled: true } },
           {
-            type: "input", name: "rate", label: "费率（%）", span: "full",
+            type: "input", name: "rate", label: "费率", unit: "%", span: "full",
             placeholder: "留空 = 按编码 / 通道费率",
             props: { type: "number", min: 0, max: 100, step: "0.01", inputMode: "decimal" },
           },
@@ -1112,7 +1113,8 @@ export function MerchantsPage() {
           <div className="space-y-3">
             <div className="grid gap-2">
               <Label>{"余额"}</Label>
-              <Input
+              <UnitInput
+                unit="元"
                 value={balanceAmount}
                 onChange={(e) => setBalanceAmount(e.target.value)}
                 placeholder={"金额，正数增加、负数扣减"}
@@ -1253,14 +1255,16 @@ export function MerchantsPage() {
               <Label htmlFor="random-enable" className="cursor-pointer">{"随机金额"}</Label>
             </div>
             <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
-              <Input
+              <UnitInput
+                unit="元"
                 type="number" min={randomInteger ? 1 : 0.01} step={randomInteger ? 1 : 0.01}
                 value={randomMin} onChange={(e) => setRandomMin(e.target.value)}
                 placeholder={"最小金额"}
                 disabled={randomEnable !== "1"}
               />
               <span>~</span>
-              <Input
+              <UnitInput
+                unit="元"
                 type="number" min={randomInteger ? 1 : 0.01} step={randomInteger ? 1 : 0.01}
                 value={randomMax} onChange={(e) => setRandomMax(e.target.value)}
                 placeholder={"最大金额"}
@@ -1317,9 +1321,10 @@ export function MerchantsPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="deduct-minmoney">{"起扣金额（元）"}</Label>
-                <Input
+                <Label htmlFor="deduct-minmoney">{"起扣金额"}</Label>
+                <UnitInput
                   id="deduct-minmoney"
+                  unit="元"
                   type="number" min={0} step={0.01}
                   value={deductMinmoney}
                   onChange={(e) => setDeductMinmoney(e.target.value)}
@@ -1349,7 +1354,7 @@ export function MerchantsPage() {
           </DialogHeader>
           <div className="grid gap-2">
             <Label>{"限制拉单数量"}</Label>
-            <Input type="number" min={0} step={1} value={ratelimitValue} onChange={(e) => setRatelimitValue(e.target.value)} placeholder="0" />
+            <UnitInput unit="次/分钟" type="number" min={0} step={1} value={ratelimitValue} onChange={(e) => setRatelimitValue(e.target.value)} placeholder="0" />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRatelimitTarget(null)}>{"取消"}</Button>
@@ -1405,8 +1410,8 @@ export function MerchantsPage() {
           </DialogHeader>
           <div className="flex items-center gap-2">
             <span className="text-sm whitespace-nowrap">{"超过"}</span>
-            <Input type="number" min={1} value={advanceDaysInput} onChange={(e) => setAdvanceDaysInput(e.target.value)} className="w-24" placeholder={"请输入天数"} />
-            <span className="text-sm">{"天无订单的用户"}</span>
+            <UnitInput unit="天" type="number" min={1} value={advanceDaysInput} onChange={(e) => setAdvanceDaysInput(e.target.value)} className="w-28" placeholder={"请输入天数"} />
+            <span className="text-sm">{"无订单的用户"}</span>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdvanceOpen(false)}>{"取消"}</Button>
@@ -1443,14 +1448,16 @@ export function MerchantsPage() {
               <Label htmlFor="batch-random-enable" className="cursor-pointer">{"随机金额"}</Label>
             </div>
             <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
-              <Input
+              <UnitInput
+                unit="元"
                 type="number" min={batchRandomInteger ? 1 : 0.01} step={batchRandomInteger ? 1 : 0.01}
                 value={batchRandomMin} onChange={(e) => setBatchRandomMin(e.target.value)}
                 placeholder={"最小金额"}
                 disabled={batchRandomEnable !== "1"}
               />
               <span>~</span>
-              <Input
+              <UnitInput
+                unit="元"
                 type="number" min={batchRandomInteger ? 1 : 0.01} step={batchRandomInteger ? 1 : 0.01}
                 value={batchRandomMax} onChange={(e) => setBatchRandomMax(e.target.value)}
                 placeholder={"最大金额"}
@@ -1510,9 +1517,10 @@ export function MerchantsPage() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="batch-deduct-minmoney">{"起扣金额（元）"}</Label>
-                <Input
+                <Label htmlFor="batch-deduct-minmoney">{"起扣金额"}</Label>
+                <UnitInput
                   id="batch-deduct-minmoney"
+                  unit="元"
                   type="number" min={0} step={0.01}
                   value={batchDeductMinmoney}
                   onChange={(e) => setBatchDeductMinmoney(e.target.value)}

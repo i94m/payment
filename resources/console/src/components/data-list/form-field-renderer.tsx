@@ -2,6 +2,7 @@ import type { Control, FieldValues, Path } from "react-hook-form"
 import * as React from "react"
 import { Controller, useFormState } from "react-hook-form"
 import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -152,35 +153,39 @@ function renderField(
 ) {
   switch (config.type) {
     case "input":
-    case "password":
-      return (
-        <Input
-          type={config.type === "password" ? "password" : "text"}
-          id={config.name}
-          placeholder={config.placeholder}
-          value={(field.value as string) ?? ""}
-          onChange={(e) => field.onChange(e.target.value)}
-          onBlur={field.onBlur}
-          disabled={disabled}
-          // 密码类字段一律不参与浏览器自动填充（后台新增/编辑表单）
-          {...(config.type === "password" ? { autoComplete: "new-password" } : {})}
-          {...(config.props as Record<string, unknown>)}
-        />
-      )
+    case "password": {
+      const props = {
+        id: config.name,
+        placeholder: config.placeholder,
+        value: (field.value as string) ?? "",
+        onChange: (e: React.ChangeEvent<HTMLInputElement>) => field.onChange(e.target.value),
+        onBlur: field.onBlur,
+        disabled,
+        // 密码类字段一律不参与浏览器自动填充（后台新增/编辑表单）
+        ...(config.type === "password" ? { autoComplete: "new-password" } : {}),
+        ...(config.props as Record<string, unknown>),
+      }
+      // 带单位的字段（费率 %、金额 元…）把单位放进 InputGroup 后缀
+      return config.unit
+        ? <UnitInput unit={config.unit} {...props} />
+        : <Input type={config.type === "password" ? "password" : "text"} {...props} />
+    }
 
-    case "number":
-      return (
-        <Input
-          type="number"
-          id={config.name}
-          placeholder={config.placeholder}
-          value={(field.value as string) ?? ""}
-          onChange={(e) => field.onChange(e.target.value ? Number(e.target.value) : "")}
-          onBlur={field.onBlur}
-          disabled={disabled}
-          {...(config.props as Record<string, unknown>)}
-        />
-      )
+    case "number": {
+      const props = {
+        id: config.name,
+        placeholder: config.placeholder,
+        value: (field.value as string) ?? "",
+        onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
+          field.onChange(e.target.value ? Number(e.target.value) : ""),
+        onBlur: field.onBlur,
+        disabled,
+        ...(config.props as Record<string, unknown>),
+      }
+      return config.unit
+        ? <UnitInput type="number" unit={config.unit} {...props} />
+        : <Input type="number" {...props} />
+    }
 
     case "textarea":
       return (

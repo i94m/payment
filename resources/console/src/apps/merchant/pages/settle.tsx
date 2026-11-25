@@ -5,7 +5,7 @@ import { Link } from "react-router-dom"
 import { settleApi, recordsApi } from "@/api"
 import type { MerchantSettlementData, SettleInfoExtended } from "@/api"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Field, FieldLabel, FieldError, RequiredMark } from "@/components/ui/field"
@@ -275,8 +275,9 @@ export function SettlePage() {
                             onClick={() => field.onChange(info?.withdrawable ?? "")}>{"全部"}</button>
                         </span>
                       </div>
-                      <Input
+                      <UnitInput
                         id={field.name}
+                        unit="元"
                         inputMode="decimal"
                         placeholder={"申请金额"}
                         value={field.value ?? ""}

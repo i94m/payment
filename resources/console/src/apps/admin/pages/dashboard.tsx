@@ -11,7 +11,7 @@ import { ListError } from "@/components/data-list/list-error"
 import { PayIcon } from "@/components/pay-icon"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { UnitInput } from "@/components/ui/unit-input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -542,11 +542,11 @@ export function DashboardPage() {
                             </TableCell>
                             <TableCell className="py-1.5 pr-4">
                               <div className="flex items-center gap-1">
-                                <Input className="h-8 w-full min-w-0 px-1.5 text-xs tabular-nums" placeholder={"最小"} inputMode="decimal"
+                                <UnitInput unit="元" className="h-8 min-w-0" inputClassName="h-8 px-1.5 text-xs tabular-nums" addonClassName="px-1 text-xs" placeholder={"最小"} inputMode="decimal"
                                   value={form.min} disabled={off} aria-label={`${pt.name} 最小金额`}
                                   onChange={(e) => setForm({ min: e.target.value })} />
                                 <span className="text-muted-foreground shrink-0">-</span>
-                                <Input className="h-8 w-full min-w-0 px-1.5 text-xs tabular-nums" placeholder={"最大"} inputMode="decimal"
+                                <UnitInput unit="元" className="h-8 min-w-0" inputClassName="h-8 px-1.5 text-xs tabular-nums" addonClassName="px-1 text-xs" placeholder={"最大"} inputMode="decimal"
                                   value={form.max} disabled={off} aria-label={`${pt.name} 最大金额`}
                                   onChange={(e) => setForm({ max: e.target.value })} />
                               </div>

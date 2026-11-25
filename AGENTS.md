@@ -74,6 +74,7 @@ Local demo: `scripts/seed_demo.py` (demo/demo123456, pid=1001), `scripts/mock_up
 
 - 订单状态色板只允许有一份：`src/lib/order-status.ts`（固定色值、不用主题色 `primary`、无边框，深色模式沿用同色相），三端共用 `components/order-status.tsx` 的 `OrderStatusBadge`；通知状态复用 `NOTIFY_STATUS_CLASS`，不要在页面里另写状态颜色。
 - 详情弹窗的键值表用 `components/detail-table.tsx`（`DetailTable`：桌面一行两组、窄屏一行一组），不要再手写 `flex justify-between` 的行。
+- 带单位的输入框统一用 `components/ui/unit-input.tsx` 的 `UnitInput`（内部是 `InputGroup` 后缀，如 `元`、`%`、`次/分钟`），标签里不再写「（元）」「（%）」；表单配置（`FormFieldConfig`）加 `unit` 字段即可自动套用。后端下发的设置项标签可用 `lib/unit.ts` 的 `splitUnitLabel` 拆出单位。
 
 ## Architecture map
 
