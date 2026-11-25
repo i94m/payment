@@ -135,12 +135,12 @@ function IntegrationRow({ label, value, copyValue }: {
   copyValue?: string
 }) {
   return (
-    <div className="flex items-center gap-2 pr-2">
-      <span className="w-14 shrink-0 text-xs text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{value || "-"}</span>
+    <div className="flex items-start gap-2 px-4 py-1">
+      <span className="w-14 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 break-all font-mono text-[13px]">{value || "-"}</span>
       <CopyButton
         value={copyValue ?? value}
-        className="size-5"
+        className="size-7"
         aria-label={`复制${label}`}
         title={`复制${label}`}
         disabled={!value}
@@ -200,11 +200,11 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
   }
 
   return (
-    <Card size="sm">
+    <Card>
       <CardHeader>
         <CardTitle>{"对接信息"}</CardTitle>
-        <CardDescription className="text-xs">
-          {"可直接复制发送给接入方。"}
+        <CardDescription>
+          {"格式与商户端「API 信息」页一致，可直接复制发送。"}
         </CardDescription>
         <CardAction className="flex items-center gap-2">
           <Badge variant={data.rsa2_enable ? "default" : "secondary"}>
@@ -224,7 +224,7 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="p-0 pb-1">
         {/* 「【商户对接参数】」小标题只出现在一键复制的纯文本里，页面上不重复展示 */}
         {fields.map(([label, value]) => (
           <IntegrationRow key={label} label={label} value={value} />
