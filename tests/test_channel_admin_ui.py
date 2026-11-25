@@ -12,6 +12,7 @@ from sqlmodel import func, select
 
 from app.core.security import hash_password, issue_token
 from app.models import Channel, Merchant, MerchantRecord, Order, SystemAdmin
+from app.services.balance import dmoney
 from tests.conftest import UPSTREAM_KEY
 from tests.test_pay_flow import _notify_params
 
@@ -72,7 +73,11 @@ async def test_channel_testpay_creates_test_order_and_isolated(client, seeded, s
     assert order.status == 0
     assert str(order.money) == "1.00"
     assert str(order.realmoney) == "1.00"
-    assert str(order.merchant_income or "0") == "0"
+    # 测试单也按同一费率口径算账（通道商户费率 2% / 成本费率 1%）：联调要能当场核对
+    # 手续费与平台利润，但仍不入余额/不返佣/不进统计（下面逐项验证）
+    assert order.merchant_income == dmoney("0.98")
+    assert order.channel_cost == dmoney("0.01")
+    assert order.profit == dmoney("0.01")
     assert order.notify_url in (None, "")
     merchant = await session.get(Merchant, order.merchant_id)
     assert merchant.pid == 100000  # 内置系统测试商户
@@ -85,7 +90,7 @@ async def test_channel_testpay_creates_test_order_and_isolated(client, seeded, s
     await session.refresh(order)
     assert order.status == 1
     assert order.notify_status == 0
-    assert order.merchant_income == 0
+    assert order.merchant_income == dmoney("0.98")
 
     await session.refresh(merchant)
     assert merchant.balance == 0
@@ -108,6 +113,10 @@ async def test_channel_testpay_creates_test_order_and_isolated(client, seeded, s
     r = await client.post("/admin-api/order/list", json={}, headers=headers)
     items = r.json()["data"]["items"]
     assert len(items) == 1 and items[0]["order_type"] == 2
+    # 金额字段原样下发：利润算出来是 0.01 就显示 0.01（不能因为 falsy 被吞成空串）
+    assert items[0]["profit"] == "0.01"
+    assert items[0]["merchant_income"] == "0.98"
+    assert items[0]["channel_cost"] == "0.01"
 
     r = await client.post("/admin-api/order/list", json={"order_type": "2",
                                                          "trade_no": trade_no},
@@ -124,6 +133,37 @@ async def test_channel_testpay_creates_test_order_and_isolated(client, seeded, s
                           headers=headers)
     items = r.json()["data"]["items"]
     assert len(items) == 1 and items[0]["trade_no"] == trade_no
+
+
+@pytest.mark.asyncio
+async def test_zero_profit_is_serialized_as_zero_not_blank(client, seeded, session):
+    """利润正好 0 元时也要下发 "0.00"。
+
+    `Decimal("0.00") or ""` 在 Python 里是空串，后台会把它渲染成「—」，
+    看起来像平台利润没算出来（商户费率 == 成本费率、测试单都会命中）。
+    """
+    headers = await _admin_headers(session)
+    channel = seeded["channel"]
+    channel.merchant_rate = dmoney("2.00")
+    channel.cost_rate = dmoney("2.00")   # 费率与成本相等 → 平台利润 0.00
+    session.add(channel)
+    await session.commit()
+
+    r = await client.post(f"/admin-api/pay/channels/{channel.id}/testpay",
+                          json={"name": "零利润", "amount": "10.00"}, headers=headers)
+    assert r.status_code == 200, r.text
+    trade_no = r.json()["data"]["trade_no"]
+
+    r = await client.post("/admin-api/order/list", json={"trade_no": trade_no}, headers=headers)
+    item = r.json()["data"]["items"][0]
+    assert item["profit"] == "0.00"
+    assert item["merchant_income"] == "9.80"
+    assert item["channel_cost"] == "0.20"
+
+    r = await client.get(f"/admin-api/order/{trade_no}", headers=headers)
+    detail = r.json()["data"]
+    assert detail["profit"] == "0.00"
+    assert detail["channel_cost"] == "0.20"
 
 
 @pytest.mark.asyncio
