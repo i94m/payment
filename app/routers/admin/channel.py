@@ -780,6 +780,9 @@ def _dump_code_item(item: ChannelCodeItem, c: Channel | None) -> dict:
         "plugin_name": c.plugin_name if c else "",
         "payment_type_id": c.payment_type_id if c else 0,
         "channel_status": c.status if c else 0,
+        # 商户费率随成员带出：编码模块要能一眼看到这个通道对商户抽多少
+        # （成本费率仍只在通道页，不在编码模块暴露）
+        "merchant_rate": str(c.merchant_rate) if c else "0.00",
     }
 
 
@@ -812,8 +815,8 @@ async def _code_today_stats(session) -> dict[int, dict]:
 async def channel_options(session: SessionDep):
     """通道编码弹窗的通道候选（只回挑通道要用的字段）。
 
-    给编码挑通道不需要看通道费率、成本与凭证：单独开这个接口，持有
-    `channel_code.view` 但没有 `channel.view` 的账号也能正常配置编码。
+    持有 `channel_code.view` 但没有 `channel.view` 的账号也能配置编码。回商户费率是
+    因为编码模块要展示「这条编码下的通道各抽多少」；成本费率与凭证仍不出这个接口。
     """
     rows = (await session.exec(
         select(Channel).order_by(col(Channel.sort), col(Channel.id))
@@ -824,6 +827,7 @@ async def channel_options(session: SessionDep):
         "plugin_name": c.plugin_name,
         "payment_type_id": c.payment_type_id,
         "status": c.status,
+        "merchant_rate": str(c.merchant_rate),
     } for c in rows])
 
 

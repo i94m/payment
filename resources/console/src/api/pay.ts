@@ -149,13 +149,15 @@ export interface ChannelPayload {
   config: Record<string, string>
 }
 
-// 通道编码弹窗的通道候选：只要挑通道要用的字段（不含费率/成本/凭证）
+// 通道编码弹窗的通道候选：挑通道要用的字段 + 商户费率（编码模块要展示），不含成本/凭证
 export interface ChannelOptionData {
   id: number
   name: string
   plugin_name: string
   payment_type_id: number
   status: number
+  /** 通道商户费率（%），编码模块展示用 */
+  merchant_rate: string
 }
 
 // ============ 通道编码 ============
@@ -170,6 +172,8 @@ export interface ChannelCodeItemData {
   payment_type_id: number
   /** 通道自身的全局状态（0=全局停用，绑在编码里也分流不到） */
   channel_status: number
+  /** 通道商户费率（%），编码模块展示用 */
+  merchant_rate: string
 }
 
 export interface ChannelCodeData {

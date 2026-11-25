@@ -8,6 +8,7 @@ import { z } from "zod"
 import { payApi } from "@/api"
 import type {
   ChannelCodeData,
+  ChannelCodeItemData,
   ChannelCodePayload,
   ChannelOptionData,
   PaymentTypeData,
@@ -41,6 +42,22 @@ import { getErrorMessage } from "@/lib/error"
 
 /** 编码级策略：与通道 mode 同口径（0=随机 1=轮询 2=权重） */
 const MODE_LABEL: Record<number, string> = { 0: "随机", 1: "轮询", 2: "权重" }
+
+/** 费率展示：统一两位小数（"2" / "2.00" 都显示 2.00%） */
+const rateText = (v: string | number | undefined) => {
+  const n = Number(v ?? 0)
+  return Number.isFinite(n) ? `${n.toFixed(2)}%` : "—"
+}
+
+/** 编码成员的商户费率：一条通道给一个值，费率不同给区间，没绑通道给 — */
+const memberRateLabel = (members: ChannelCodeItemData[] | undefined) => {
+  const rates = [...new Set((members ?? []).map((m) => Number(m.merchant_rate ?? 0)))]
+    .filter((n) => Number.isFinite(n))
+    .sort((a, b) => a - b)
+  if (rates.length === 0) return "—"
+  if (rates.length === 1) return `${rates[0].toFixed(2)}%`
+  return `${rates[0].toFixed(2)}% ~ ${rates[rates.length - 1].toFixed(2)}%`
+}
 
 // 行内编辑态：成员勾选/权重
 interface MemberDraft {
@@ -133,7 +150,7 @@ export function ChannelCodesPage() {
 
   React.useEffect(() => {
     // 成员选择需要全量通道与支付方式名称：加载失败显式提示（否则弹窗里是空成员表）。
-    // 走 channel-options 而不是通道列表：只要 channel_code.view 就能读，且不含费率/凭证。
+    // 走 channel-options 而不是通道列表：只要 channel_code.view 就能读，且只带商户费率、不含成本/凭证。
     payApi.channelOptions()
       .then(setChannels)
       .catch((err) => toast.error(getErrorMessage(err, "通道列表加载失败")))
@@ -312,9 +329,10 @@ export function ChannelCodesPage() {
         header: () => "关联通道",
         cell: ({ row }) => {
           const isWeight = row.original.mode === 2
-          // 权重模式下把成员权重挂到悬浮提示：列表一眼能核对「谁占多少比例」
+          // 权重模式下把成员权重挂到悬浮提示：列表一眼能核对「谁占多少比例」；
+          // 费率一并带上，点开编辑前就能看到这条编码下各通道的商户费率
           const tip = (row.original.members ?? [])
-            .map((m) => (isWeight ? `${m.channel_name} ${m.weight}%` : m.channel_name))
+            .map((m) => `${isWeight ? `${m.channel_name} 权重 ${m.weight}%` : m.channel_name} · 费率 ${rateText(m.merchant_rate)}`)
             .join("\n")
           return (
             <span className="text-sm tabular-nums" title={tip || undefined}>
@@ -323,6 +341,14 @@ export function ChannelCodesPage() {
           )
         },
         meta: { headClassName: "w-[90px] text-right", cellClassName: "text-right" },
+      },
+      {
+        accessorKey: "merchant_rate",
+        enableSorting: false,
+        header: () => "商户费率",
+        // 成员费率不一致时给区间（与商户端展示同口径）：编码仍是多个价，不能只取一条
+        cell: ({ row }) => secondaryCell(memberRateLabel(row.original.members)),
+        meta: { headClassName: "w-[110px] text-right", cellClassName: "text-right" },
       },
       {
         accessorKey: "today_amount",
@@ -564,17 +590,18 @@ export function ChannelCodesPage() {
                   <thead className="sticky top-0 bg-muted/60 text-xs text-muted-foreground">
                     <tr>
                       <th className="w-12 px-2 py-2 text-center">{"绑定"}</th>
-                      <th className={showWeight ? "w-[38%] px-2 py-2 text-left" : "w-[46%] px-2 py-2 text-left"}>
+                      <th className={showWeight ? "w-[32%] px-2 py-2 text-left" : "w-[42%] px-2 py-2 text-left"}>
                         {"通道"}
                       </th>
                       <th className="px-2 py-2 text-left">{"支付方式"}</th>
-                      {showWeight && <th className="w-[22%] px-2 py-2 text-right">{"权重（%）"}</th>}
+                      <th className="w-[92px] px-2 py-2 text-right">{"商户费率"}</th>
+                      {showWeight && <th className="w-[20%] px-2 py-2 text-right">{"权重（%）"}</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {channels.length === 0 && (
                       <tr>
-                        <td colSpan={showWeight ? 4 : 3} className="px-2 py-6 text-center text-xs text-muted-foreground">
+                        <td colSpan={showWeight ? 5 : 4} className="px-2 py-6 text-center text-xs text-muted-foreground">
                           {"暂无可用通道，请先到「支付通道」创建"}
                         </td>
                       </tr>
@@ -604,6 +631,11 @@ export function ChannelCodesPage() {
                           </td>
                           <td className="px-2 py-1.5">
                             <PayTypeLabel code={pt?.code} icon={pt?.icon} name={pt?.name ?? String(ch.payment_type_id)} />
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <span className={`text-sm tabular-nums${Number(ch.merchant_rate) > 0 ? "" : " text-muted-foreground"}`}>
+                              {rateText(ch.merchant_rate)}
+                            </span>
                           </td>
                           {showWeight && (
                             <td className="px-2 py-1.5 text-right">

@@ -539,6 +539,13 @@ async def test_admin_code_crud_and_status_toggle(client, session, two_channels):
     r = await client.get(f"/admin-api/pay/channel-codes/{code_id}", headers=headers)
     detail = r.json()["data"]
     assert [it["channel_id"] for it in detail["items"]] == [seeded["channel"].id]
+    # 编码模块要展示通道商户费率（成本费率不在这里暴露）
+    assert detail["items"][0]["merchant_rate"] == "2.00"
+
+    # 列表成员同样带费率，前端据此算「单值 / 区间」
+    r = await client.get("/admin-api/pay/channel-codes", headers=headers)
+    listed = next(it for it in r.json()["data"]["items"] if it["id"] == code_id)
+    assert listed["members"][0]["merchant_rate"] == "2.00"
 
     # 成员整表覆盖写：换成 channel2
     r = await client.put(f"/admin-api/pay/channel-codes/{code_id}", json={
@@ -637,8 +644,8 @@ async def test_code_page_dictionaries_need_only_their_own_permission(client, ses
     """编码页用到的字典接口不能被别模块的权限挡住（403 会被前端全局跳到错误页）。
 
     只授予 channel_code.view 的账号：通道候选（channel-options）与支付方式名称（types）
-    必须可读，否则进页面就 403；但通道本体（含费率/凭证）仍要 channel.view。
-    反之只授予 channel.view 的账号，也要能读到支付方式字典（通道页同样要用）。
+    必须可读，否则进页面就 403；候选里带通道商户费率（编码模块要展示），但成本费率与
+    凭证仍只在通道本体（channel.view）。反之只授予 channel.view 的账号，也要能读到支付方式字典。
     """
     seeded = two_channels
     code_only = await _scoped_admin_headers(session, "ccdict", ("channel_code.view",))
@@ -646,9 +653,9 @@ async def test_code_page_dictionaries_need_only_their_own_permission(client, ses
     r = await client.get("/admin-api/pay/channel-options", headers=code_only)
     assert r.status_code == 200, r.text
     row = r.json()["data"][0]
-    assert {"id", "name", "plugin_name", "payment_type_id", "status"} <= set(row)
-    # 只回字典字段：不含费率与凭证
-    assert "merchant_rate" not in row and "config" not in row
+    assert {"id", "name", "plugin_name", "payment_type_id", "status", "merchant_rate"} <= set(row)
+    # 只多带商户费率：成本费率与凭证不出这个接口
+    assert "cost_rate" not in row and "config" not in row
 
     assert (await client.get("/admin-api/pay/types", headers=code_only)).status_code == 200
     assert (await client.get("/admin-api/pay/channels", headers=code_only)).status_code == 403

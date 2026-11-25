@@ -16,7 +16,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Field, FieldLabel, FieldError, RequiredMark } from "@/components/ui/field"
+import { Field, FieldLabel, FieldError, FieldDescription, RequiredMark } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { numStr } from "@/lib/form-schema"
@@ -60,7 +60,7 @@ interface ChannelFormValues {
 }
 
 // 凭证校验依赖所选插件的 inputs schema（动态）：必填凭证新增/编辑均须填写。
-// 所有字段都带 default("")/default({})：字段未挂载（如已从表单移除的费率/限额）
+// 所有字段都带 default("")/default({})：字段未挂载（如已从表单移除的限额）
 // 时 RHF 可能给出 undefined，没有默认值会抛 zod 的英文基础错误。
 const channelSchema = (inputs: PluginInput[]) =>
   z.object({
@@ -856,7 +856,48 @@ export function ChannelsPage() {
                   </Field>
                 )}
               />
-              {/* 费率 / 限额 / 调试日志不再在表单里编辑：值随详情带回原样提交，
+              {/* 费率：商户费率决定商户到账，成本费率决定平台利润；0 = 不抽。
+                  商户有专属费率（merchants.rate）时以专属为准，这里是通道兜底价。 */}
+              <Controller
+                name="merchant_rate"
+                control={channelForm.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor={field.name}>{"商户费率(%)"}</FieldLabel>
+                    <Input
+                      id={field.name}
+                      type="number" min="0" max="100" step="0.01"
+                      value={field.value ?? ""}
+                      onChange={(e) => field.onChange(e.target.value)}
+                      aria-invalid={fieldState.invalid || undefined}
+                    />
+                    {fieldState.error
+                      ? <FieldError>{fieldState.error.message}</FieldError>
+                      : <FieldDescription className="text-xs">{"商户到账按此费率折算；商户有专属费率时以专属为准，0 = 不抽成"}</FieldDescription>}
+                  </Field>
+                )}
+              />
+              <Controller
+                name="cost_rate"
+                control={channelForm.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid}>
+                    <FieldLabel htmlFor={field.name}>{"成本费率(%)"}</FieldLabel>
+                    <Input
+                      id={field.name}
+                      type="number" min="0" max="100" step="0.01"
+                      value={field.value ?? ""}
+                      onChange={(e) => field.onChange(e.target.value)}
+                      aria-invalid={fieldState.invalid || undefined}
+                    />
+                    {fieldState.error
+                      ? <FieldError>{fieldState.error.message}</FieldError>
+                      : <FieldDescription className="text-xs">{"给上游的成本，只影响平台利润统计，不从商户到账里扣"}</FieldDescription>}
+                  </Field>
+                )}
+              />
+
+              {/* 限额 / 调试日志不在表单里编辑：值随详情带回原样提交，
                   调试日志在列表里用开关切换；新增时用后端默认值。 */}
 
 
