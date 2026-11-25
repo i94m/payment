@@ -16,7 +16,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Field, FieldLabel, FieldError, FieldDescription, RequiredMark } from "@/components/ui/field"
+import { Field, FieldLabel, FieldError, RequiredMark } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { numStr } from "@/lib/form-schema"
@@ -859,7 +859,8 @@ export function ChannelsPage() {
                 )}
               />
               {/* 费率：商户费率决定商户到账，成本费率决定平台利润；0 = 不抽。
-                  商户有专属费率（merchants.rate）时以专属为准，这里是通道兜底价。 */}
+                  商户有专属费率（merchants.rate）时以专属为准，这里是通道兜底价。
+                  字段下方不放说明文字，只在校验失败时显示错误。 */}
               <Controller
                 name="merchant_rate"
                 control={channelForm.control}
@@ -873,9 +874,7 @@ export function ChannelsPage() {
                       onChange={(e) => field.onChange(e.target.value)}
                       aria-invalid={fieldState.invalid || undefined}
                     />
-                    {fieldState.error
-                      ? <FieldError>{fieldState.error.message}</FieldError>
-                      : <FieldDescription className="text-xs">{"到账按此折算，0 = 不抽成；专属费率优先"}</FieldDescription>}
+                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
                   </Field>
                 )}
               />
@@ -892,9 +891,7 @@ export function ChannelsPage() {
                       onChange={(e) => field.onChange(e.target.value)}
                       aria-invalid={fieldState.invalid || undefined}
                     />
-                    {fieldState.error
-                      ? <FieldError>{fieldState.error.message}</FieldError>
-                      : <FieldDescription className="text-xs">{"给上游的成本，只算平台利润，不从到账扣"}</FieldDescription>}
+                    {fieldState.error && <FieldError>{fieldState.error.message}</FieldError>}
                   </Field>
                 )}
               />
