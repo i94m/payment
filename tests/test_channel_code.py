@@ -1,7 +1,7 @@
 """通道编码（channel_code）回归测试。
 
 覆盖：参数级校验（不存在/停用/无该支付方式绑定/必传开关）、编码内路由
-（全局停用跳过/轮询/权重）、**绝不回落到编码之外**、幂等一致性、
+（全局停用跳过/随机/权重/轮询已下线）、**绝不回落到编码之外**、幂等一致性、
 收银台支付方式过滤、后台保存校验与通道删除保护。
 
 两条硬断言（最容易悄悄退化的地方）：
@@ -169,7 +169,7 @@ async def test_code_success_persists_trace(client, session, two_channels):
 
 
 # ============================================================
-# 编码内路由：全局停用跳过 / 轮询 / 权重
+# 编码内路由：全局停用跳过 / 随机 / 权重（轮询已下线）
 # ============================================================
 
 async def test_globally_disabled_channel_skipped_within_code(session, two_channels):
@@ -215,22 +215,22 @@ async def test_code_without_available_channel_never_falls_back(client, session, 
     assert order.extra in (None, {})
 
 
-async def test_round_robin_alternates(session, two_channels):
-    """轮询：连续 4 单在 2 条通道上严格交替（按绑定行游标，不是通道游标）。"""
+async def test_polling_mode_retired(session, two_channels):
+    """轮询已下线：存量 mode=1 走随机分支（不报错），后台保存也不再接受 mode=1。"""
     seeded = two_channels
     cc = await _mk_code(session, [
         (seeded["channel"], 1),
         (seeded["channel2"], 1),
     ], mode=1)
-    picked = []
-    for _ in range(4):
+    # 未迁移的旧行：不报错、也不退化成固定顺序，两条通道都会被选到
+    picked = set()
+    for _ in range(60):
         resolved = await choose_channel_by_code(
             session, None, cc.id, seeded["pay_type"].id, dmoney("10.00")
         )
         assert resolved is not None
-        picked.append(resolved.channel.id)
-    assert picked[0] != picked[1]
-    assert picked == [picked[0], picked[1], picked[0], picked[1]]
+        picked.add(resolved.channel.id)
+    assert picked == {seeded["channel"].id, seeded["channel2"].id}
 
 
 async def test_weighted_zero_never_picked(session, two_channels):
@@ -528,7 +528,7 @@ async def test_admin_code_crud_and_status_toggle(client, session, two_channels):
     headers = await _admin_headers(session)
     seeded = two_channels
     body = {
-        "code": "8088", "name": "下游A", "remark": "备注", "mode": 1, "status": 1,
+        "code": "8088", "name": "下游A", "remark": "备注", "mode": 0, "status": 1,
         "items": [{"channel_id": seeded["channel"].id, "weight": 1}],
     }
     r = await client.post("/admin-api/pay/channel-codes", json=body, headers=headers)
@@ -564,6 +564,32 @@ async def test_admin_code_crud_and_status_toggle(client, session, two_channels):
     r = await client.delete(f"/admin-api/pay/channel-codes/{code_id}", headers=headers)
     assert r.json()["code"] == 0
     assert await session.get(ChannelCode, code_id) is None
+
+
+async def test_admin_rejects_polling_mode(client, session, two_channels):
+    """轮询已下线：新建/修改带 mode=1 一律拒绝，文案点明已下线。"""
+    headers = await _admin_headers(session)
+    items = [{"channel_id": two_channels["channel"].id, "weight": 1}]
+    r = await client.post("/admin-api/pay/channel-codes", json={
+        "code": "8088", "name": "轮询", "remark": "", "mode": 1, "status": 1, "items": items,
+    }, headers=headers)
+    assert r.json()["code"] == -1
+    assert "轮询策略已下线" in r.json()["message"]
+    assert (await session.exec(select(ChannelCode))).all() == []   # 没有落库
+
+    # 存量随机编码改成轮询同样被拒，原值不变
+    ok = await client.post("/admin-api/pay/channel-codes", json={
+        "code": "8088", "name": "随机", "remark": "", "mode": 0, "status": 1, "items": items,
+    }, headers=headers)
+    assert ok.json()["code"] == 0, ok.text
+    code_id = ok.json()["data"]["id"]
+    r = await client.put(f"/admin-api/pay/channel-codes/{code_id}", json={
+        "code": "8088", "name": "随机", "remark": "", "mode": 1, "status": 1, "items": items,
+    }, headers=headers)
+    assert r.json()["code"] == -1
+    assert "轮询策略已下线" in r.json()["message"]
+    session.expire_all()
+    assert (await session.get(ChannelCode, code_id)).mode == 0
 
 
 async def test_admin_code_unique_and_format(client, session, two_channels):

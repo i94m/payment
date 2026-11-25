@@ -688,7 +688,8 @@ async def channel_delete(channel_id: int, session: SessionDep, request: Request,
 # 编码是给下游的对外契约：全局唯一命名空间、落库统一小写；
 # mode 是**编码级**策略（与通道自身的 mode 无关）。
 
-CODE_MODES = {0: "随机", 1: "轮询", 2: "权重"}
+# 轮询（旧 mode=1）已下线：后台不再提供该策略，保存时拒绝；存量编码由迁移 0019 统一改为随机。
+CODE_MODES = {0: "随机", 2: "权重"}
 # 权重按**百分比**配置：同一编码内各成员权重合计必须是 100，权重值本身就是分流占比
 # （与 epay 后台「通道:权重」的口径一致，运营不用再拿 1/3 这类相对值心算）。
 CODE_WEIGHT_SUM = 100
@@ -753,6 +754,8 @@ async def _validate_code_payload(session, body: ChannelCodeRequest,
         return code, "通道编码不能为空"
     if not code_format_ok(code):
         return code, "通道编码仅支持 1~32 位字母、数字、- 和 _"
+    if body.mode == 1:
+        return code, "轮询策略已下线，请选择随机或权重"
     if body.mode not in CODE_MODES:
         return code, "策略取值不合法"
     _, _, _, limit_error = _parse_code_limits(body)
@@ -789,7 +792,7 @@ async def _validate_code_payload(session, body: ChannelCodeRequest,
 
 
 async def _replace_code_items(session, code_id: int, items: list[ChannelCodeItemRequest]) -> None:
-    """成员整表覆盖写：没提交的绑定即删除（含其轮询游标）。"""
+    """成员整表覆盖写：没提交的绑定即删除。"""
     old = (await session.exec(
         select(ChannelCodeItem).where(col(ChannelCodeItem.code_id) == code_id)
     )).all()
@@ -812,7 +815,6 @@ def _dump_code_item(item: ChannelCodeItem, c: Channel | None) -> dict:
         "channel_id": item.channel_id,
         "weight": item.weight,
         "sort": item.sort,
-        "last_used_at": item.last_used_at,
         "channel_name": c.name if c else "（通道已删除）",
         "plugin_name": c.plugin_name if c else "",
         "payment_type_id": c.payment_type_id if c else 0,

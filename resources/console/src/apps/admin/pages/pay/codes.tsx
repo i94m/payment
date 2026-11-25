@@ -39,8 +39,8 @@ import { IconPlus, IconEdit, IconTrash, IconList, IconRefresh, IconSearch } from
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 
-/** 编码级策略：与通道 mode 同口径（0=随机 1=轮询 2=权重） */
-const MODE_LABEL: Record<number, string> = { 0: "随机", 1: "轮询", 2: "权重" }
+/** 编码级策略：0=随机 2=权重（轮询已下线，存量 mode=1 由迁移改为随机） */
+const MODE_LABEL: Record<number, string> = { 0: "随机", 2: "权重" }
 
 // 行内编辑态：成员勾选/权重
 interface MemberDraft {
@@ -219,7 +219,9 @@ export function ChannelCodesPage() {
       setEditingId(id)
       codeForm.reset({
         code: detail.code, name: detail.name, remark: detail.remark,
-        mode: detail.mode, status: detail.status, is_test: detail.is_test,
+        // 轮询已下线：存量 mode=1 的编码按随机展示（运行时同样走随机分支），保存即归一为 0
+        mode: detail.mode === 1 ? 0 : detail.mode,
+        status: detail.status, is_test: detail.is_test,
         min_amount: detail.min_amount, max_amount: detail.max_amount,
         fee_rate: detail.fee_rate,
         members: memberMap,
@@ -545,21 +547,19 @@ export function ChannelCodesPage() {
                       onValueChange={(v) => field.onChange(Number(v))}
                       items={[
                         { value: "0", label: "随机" },
-                        { value: "1", label: "轮询" },
                         { value: "2", label: "权重" },
                       ]}
                     >
                       <SelectTrigger id="code-mode" className="w-full"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="0">{"随机"}</SelectItem>
-                        <SelectItem value="1">{"轮询"}</SelectItem>
                         <SelectItem value="2">{"权重"}</SelectItem>
                       </SelectContent>
                     </Select>
                     <FieldDescription className="text-xs">
                       {showWeight
                         ? "按权重百分比随机：同一编码内各通道权重合计 100，权重值就是命中概率；权重 0 的通道不参与分流"
-                        : "随机：每单随机选；轮询：依次轮流"}
+                        : "每单在编码内的可用通道中等概率随机选一条"}
                     </FieldDescription>
                   </Field>
                 )}

@@ -164,7 +164,6 @@ export interface ChannelCodeItemData {
   channel_id: number
   weight: number
   sort: number
-  last_used_at: number
   channel_name: string
   plugin_name: string
   payment_type_id: number
@@ -177,7 +176,7 @@ export interface ChannelCodeData {
   code: string
   name: string
   remark: string
-  /** 0=随机 1=轮询 2=权重 */
+  /** 0=随机 2=权重（轮询已下线） */
   mode: number
   status: number
   /** 测试编码：商户端「对接信息」只展示被标记的这条 */
