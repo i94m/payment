@@ -9,7 +9,9 @@ import pytest
 from sqlmodel import select
 
 from app.core.security import hash_password, issue_token
-from app.models import Channel, ChannelCode, Merchant, PaymentType, Setting, SystemAdmin
+from app.models import (
+    Channel, ChannelCode, ChannelCodeItem, Merchant, PaymentType, Setting, SystemAdmin,
+)
 
 
 async def _merchant_headers(session):
@@ -35,14 +37,24 @@ def _mk_channel(pt_id: int, name: str, status: int = 1, is_default: bool = False
 
 @pytest.mark.asyncio
 async def test_apikey_exposes_default_channel(client, seeded, session):
-    """后台指定了默认通道 → 下发「通道名称 + 支付方式」。"""
+    """后台指定了默认通道 → 下发通道名称 + 绑定该通道的启用编码（对接信息展示编码）。"""
     session.add(Setting(key="site_url", value="https://p.example.com/"))
     pt = (await session.exec(
         select(PaymentType).where(PaymentType.code == "alipay")
     )).first()
+    main = _mk_channel(pt.id, "主用通道", is_default=True)
+    session.add_all([_mk_channel(pt.id, "普通通道"), main])
+    await session.commit()
+    await session.refresh(main)
+    on = ChannelCode(code="8088", name="主用编码", status=1)
+    off = ChannelCode(code="9999", name="停用编码", status=0)
+    session.add_all([on, off])
+    await session.commit()
+    await session.refresh(on)
+    await session.refresh(off)
     session.add_all([
-        _mk_channel(pt.id, "普通通道"),
-        _mk_channel(pt.id, "主用通道", is_default=True),
+        ChannelCodeItem(code_id=on.id, channel_id=main.id),
+        ChannelCodeItem(code_id=off.id, channel_id=main.id),
     ])
     await session.commit()
 
@@ -54,7 +66,9 @@ async def test_apikey_exposes_default_channel(client, seeded, session):
 
     assert data["username"] == "testmch"
     assert data["pid"] == 1001
-    assert data["default_channel"] == {"name": "主用通道", "payment_type": pt.name}
+    assert data["default_channel"] == {
+        "name": "主用通道", "payment_type": pt.name, "codes": ["8088"],
+    }
     # 域名交给前端 window.location.origin，后端不再下发站点地址
     assert "site_url" not in data
     assert "channel_codes" not in data

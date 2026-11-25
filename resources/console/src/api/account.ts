@@ -7,8 +7,9 @@ export interface ApiKeyData {
   public_key: string // 商户 RSA 公钥（未配置为空串）
   rsa2_enable: boolean // 是否启用 RSA2（默认关闭；启用后 MD5 失效）
   platform_public_key: string // 平台公钥（由平台私钥派生，未配置为空串）
-  // 对接信息展示的默认通道（全平台唯一、启用中），没有则为 null（整行不展示）
-  default_channel: { name: string; payment_type: string } | null
+  // 对接信息展示的默认通道（全平台唯一、启用中），没有则为 null（整行不展示）；
+  // codes = 绑定该通道的启用编码，展示的是编码（下游可直接当 channel_code 传）
+  default_channel: { name: string; payment_type: string; codes: string[] } | null
 }
 
 /** 商户端「支付通道」卡片：一条启用中的通道编码及其可用支付方式 */

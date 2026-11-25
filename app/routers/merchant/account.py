@@ -15,7 +15,7 @@ from app.models import Channel, ChannelCode, ChannelCodeItem, Merchant, PaymentT
 from app.responses import err, suc
 from app.services.apikey import ensure_api_secret, set_api_secret
 from app.services.balance import dmoney
-from app.services.channel import code_amount_text
+from app.services.channel import code_amount_text, default_channel_payload
 from app.services.settings import get_all_settings
 
 router = APIRouter()
@@ -54,7 +54,8 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
     - rsa2_enable / public_key：RSA2 是否开启及商户公钥（开启后 MD5 失效）
     - platform_public_key：平台公钥（验 RSA2 通知签名用）
     - 对接信息（面板「对接信息」一键复制用）：username /
-      default_channel（平台默认通道的 `{name, payment_type}`；没有则为 null）
+      default_channel（平台默认通道的 `{name, payment_type, codes}`；没有则为 null，
+      `codes` 是绑定该通道的启用编码，展示给接入方当 `channel_code` 用）
     - 下单/查询/文档地址的域名由前端取 `window.location.origin` 拼接，
       后端不再下发 site_url（站点地址配置不等于用户实际访问的域名）
     """
@@ -65,15 +66,8 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
         platform_public_key = derive_public_key(str(settings.get("platform_rsa_private_key") or ""))
     except ValueError:
         platform_public_key = ""
-    # 默认通道由后台「支付通道」列表设置（全平台唯一），只做展示：
-    # 停用的通道不算（后台停用时会自动清标记，这里再判一次兜底）
-    default = (await session.exec(
-        select(Channel)
-        .where(col(Channel.is_default).is_(True), col(Channel.status) == 1)
-        .order_by(col(Channel.id))
-        .limit(1)
-    )).first()
-    default_type = (await session.get(PaymentType, default.payment_type_id)) if default else None
+    # 默认通道由后台「支付通道」列表设置（全平台唯一），只做展示；口径见 services.channel
+    default_channel = await default_channel_payload(session)
     return suc({
         "pid": m.pid,
         "username": m.username,
@@ -81,10 +75,7 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
         "public_key": pem_to_flat(m.public_key or ""),
         "rsa2_enable": bool(m.rsa2_enable),
         "platform_public_key": platform_public_key,
-        "default_channel": (
-            {"name": default.name, "payment_type": default_type.name if default_type else ""}
-            if default else None
-        ),
+        "default_channel": default_channel,
     })
 
 

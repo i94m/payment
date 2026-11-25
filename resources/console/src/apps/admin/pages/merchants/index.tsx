@@ -172,9 +172,11 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
     ? "RSA2 签名（私钥由接入方自行保管）"
     : (data.api_secret || "")
   const defaultChannel = data.default_channel
+  // 展示的是**通道编码**（下游直接当 channel_code 传），不是通道名称：一条通道可被多个编码引用，
+  // 按「、」拼起来；没有绑定编码时回退到通道名称。口径与商户端 security.tsx 一致。
   const channelValue = defaultChannel
-    ? (defaultChannel.payment_type
-      ? `${defaultChannel.name}（${defaultChannel.payment_type}）`
+    ? (defaultChannel.codes.length > 0
+      ? defaultChannel.codes.join("、")
       : defaultChannel.name)
     : ""
   const fields: Array<[string, string]> = [
@@ -223,9 +225,7 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
         </CardAction>
       </CardHeader>
       <CardContent className="p-0 pb-1">
-        <div className="px-4 pt-1 pb-0.5 text-xs font-medium text-muted-foreground">
-          {"【商户对接参数】"}
-        </div>
+        {/* 「【商户对接参数】」小标题只出现在一键复制的纯文本里，页面上不重复展示 */}
         {fields.map(([label, value]) => (
           <IntegrationRow key={label} label={label} value={value} />
         ))}

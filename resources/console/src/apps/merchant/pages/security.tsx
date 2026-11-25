@@ -124,11 +124,13 @@ export function SecurityPage() {
   // 域名一律取当前访问页面的 origin：客户从哪个域名登录，拿到的就是哪个域名
   const site = window.location.origin.replace(/\/+$/, "")
   // 默认通道由后台指定（全平台唯一），只做展示：让接入方知道平台当前主用哪条。
-  // 没有设置时这一行整行不展示。
+  // 展示的是**通道编码**（下游下单直接当 channel_code 传），不是通道名称；
+  // 一条通道可以被多个编码引用，按「、」拼起来；没有绑定编码时回退到通道名称。
+  // 没有默认通道时这一行整行不展示。
   const defaultChannel = apiKey?.default_channel
   const channelValue = defaultChannel
-    ? (defaultChannel.payment_type
-      ? `${defaultChannel.name}（${defaultChannel.payment_type}）`
+    ? (defaultChannel.codes.length > 0
+      ? defaultChannel.codes.join("、")
       : defaultChannel.name)
     : ""
   // 商户端密钥始终明文展示，逐项复制与整段复制都直接用原始值，不做任何掩码
@@ -198,10 +200,9 @@ export function SecurityPage() {
                     </CardAction>
                   </CardHeader>
                   <CardContent className="p-0">
-                    <div>
-                      <div className="px-4 pt-1 pb-0.5 text-xs font-medium text-muted-foreground">
-                        {"【商户对接参数】"}
-                      </div>
+                    {/* 「【商户对接参数】」小标题只出现在一键复制的纯文本里（发给接入方的格式），
+                        页面上不再重复展示 */}
+                    <div className="py-1">
                       {integrationFields.map(([label, value]) => {
                         // RSA2 下没有可交付的共享密钥，这一行不可单独复制
                         const cannotCopy = label === "API密钥" && rsa2

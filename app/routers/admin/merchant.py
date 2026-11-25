@@ -27,11 +27,12 @@ from app.core.security import (
     AdminUser, AuthResult, PermissionChecker, hash_password, revoke_all_tokens,
 )
 from app.lib.export import export_xlsx
-from app.models import Channel, Merchant, MerchantRecord, Order, PaymentType, Settlement
+from app.models import Merchant, MerchantRecord, Order, Settlement
 from app.responses import err, paginate, suc
 from app.routers.common.params import parse_int
 from app.services.merchant import generate_merchant_pid
 from app.services.balance import change_merchant_balance, dmoney
+from app.services.channel import default_channel_payload
 from app.services.settings import get_all_settings
 from app.services.test_pay import TEST_MERCHANT_PID
 from app.lib.sign import derive_public_key, pem_to_flat
@@ -263,8 +264,8 @@ async def merchant_detail(merchant_id: int, session: SessionDep, request: Reques
     - `api_secret`：MD5 签名密钥**明文**（需求方明确后台不脱敏，运营要整段发给客户）。
       列表接口 `_dump_merchant` 仍只给掩码，避免一次拉全平台密钥。每返回一次明文都
       落一条审计日志（谁 / 何时 / 哪个商户 / 来源 IP），见 `_audit_secret_view`。
-    - `default_channel`：平台默认通道（全平台唯一，启用中）的 `{name, payment_type}`，
-      没有则为 null；卡片据此决定「默认通道」整行是否展示。
+    - `default_channel`：平台默认通道（全平台唯一，启用中）的 `{name, payment_type, codes}`，
+      没有则为 null；卡片据此决定「默认通道」整行是否展示（展示的是 `codes` 里的编码）。
       口径与商户端 `/merchant-api/account/apikey` 完全一致。
     """
     m = await _get_merchant_or_404(session, merchant_id)
@@ -273,17 +274,7 @@ async def merchant_detail(merchant_id: int, session: SessionDep, request: Reques
     data = _dump_merchant(m)
     secret = get_api_secret(m)
     data["api_secret"] = secret or ""
-    default = (await session.exec(
-        select(Channel)
-        .where(col(Channel.is_default).is_(True), col(Channel.status) == 1)
-        .order_by(col(Channel.id))
-        .limit(1)
-    )).first()
-    default_type = (await session.get(PaymentType, default.payment_type_id)) if default else None
-    data["default_channel"] = (
-        {"name": default.name, "payment_type": default_type.name if default_type else ""}
-        if default else None
-    )
+    data["default_channel"] = await default_channel_payload(session)
     if secret:
         _audit_secret_view(request, auth, m)
     return suc(data)

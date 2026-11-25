@@ -13,7 +13,9 @@ import pytest
 from sqlmodel import select
 
 from app.core.security import hash_password, issue_token
-from app.models import Channel, Merchant, PaymentType, SystemAdmin
+from app.models import (
+    Channel, ChannelCode, ChannelCodeItem, Merchant, PaymentType, SystemAdmin,
+)
 
 
 async def _admin_headers(session):
@@ -53,13 +55,28 @@ class _Capture(logging.Handler):
 async def test_admin_detail_returns_plaintext_and_default_channel(client, seeded, session):
     """详情带明文密钥与默认通道；列表接口不下发明文。"""
     pt = await _alipay(session)
+    main = Channel(name="主用通道", plugin_name="epay", payment_type_id=pt.id, status=1,
+                   mode=0, is_default=True)
     session.add_all([
         Channel(name="普通通道", plugin_name="epay", payment_type_id=pt.id, status=1, mode=0),
-        Channel(name="主用通道", plugin_name="epay", payment_type_id=pt.id, status=1,
-                mode=0, is_default=True),
+        main,
         # 停用的默认通道不参与挑选
         Channel(name="停用的主用通道", plugin_name="epay", payment_type_id=pt.id,
                 status=0, mode=0, is_default=True),
+    ])
+    await session.commit()
+    await session.refresh(main)
+    # 对接信息展示的是「通道编码」（下游能直接当 channel_code 用），不是通道名称：
+    # 只认启用中的编码，停用编码不展示
+    on = ChannelCode(code="8088", name="主用编码", status=1)
+    off = ChannelCode(code="9999", name="停用编码", status=0)
+    session.add_all([on, off])
+    await session.commit()
+    await session.refresh(on)
+    await session.refresh(off)
+    session.add_all([
+        ChannelCodeItem(code_id=on.id, channel_id=main.id),
+        ChannelCodeItem(code_id=off.id, channel_id=main.id),
     ])
     await session.commit()
     m = await _merchant(session)
@@ -72,7 +89,9 @@ async def test_admin_detail_returns_plaintext_and_default_channel(client, seeded
     # 明文（不是掩码），且详情仍保留掩码字段供旧前端/其它用途
     assert data["api_secret"] and "*" not in data["api_secret"]
     assert data["api_secret_masked"].count("*") >= 4
-    assert data["default_channel"] == {"name": "主用通道", "payment_type": pt.name}
+    assert data["default_channel"] == {
+        "name": "主用通道", "payment_type": pt.name, "codes": ["8088"],
+    }
     # 旧的测试编码字段已下线
     assert "channel_code" not in data
 
