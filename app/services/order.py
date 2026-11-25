@@ -553,8 +553,8 @@ async def process_payment(
             return PayFlowResult(ok=False, error=code_amount_error(code_row))
         resolved = await choose_channel_by_code(
             session, cache, order.channel_code_id, order.payment_type_id, order.money,
-            # 生效费率：商户专属费率 > 编码费率 > 通道费率（None 时由通道兜底）
-            merchant_rate=effective_merchant_rate(code_row, merchant.rate),
+            # 生效费率：商户专属费率 > 通道费率（None 时由通道兜底）
+            merchant_rate=effective_merchant_rate(merchant.rate),
             # 测试单不占通道日限额/限速窗口，避免反复测试把通道测到自动关闭
             skip_limits=order.order_type == ORDER_TYPE_TEST,
         )
@@ -876,10 +876,8 @@ async def process_paid_order(
                 if channel is not None:
                     from app.models import Merchant as _M
                     m = await session.get(_M, order.merchant_id)
-                    # 与 process_payment 同一优先级：商户专属 > 编码费率 > 通道费率
-                    code_row = (await session.get(ChannelCode, order.channel_code_id)
-                                if order.channel_code_id else None)
-                    rate = effective_merchant_rate(code_row, m.rate if m else None)
+                    # 与 process_payment 同一优先级：商户专属 > 通道费率
+                    rate = effective_merchant_rate(m.rate if m else None)
                     if rate is None:
                         rate = channel.merchant_rate
                     c_rate = channel.cost_rate

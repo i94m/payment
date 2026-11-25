@@ -12,8 +12,8 @@ from app.core.security import PermissionChecker, get_current_admin
 
 from . import (
     auth, common, order, merchant, channel, settle,
-    settings, dashboard, notifylog, permission, announce, record, queue, message,
-    upgrade,
+    settings, dashboard, report, notifylog, permission, announce, record, queue,
+    message, upgrade,
 )
 
 router = APIRouter()
@@ -32,6 +32,7 @@ protected.include_router(settle.router, prefix="/settle", tags=["admin-settle"])
 protected.include_router(announce.router, prefix="/announce", tags=["admin-announce"])
 protected.include_router(settings.router, prefix="/setting", tags=["admin-setting"])
 protected.include_router(dashboard.router, prefix="/dashboard", tags=["admin-dashboard"])
+protected.include_router(report.router, prefix="/report", tags=["admin-report"])
 protected.include_router(notifylog.router, prefix="/notifylog", tags=["admin-notifylog"])
 protected.include_router(permission.router, prefix="/permission", tags=["admin-permission"])
 protected.include_router(queue.router, prefix="/queue", tags=["admin-queue"])

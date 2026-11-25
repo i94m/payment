@@ -1,10 +1,10 @@
-"""后台「API密钥」弹窗的对接信息：详情接口下发明文密钥 + 测试业务编码。
+"""后台「API密钥」弹窗的对接信息：详情接口下发明文密钥 + 默认通道。
 
 口径要求（需求方拍板）：
 - 明文 `api_secret` **只**从详情接口 `GET /admin-api/merchant/{id}` 出；
   列表 `POST /admin-api/merchant/list` 仍只有掩码，绝不批量下发。
-- 业务编码取全局 `is_test=1` 且启用的那条（多条取 id 最小），没有就是 null，
-  不回退正式编码 —— 与商户端 `/merchant-api/account/apikey` 同一口径。
+- 默认通道取 `channels.is_default=1` 且启用的那条（全平台唯一），没有就是 null，
+  不回退随便一条通道 —— 与商户端 `/merchant-api/account/apikey` 同一口径。
 - 每下发一次明文就留一条审计日志（谁 / 哪个商户 / 来源 IP）。
 """
 import logging
@@ -13,7 +13,7 @@ import pytest
 from sqlmodel import select
 
 from app.core.security import hash_password, issue_token
-from app.models import ChannelCode, Merchant, SystemAdmin
+from app.models import Channel, Merchant, PaymentType, SystemAdmin
 
 
 async def _admin_headers(session):
@@ -34,6 +34,12 @@ async def _merchant(session) -> Merchant:
     return (await session.exec(select(Merchant).where(Merchant.pid == 1001))).one()
 
 
+async def _alipay(session) -> PaymentType:
+    return (await session.exec(
+        select(PaymentType).where(PaymentType.code == "alipay")
+    )).first()
+
+
 class _Capture(logging.Handler):
     def __init__(self):
         super().__init__()
@@ -44,14 +50,16 @@ class _Capture(logging.Handler):
 
 
 @pytest.mark.asyncio
-async def test_admin_detail_returns_plaintext_and_test_code(client, seeded, session):
-    """详情带明文密钥与测试编码；列表接口不下发明文。"""
+async def test_admin_detail_returns_plaintext_and_default_channel(client, seeded, session):
+    """详情带明文密钥与默认通道；列表接口不下发明文。"""
+    pt = await _alipay(session)
     session.add_all([
-        ChannelCode(code="1001", name="正式通道", status=1),
-        ChannelCode(code="1002", name="测试通道", status=1),
-        ChannelCode(code="1003", name="联调编码", status=1, is_test=True),
-        # 停用的测试编码不参与挑选
-        ChannelCode(code="9999", name="停用测试", status=0, is_test=True),
+        Channel(name="普通通道", plugin_name="epay", payment_type_id=pt.id, status=1, mode=0),
+        Channel(name="主用通道", plugin_name="epay", payment_type_id=pt.id, status=1,
+                mode=0, is_default=True),
+        # 停用的默认通道不参与挑选
+        Channel(name="停用的主用通道", plugin_name="epay", payment_type_id=pt.id,
+                status=0, mode=0, is_default=True),
     ])
     await session.commit()
     m = await _merchant(session)
@@ -64,7 +72,9 @@ async def test_admin_detail_returns_plaintext_and_test_code(client, seeded, sess
     # 明文（不是掩码），且详情仍保留掩码字段供旧前端/其它用途
     assert data["api_secret"] and "*" not in data["api_secret"]
     assert data["api_secret_masked"].count("*") >= 4
-    assert data["channel_code"] == {"code": "1003", "name": "联调编码"}
+    assert data["default_channel"] == {"name": "主用通道", "payment_type": pt.name}
+    # 旧的测试编码字段已下线
+    assert "channel_code" not in data
 
     # 列表：只有掩码，没有明文
     r = await client.post("/admin-api/merchant/list", headers=headers, json={"page": 1, "per_page": 50})
@@ -75,11 +85,13 @@ async def test_admin_detail_returns_plaintext_and_test_code(client, seeded, sess
 
 
 @pytest.mark.asyncio
-async def test_admin_detail_channel_code_null_without_test_code(client, seeded, session):
-    """没有测试编码 → channel_code 为 null（前端整行不展示，不回退正式编码）。"""
+async def test_admin_detail_default_channel_null_without_marker(client, seeded, session):
+    """没有启用中的默认通道 → null（前端整行不展示，不回退正式通道）。"""
+    pt = await _alipay(session)
     session.add_all([
-        ChannelCode(code="1001", name="正式通道", status=1),
-        ChannelCode(code="9001", name="停用测试", status=0, is_test=True),
+        Channel(name="普通通道", plugin_name="epay", payment_type_id=pt.id, status=1, mode=0),
+        Channel(name="停用的主用通道", plugin_name="epay", payment_type_id=pt.id,
+                status=0, mode=0, is_default=True),
     ])
     await session.commit()
     m = await _merchant(session)
@@ -87,7 +99,7 @@ async def test_admin_detail_channel_code_null_without_test_code(client, seeded, 
 
     r = await client.get(f"/admin-api/merchant/{m.id}", headers=headers)
     data = r.json()["data"]
-    assert data["channel_code"] is None
+    assert data["default_channel"] is None
 
 
 @pytest.mark.asyncio

@@ -296,17 +296,14 @@ def code_amount_error(code: ChannelCode) -> str:
     return f"通道编码 {code.code} 单笔金额需在 {lo} ~ {hi} 元之间"
 
 
-def effective_merchant_rate(code: ChannelCode | None,
-                            merchant_rate: Decimal | None) -> Decimal | None:
-    """生效商户费率优先级：商户专属费率 > 编码费率 > None（= 用通道自身费率兜底）。
+def effective_merchant_rate(merchant_rate: Decimal | None) -> Decimal | None:
+    """生效商户费率：商户专属费率，没有则返回 None（= 用通道自身费率兜底）。
 
     `process_payment` 把返回值原样透传给选通道路由：返回 None 时由被选中通道的
-    `merchant_rate` 兜底，与加编码之前的行为完全一致。
+    `merchant_rate` 兜底。编码级费率已下线（迁移 0020），不再参与这一级。
     """
     if merchant_rate is not None:
         return dmoney(merchant_rate)
-    if code is not None and code.fee_rate is not None:
-        return dmoney(code.fee_rate)
     return None
 
 

@@ -468,6 +468,8 @@ def _dump_channel(c: Channel, reveal: bool = False) -> dict:
         "day_limit": str(c.day_limit),
         "day_limit_count": c.day_limit_count,
         "sort": c.sort,
+        # 默认通道标记：全平台只有一条，商户端对接信息展示它的名称
+        "is_default": bool(c.is_default),
         "debug_log": 1 if c.debug_log else 0,
         # 默认脱敏：channel.view（只读）拿不到上游 appkey/appsecret 明文
         "config": config if reveal else _mask_config(config),
@@ -632,6 +634,9 @@ async def channel_update(channel_id: int, body: ChannelRequest, session: Session
     c.sort = body.sort
     if body.debug_log is not None:
         c.debug_log = 1 if body.debug_log == 1 else 0
+    # 停用默认通道时一并清掉默认标记：商户端不能展示一条不可用的通道
+    if c.status != 1:
+        c.is_default = False
     if body.config:
         # 凭证：提交什么存什么；哨兵值（前端未改动的密钥）沿用库内原值
         c.config = encrypt_config(_merge_config(body.config, decrypt_config(c.config)))
@@ -642,6 +647,40 @@ async def channel_update(channel_id: int, body: ChannelRequest, session: Session
 
 class DebugLogRequest(BaseModel):
     enabled: bool
+
+
+@router.put("/channels/{channel_id}/default",
+            dependencies=[Depends(PermissionChecker("channel.update"))])
+async def channel_set_default(channel_id: int, session: SessionDep,
+                              body: DebugLogRequest | None = None):
+    """设为默认通道（全平台唯一）。
+
+    - `enabled` 缺省为 true：把该通道设为默认，同事务清掉其它通道的标记
+    - `enabled=false`：取消（仅对当前默认通道生效，避免误清别人的标记）
+    - 只有启用中的通道能设为默认：商户端对接信息展示的是可用通道
+
+    不能复用全量 PUT /channels/{id}：那个接口会重写费率/限额/凭证，
+    从列表点一下「设为默认」不能走它（同 debug-log 的处理）。
+    """
+    c = await session.get(Channel, channel_id)
+    if not c:
+        return err(404, "通道不存在")
+    enable = True if body is None else bool(body.enabled)
+    if enable:
+        if c.status != 1:
+            return err(-1, "请先启用该通道再设为默认")
+        others = (await session.exec(
+            select(Channel).where(col(Channel.id) != channel_id, col(Channel.is_default).is_(True))
+        )).all()
+        for other in others:
+            other.is_default = False
+            session.add(other)
+        c.is_default = True
+    elif c.is_default:
+        c.is_default = False
+    session.add(c)
+    await session.commit()
+    return suc({"id": c.id, "is_default": bool(c.is_default)})
 
 
 @router.put("/channels/{channel_id}/debug-log",
@@ -706,14 +745,11 @@ class ChannelCodeRequest(BaseModel):
     name: str = ""
     remark: str = ""
     mode: int = 0
-    status: int = 1
-    # 测试编码：商户端「对接信息」只展示这条（允许多条，取 id 最小的一条启用编码）
-    is_test: bool = False
+    # None=不触碰（表单已去掉启用开关，编辑时不能把停用编码顺手改回启用）；创建默认 1
+    status: Optional[int] = None
     # 编码级单笔金额区间（两端含，0=不限，两边都 0=不限制）
     min_amount: str = "0.00"
     max_amount: str = "0.00"
-    # 编码级商户费率（%）：空=不覆盖（走商户专属 / 通道费率）
-    fee_rate: str = ""
     items: list[ChannelCodeItemRequest] = []
 
 
@@ -721,28 +757,19 @@ class ChannelCodeStatusRequest(BaseModel):
     status: int
 
 
-def _parse_code_limits(body: ChannelCodeRequest) -> tuple[Decimal, Decimal, Decimal | None, str]:
-    """解析并校验编码级限额/费率。返回 (min, max, fee_rate|None, 错误文案)。"""
+def _parse_code_limits(body: ChannelCodeRequest) -> tuple[Decimal, Decimal, str]:
+    """解析并校验编码级限额。返回 (min, max, 错误文案)。"""
     try:
         minv = dmoney(body.min_amount or "0.00")
         maxv = dmoney(body.max_amount or "0.00")
     except Exception:
-        return Decimal("0"), Decimal("0"), None, "金额限额格式错误"
+        return Decimal("0"), Decimal("0"), "金额限额格式错误"
     if minv < 0 or maxv < 0:
-        return minv, maxv, None, "金额限额不能为负数"
+        return minv, maxv, "金额限额不能为负数"
     # max=0 表示不限上限；min=0 表示不限下限，两者都 0 = 不限制
     if maxv > 0 and minv > maxv:
-        return minv, maxv, None, f"金额下限不能大于上限（{minv} > {maxv}）"
-    fee = None
-    raw = (body.fee_rate or "").strip()
-    if raw:
-        try:
-            fee = dmoney(raw)
-        except Exception:
-            return minv, maxv, None, "费率格式错误"
-        if fee < 0 or fee > 100:
-            return minv, maxv, None, f"费率需在 0~100 之间（当前 {fee}）"
-    return minv, maxv, fee, ""
+        return minv, maxv, f"金额下限不能大于上限（{minv} > {maxv}）"
+    return minv, maxv, ""
 
 
 async def _validate_code_payload(session, body: ChannelCodeRequest,
@@ -757,7 +784,7 @@ async def _validate_code_payload(session, body: ChannelCodeRequest,
         return code, "轮询策略已下线，请选择随机或权重"
     if body.mode not in CODE_MODES:
         return code, "策略取值不合法"
-    _, _, _, limit_error = _parse_code_limits(body)
+    _, _, limit_error = _parse_code_limits(body)
     if limit_error:
         return code, limit_error
     dup = await get_channel_code(session, code)
@@ -865,6 +892,7 @@ async def channel_options(session: SessionDep):
         "plugin_name": c.plugin_name,
         "payment_type_id": c.payment_type_id,
         "status": c.status,
+        "is_default": bool(c.is_default),
         "merchant_rate": str(c.merchant_rate),
     } for c in rows])
 
@@ -911,11 +939,9 @@ async def channel_code_list(session: SessionDep, page: int = Query(1, ge=1),
             "remark": c.remark or "",
             "mode": c.mode,
             "status": c.status,
-            "is_test": bool(c.is_test),
             "min_amount": str(c.min_amount),
             "max_amount": str(c.max_amount),
             "amount_text": code_amount_text(c),
-            "fee_rate": str(c.fee_rate) if c.fee_rate is not None else "",
             "item_count": len(members),
             "members": [
                 _dump_code_item(it, channel_map.get(it.channel_id)) for it in members
@@ -950,11 +976,9 @@ async def channel_code_detail(code_id: int, session: SessionDep):
         "remark": c.remark or "",
         "mode": c.mode,
         "status": c.status,
-        "is_test": bool(c.is_test),
         "min_amount": str(c.min_amount),
         "max_amount": str(c.max_amount),
         "amount_text": code_amount_text(c),
-        "fee_rate": str(c.fee_rate) if c.fee_rate is not None else "",
         "items": [_dump_code_item(it, channels.get(it.channel_id)) for it in items],
     })
 
@@ -964,17 +988,16 @@ async def channel_code_create(body: ChannelCodeRequest, session: SessionDep):
     code, msg = await _validate_code_payload(session, body)
     if msg:
         return err(-1, msg)
-    minv, maxv, fee, _ = _parse_code_limits(body)
+    minv, maxv, _ = _parse_code_limits(body)
     c = ChannelCode(
         code=code,
         name=(body.name or "").strip()[:64] or code,
         remark=(body.remark or "").strip()[:255] or None,
         mode=body.mode,
-        status=1 if body.status == 1 else 0,
-        is_test=bool(body.is_test),
+        # 创建时表单不带状态：默认 1（启用）；显式传 0 仍可建停用编码
+        status=0 if body.status == 0 else 1,
         min_amount=minv,
         max_amount=maxv,
-        fee_rate=fee,
     )
     session.add(c)
     await session.commit()
@@ -992,16 +1015,16 @@ async def channel_code_update(code_id: int, body: ChannelCodeRequest, session: S
     code, msg = await _validate_code_payload(session, body, exclude_id=code_id)
     if msg:
         return err(-1, msg)
-    minv, maxv, fee, _ = _parse_code_limits(body)
+    minv, maxv, _ = _parse_code_limits(body)
     c.code = code
     c.name = (body.name or "").strip()[:64] or code
     c.remark = (body.remark or "").strip()[:255] or None
     c.mode = body.mode
-    c.status = 1 if body.status == 1 else 0
-    c.is_test = bool(body.is_test)
+    # 表单已去掉启用开关：不传 status 时保持原状态（否则编辑会顺手把停用编码改回启用）
+    if body.status is not None:
+        c.status = 1 if body.status == 1 else 0
     c.min_amount = minv
     c.max_amount = maxv
-    c.fee_rate = fee
     session.add(c)
     await _replace_code_items(session, code_id, body.items)
     await session.commit()

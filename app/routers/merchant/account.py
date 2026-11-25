@@ -54,7 +54,7 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
     - rsa2_enable / public_key：RSA2 是否开启及商户公钥（开启后 MD5 失效）
     - platform_public_key：平台公钥（验 RSA2 通知签名用）
     - 对接信息（面板「对接信息」一键复制用）：username /
-      channel_code（启用中的测试编码，`is_test` 显式标记；没有则为 null）
+      default_channel（平台默认通道的 `{name, payment_type}`；没有则为 null）
     - 下单/查询/文档地址的域名由前端取 `window.location.origin` 拼接，
       后端不再下发 site_url（站点地址配置不等于用户实际访问的域名）
     """
@@ -65,15 +65,15 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
         platform_public_key = derive_public_key(str(settings.get("platform_rsa_private_key") or ""))
     except ValueError:
         platform_public_key = ""
-    # 对接信息只展示被标成「测试编码」的那条：标记挂在编码上（is_test），
-    # 不再按名称/备注猜用途。允许多条标记时按 id 升序取第一条启用中的，行为确定；
-    # 没有测试编码就整行不展示（不回退到正式编码）。
-    picked = (await session.exec(
-        select(ChannelCode)
-        .where(col(ChannelCode.status) == 1, col(ChannelCode.is_test).is_(True))
-        .order_by(col(ChannelCode.id))
+    # 默认通道由后台「支付通道」列表设置（全平台唯一），只做展示：
+    # 停用的通道不算（后台停用时会自动清标记，这里再判一次兜底）
+    default = (await session.exec(
+        select(Channel)
+        .where(col(Channel.is_default).is_(True), col(Channel.status) == 1)
+        .order_by(col(Channel.id))
         .limit(1)
     )).first()
+    default_type = (await session.get(PaymentType, default.payment_type_id)) if default else None
     return suc({
         "pid": m.pid,
         "username": m.username,
@@ -81,8 +81,9 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
         "public_key": pem_to_flat(m.public_key or ""),
         "rsa2_enable": bool(m.rsa2_enable),
         "platform_public_key": platform_public_key,
-        "channel_code": (
-            {"code": picked.code, "name": picked.name or "", "is_test": True} if picked else None
+        "default_channel": (
+            {"name": default.name, "payment_type": default_type.name if default_type else ""}
+            if default else None
         ),
     })
 
@@ -95,7 +96,7 @@ async def list_channel_codes(auth: MerchantUser, session: SessionDep):
     - 支付方式取自该编码内**启用中**的通道：停用通道不参与分流，列出来等于虚假可用
     - 编码没有任何可用通道时 `pay_types` 为空数组，前端按「暂不可用」提示
     - 金额区间 = 编码级限额（`amount_text`，0 显示为「不限」），与下单校验同一口径
-    - 费率 = **该商户实际生效的费率**，优先级：我的专属费率 > 编码费率 > 编码内通道费率；
+    - 费率 = **该商户实际生效的费率**，优先级：我的专属费率 > 编码内通道费率；
       通道费率不一致时给区间（min~max），不假装只有一个值
     """
     codes = (await session.exec(
@@ -126,13 +127,10 @@ async def list_channel_codes(auth: MerchantUser, session: SessionDep):
         code_rates.setdefault(code_id, set()).add(dmoney(channel_rate))
 
     def _fee(c: ChannelCode) -> tuple[Decimal | None, Decimal | None, str]:
-        """生效费率与来源：我的专属 > 编码 > 编码内通道（不一致时取区间）。"""
+        """生效费率与来源：我的专属 > 编码内通道（不一致时取区间）。"""
         if auth.user.rate is not None:
             rate = dmoney(auth.user.rate)
             return rate, rate, "merchant"
-        if c.fee_rate is not None:
-            rate = dmoney(c.fee_rate)
-            return rate, rate, "code"
         rates = code_rates.get(c.id) or set()
         if rates:
             return min(rates), max(rates), "channel"
@@ -145,7 +143,6 @@ async def list_channel_codes(auth: MerchantUser, session: SessionDep):
             "code": c.code,
             "name": c.name or "",
             "remark": c.remark or "",
-            "is_test": bool(c.is_test),
             "min_amount": str(c.min_amount),
             "max_amount": str(c.max_amount),
             "amount_text": code_amount_text(c),

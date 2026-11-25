@@ -83,3 +83,29 @@ async def test_admin_order_summary_is_not_multiplied_by_cartesian_product(client
     total, money = await _summary(client, h, {"out_trade_no": "26111700000000000042"})
     assert total == 1
     assert money == Decimal("20.00")
+
+
+@pytest.mark.asyncio
+async def test_admin_order_list_filter_by_is_deducted(client, seeded, session):
+    """扣量筛选：1=仅扣量 / 0=仅未扣量 / 不传=全部；汇总跟着筛选走。"""
+    mid = seeded["merchant"].id
+    normal1 = await _mk_order(session, mid, "DED-0001", "10.00", status=1)
+    normal2 = await _mk_order(session, mid, "DED-0002", "20.00", status=1)
+    deducted = await _mk_order(session, mid, "DED-0003", "30.00", status=1)
+    deducted.is_deducted = True
+    session.add(deducted)
+    await session.commit()
+
+    h = await _admin_headers(session)
+
+    total, money = await _summary(client, h, {"is_deducted": "1"})
+    assert total == 1
+    assert money == Decimal("30.00")
+
+    total, money = await _summary(client, h, {"is_deducted": "0"})
+    assert total == 2
+    assert money == Decimal("30.00")
+
+    total, money = await _summary(client, h, {"is_deducted": ""})
+    assert total == 3
+    assert money == Decimal("60.00")

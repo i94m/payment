@@ -95,6 +95,10 @@ def _build_query(body: dict):
         query = query.where(Order.payment_type_code == body["type"])
     if body.get("notify_status") is not None and body.get("notify_status") != "":
         query = query.where(Order.notify_status == parse_int(body["notify_status"], "notify_status"))
+    # 扣量筛选：1=仅扣量单 / 0=仅未扣量单 / 空=全部（列表与导出共用本 builder，天然一致）
+    is_deducted = str(body.get("is_deducted", "") or "").strip()
+    if is_deducted in ("0", "1"):
+        query = query.where(col(Order.is_deducted).is_(is_deducted == "1"))
     addtime = body.get("addtime") or ""
     if "," in addtime:
         start, end = addtime.split(",", 1)
