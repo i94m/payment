@@ -311,7 +311,7 @@ class CreateMerchantRequest(BaseModel):
     phone: str = ""
     qq: str = ""
     url: str = ""
-    rate: str = ""
+    rate: str = ""                          # 商户专属费率（%，平台抽成）；留空 = 不占用
     status: int = 1                         # 1=正常 0=封禁
     pay_status: int = 1                     # 0=关闭 1=开启 2=待审核
     settle_status: int = 1                  # 0=关闭 1=开启
@@ -330,6 +330,13 @@ async def create_merchant(body: CreateMerchantRequest, session: SessionDep):
     )).first()
     if existing:
         return err(-1, "用户名已存在")
+    # 费率在进重试循环前解析/校验：否则非法输入会被 pid 冲突重试吞成「创建冲突」
+    try:
+        rate = dmoney(body.rate) if body.rate else None
+    except Exception:
+        return err(-1, "金额格式错误")
+    if rate is not None and (rate < 0 or rate > 100):
+        return err(-1, "费率需在 0~100 之间")
     for _ in range(3):
         pid = await generate_merchant_pid(session)
         m = Merchant(
@@ -340,7 +347,7 @@ async def create_merchant(body: CreateMerchantRequest, session: SessionDep):
             phone=body.phone or None,
             qq=body.qq or None,
             url=body.url or None,
-            rate=dmoney(body.rate) if body.rate else None,
+            rate=rate,
             status=body.status,
             pay_status=body.pay_status,
             settle_status=body.settle_status,
@@ -367,7 +374,7 @@ class UpdateMerchantRequest(BaseModel):
     qq: str = ""
     url: str = ""
     allowed_domains: str = ""
-    rate: str = ""
+    rate: Optional[str] = None              # None=不改；""=清除专属费率；"0"~"100"=设置
     status: Optional[int] = None
     pay_status: Optional[int] = None       # 0=关闭 1=正常 2=待审核
     settle_status: Optional[int] = None    # 0=关闭 1=正常
@@ -395,7 +402,7 @@ async def update_merchant(merchant_id: int, body: UpdateMerchantRequest, session
         return err(404, "商户不存在")
     # 金额字段统一在此解析，非法输入返回业务错误而非 500
     try:
-        new_rate = dmoney(body.rate) if body.rate != "" else None
+        new_rate = dmoney(body.rate) if body.rate else None
         new_random_min = dmoney(body.random_min) if body.random_min != "" else None
         new_random_max = dmoney(body.random_max) if body.random_max != "" else None
         new_deduct_minmoney = dmoney(body.deduct_minmoney) if body.deduct_minmoney != "" else None
@@ -415,7 +422,12 @@ async def update_merchant(merchant_id: int, body: UpdateMerchantRequest, session
     if body.allowed_domains != "":
         m.allowed_domains = body.allowed_domains or None
     if new_rate is not None:
+        if new_rate < 0 or new_rate > 100:
+            return err(-1, "费率需在 0~100 之间")
         m.rate = new_rate
+    elif body.rate is not None:
+        # 显式传空串 = 清除商户专属费率，回落到编码费率 / 通道费率
+        m.rate = None
     if body.status is not None:
         if body.status not in (0, 1):
             return err(-1, "商户状态取值不合法")
