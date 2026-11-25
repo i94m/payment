@@ -295,17 +295,15 @@ def _weighted_order(pairs: list[tuple[Any, int]]) -> list[Any]:
 def _order_code_candidates(
     available: list[Channel], mode: int, item_map: dict[int, ChannelCodeItem]
 ) -> list[Channel]:
-    """按**编码级** mode 排定候选：0=随机 / 1=轮询（绑定行游标）/ 2=权重。
+    """按**编码级** mode 排定候选：0=随机 / 2=权重。
+
+    轮询（旧 mode=1）已下线：后台不再提供该策略、保存时拒绝；万一库里还留着 mode=1 的
+    历史编码，这里按随机处理而不是报错 —— 编码不会因为一个已下线的旧值变成不可用。
 
     权重 0 = **不参与分流**（与 epay 轮询组加权随机同口径）：既不做首选，也不做限速
     回退候选。正权重成员全部不可用时返回空列表，由调用方报「编码当前不可用」，
     不退化成随机或默认路由 —— 编码代表费率/成本边界，静默改策略比报错更难追。
     """
-    if mode == 1:
-        return sorted(
-            available,
-            key=lambda c: (item_map[c.id].last_used_at, item_map[c.id].sort, c.id),
-        )
     if mode == 2:
         # 抽签顺序 = 后台成员表的顺序（ChannelCodeItem.sort），与 epay 轮询组 `通道:权重`
         # 串的顺序一致：分界点可以按配置顺序核对（1~50 命中第一行、51~80 命中第二行…）。
@@ -319,23 +317,12 @@ def _order_code_candidates(
     return pool
 
 
-def _resolve_by_code(
-    session: AsyncSession,
-    chosen: Channel,
-    item: ChannelCodeItem,
-    siblings: list[ChannelCodeItem],
-    merchant_rate: Decimal | None,
-) -> ResolvedChannel:
-    """编码选定通道后推进**绑定行**的轮询游标（不碰 channels.usetime）。
+def _resolve_by_code(chosen: Channel, merchant_rate: Decimal | None) -> ResolvedChannel:
+    """编码选定通道后组装结果。
 
-    同一通道被多个编码引用时，各编码的轮询刻度互不干扰；默认路由的顺序游标也不受影响。
-    游标取 `max(now_ms, 本编码最大游标 + 1)`：同一毫秒内连续两单也能严格递增，
-    否则同毫秒的两单会因并列而反复命中同一条通道（轮询退化成固定）。
+    编码内选路不需要任何游标（`channel_code_items.last_used_at` 是历史轮询游标，
+    轮询下线后保留字段、当前不读写），所以这里不写库，只做费率解析与凭证解密。
     """
-    now_ms = int(time.time() * 1000)
-    latest = max((it.last_used_at for it in siblings), default=0)
-    item.last_used_at = max(now_ms, latest + 1) if latest >= now_ms else now_ms
-    session.add(item)
     rate = merchant_rate if merchant_rate is not None else chosen.merchant_rate
     return ResolvedChannel(
         channel=chosen,
@@ -395,7 +382,7 @@ async def choose_channel_by_code(
 
     for c in _order_code_candidates(available, code.mode, item_map):
         if skip_limits or await reserve_channel_slot(cache, c.id, ratelimit_map.get(c.id, 0)) is not False:
-            return _resolve_by_code(session, c, item_map[c.id], items, merchant_rate)
+            return _resolve_by_code(c, merchant_rate)
     return None
 
 

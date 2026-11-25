@@ -1,7 +1,7 @@
 """通道编码（channel_code）回归测试。
 
 覆盖：参数级校验（不存在/停用/无该支付方式绑定/必传开关）、编码内路由
-（全局停用跳过/轮询/权重）、**绝不回落到编码之外**、幂等一致性、
+（全局停用跳过/随机/权重/轮询下线）、**绝不回落到编码之外**、幂等一致性、
 收银台支付方式过滤、后台保存校验与通道删除保护。
 
 两条硬断言（最容易悄悄退化的地方）：
@@ -162,7 +162,7 @@ async def test_code_success_persists_trace(client, session, two_channels):
 
 
 # ============================================================
-# 编码内路由：全局停用跳过 / 轮询 / 权重
+# 编码内路由：全局停用跳过 / 随机 / 权重 / 轮询下线
 # ============================================================
 
 async def test_globally_disabled_channel_skipped_within_code(session, two_channels):
@@ -208,22 +208,46 @@ async def test_code_without_available_channel_never_falls_back(client, session, 
     assert order.extra in (None, {})
 
 
-async def test_round_robin_alternates(session, two_channels):
-    """轮询：连续 4 单在 2 条通道上严格交替（按绑定行游标，不是通道游标）。"""
+async def test_polling_mode_rejected_on_save(client, session, two_channels):
+    """轮询已下线：mode=1 保存被拒、不落库（绕过界面也存不进）。"""
+    headers = await _admin_headers(session)
+    seeded = two_channels
+    r = await client.post("/admin-api/pay/channel-codes", json={
+        "code": "8088", "name": "下游A", "mode": 1, "status": 1,
+        "items": [{"channel_id": seeded["channel"].id, "weight": 1}],
+    }, headers=headers)
+    assert r.json()["code"] == -1
+    assert "轮询策略已下线" in r.json()["message"]
+    assert (await session.exec(select(ChannelCode).where(ChannelCode.code == "8088"))).first() is None
+
+    # 已有编码改成轮询同样被拒，原值保持不变
+    cc = await _mk_code(session, [(seeded["channel"], 1)], code="7001")
+    r = await client.put(f"/admin-api/pay/channel-codes/{cc.id}", json={
+        "code": "7001", "name": "编码7001", "mode": 1, "status": 1,
+        "items": [{"channel_id": seeded["channel"].id, "weight": 1}],
+    }, headers=headers)
+    assert r.json()["code"] == -1
+    mode = (await session.exec(
+        select(ChannelCode.mode).where(ChannelCode.id == cc.id)
+    )).one()
+    assert mode == 0  # 原值不变，没被改成轮询
+
+
+async def test_stale_polling_mode_code_routes_random(session, two_channels):
+    """库里遗留 mode=1 的历史编码不死锁：按随机分流，两条通道都会被选中，不报错。"""
     seeded = two_channels
     cc = await _mk_code(session, [
         (seeded["channel"], 1),
         (seeded["channel2"], 1),
     ], mode=1)
-    picked = []
-    for _ in range(4):
+    picked = set()
+    for _ in range(40):
         resolved = await choose_channel_by_code(
             session, None, cc.id, seeded["pay_type"].id, dmoney("10.00")
         )
         assert resolved is not None
-        picked.append(resolved.channel.id)
-    assert picked[0] != picked[1]
-    assert picked == [picked[0], picked[1], picked[0], picked[1]]
+        picked.add(resolved.channel.id)
+    assert picked == {seeded["channel"].id, seeded["channel2"].id}
 
 
 async def test_weighted_zero_never_picked(session, two_channels):
@@ -521,7 +545,7 @@ async def test_admin_code_crud_and_status_toggle(client, session, two_channels):
     headers = await _admin_headers(session)
     seeded = two_channels
     body = {
-        "code": "8088", "name": "下游A", "remark": "备注", "mode": 1, "status": 1,
+        "code": "8088", "name": "下游A", "remark": "备注", "mode": 0, "status": 1,
         "items": [{"channel_id": seeded["channel"].id, "weight": 1}],
     }
     r = await client.post("/admin-api/pay/channel-codes", json=body, headers=headers)
