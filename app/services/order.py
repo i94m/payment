@@ -54,7 +54,7 @@ ORDER_EXPIRED = 3
 # 订单类型（orders.order_type）
 ORDER_TYPE_NORMAL = 0     # 普通收款
 ORDER_TYPE_RECHARGE = 1   # 余额充值（全额入账、不回调）
-ORDER_TYPE_TEST = 2       # 测试单（不记账、不通知、不进统计/限额）
+ORDER_TYPE_TEST = 2       # 测试单（不入账/不通知/不进统计限额；金额仅作费率核对）
 
 CENT = Decimal("0.01")
 
@@ -78,6 +78,16 @@ async def get_order_by_trade_no(session: AsyncSession, trade_no: str) -> Order |
 def fmt_money(v) -> str:
     """money 序列化：固定两位小数（5 → 5.00，5.1 → 5.10）。"""
     return format(Decimal(str(v)).quantize(CENT), "f")
+
+
+def money_text(v) -> str:
+    """金额字段对外序列化：None → 空串，其余原样输出。
+
+    前端只对「空串」留白（渲染成 —）。不能写成 `v or ""`：`Decimal("0.00")`
+    在 Python 里是 falsy，会把「到账/成本/利润为 0 元」吞成空串，后台看起来
+    像没算出利润（测试单、费率刚好等于成本费率的单都会这样）。
+    """
+    return "" if v is None else str(v)
 
 
 def order_remaining_seconds(order: Order) -> int:
@@ -578,12 +588,14 @@ async def process_payment(
     # 随机金额单 realmoney 只随机一次（首次拉起落库后保持不变）——
     # 幂等重提交/收银台换支付方式重复拉起若重新随机，会导致已分发的
     # 付款链接金额与订单不符、回调金额比对失败。
-    # 测试单按填写金额原样走（不抖金额），到账/成本/利润记 0：不参与任何资金口径。
+    # 测试单按填写金额原样走（不抖金额）；到账/成本/利润仍按同一费率口径计算，
+    # 便于在「测试支付」里当场核对手续费与成本——测试单不入余额、不返佣、不通知、
+    # 不进任何统计/结算口径（order_type=2 在所有资金口径里都被排除）。
     realmoney = _quant(order.money)
     if order.order_type == ORDER_TYPE_TEST:
-        merchant_income = Decimal("0.00")
-        channel_cost = Decimal("0.00")
-        profit = Decimal("0.00")
+        merchant_income, channel_cost, profit = compute_amounts(
+            realmoney, resolved.merchant_rate, resolved.cost_rate
+        )
     elif merchant.random_enable and merchant.random_min > 0 and merchant.random_max > 0:
         if order.realmoney is not None and order.realmoney > 0:
             realmoney = _quant(order.realmoney)
@@ -831,13 +843,11 @@ async def process_paid_order(
                 return PaidResult(status="mismatch", order=order)
 
         # 测试单（order_type=2）：落「已支付」供后台/商户端核对链路，
-        # 但不入余额、不算分润/邀请返现、不投递商户通知、不进任何统计口径
+        # 到账/成本/利润沿用拉起支付时算好的值（仅供核对费率，不参与资金口径）；
+        # 不入余额、不算分润/邀请返现、不投递商户通知、不进任何统计口径
         if order.order_type == ORDER_TYPE_TEST:
             order.status = ORDER_PAID
             order.paid_at = datetime.now()
-            order.merchant_income = Decimal("0.00")
-            order.channel_cost = Decimal("0.00")
-            order.profit = Decimal("0.00")
             if api_trade_no:
                 order.api_trade_no = api_trade_no[:64]
             if buyer_id:

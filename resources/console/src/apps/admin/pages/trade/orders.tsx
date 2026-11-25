@@ -487,7 +487,7 @@ export function OrdersPage() {
 /** 订单详情主体：桌面一行两组「字段 / 值」，窄屏自动退化成一行一组 */
 function OrderDetailTable({ order }: { order: OrderData }) {
   const typeBadge = order.order_type === 2
-    ? <Badge variant="secondary">{"测试单（不计入资金与统计）"}</Badge>
+    ? <Badge variant="secondary">{"测试单（金额仅供核对，不计入资金与统计）"}</Badge>
     : order.order_type === 1
       ? <Badge variant="outline">{"余额充值"}</Badge>
       : null
