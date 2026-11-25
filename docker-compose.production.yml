@@ -4,7 +4,8 @@
 # pay-gateway:latest 后配 PAY_IMAGE 使用。
 # .env 可覆盖（compose 插值读取）：PAY_IMAGE / APP_REPLICAS（app 实例数，默认 3）/
 # APP_PORT_RANGE（app 宿主端口范围，默认 8000-8002）/ DB_HOST_CONTAINER / DB_PORT_CONTAINER /
-# REDIS_HOST_CONTAINER / REDIS_PORT_CONTAINER（改指远程库）。
+# REDIS_HOST_CONTAINER / REDIS_PORT_CONTAINER（改指远程库）/ COMPOSE_PROFILES=upgrade
+# （附带启用 upgrader 一键升级服务，见文末）。
 # 不定义固定网络，使用 compose 默认网络，支持多套编排同机并存。
 services:
   app:
@@ -50,5 +51,28 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
+      - ./storage:/app/storage
+      - ./.env:/app/.env:ro
+
+  # 后台「一键升级」执行器：默认不启动，.env 加 COMPOSE_PROFILES=upgrade 并重跑
+  # deploy.sh 开启（DEPLOY.md「版本升级」）。轮询 storage/upgrade/ 的升级请求，
+  # 拉镜像 → 迁移 → 逐台重建 app/worker；持有 docker.sock（等价宿主 root），
+  # 仅在客户接受该边界时开启。自更新换代后旧容器 exit 0 属预期（on-failure 不拉起）。
+  upgrader:
+    image: ${PAY_IMAGE:-ghcr.io/i94m/payment:latest}
+    platform: linux/amd64
+    profiles: ["upgrade"]
+    command: ["python", "-c", "from app.upgrader import main; main()"]
+    # 不提供 HTTP 服务，禁用镜像自带的 /health 健康检查（否则永为 unhealthy，
+    # 会拖挂 deploy.sh 的「等全部 healthy」）
+    healthcheck:
+      disable: true
+    restart: on-failure
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
       - ./storage:/app/storage
       - ./.env:/app/.env:ro

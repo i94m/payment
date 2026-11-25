@@ -75,6 +75,47 @@ curl -s localhost:8000/health     # {"message":"ok","version":"1.2.3","revision"
 `build_date`；源码直接运行时为 `dev`。管理后台侧边栏的**站点名称下方**直接显示版本号
 （`v1.2.3`，hover 可见构建提交号；商户端/代理端不展示）。
 
+### 客户端升级（两条路径）
+
+发版后客户可自行升级，无需作者重新打交付包：
+
+**路径一：服务器命令行（零额外组件，默认可用）**
+
+```shell
+bash scripts/deploy.sh upgrade          # 在线查版本 → 交互确认 → 自动升到最新
+bash scripts/deploy.sh upgrade 1.2.3    # 升级/回滚到指定版本
+bash scripts/deploy.sh upgrade --check  # 只看当前版本与可用版本
+```
+
+版本列表由容器内应用在线查询镜像仓库（同后台「检查更新」）；确认后脚本自动改写 `.env`
+的 `PAY_IMAGE` 并走与首次部署完全相同的流程（拉镜像 → `up -d` → 健康检查 → 增量迁移）。
+回滚 = 指定更低的版本号再执行一次。离线服务器先 `docker save/load` 目标镜像，再
+`bash scripts/deploy.sh upgrade 1.2.3`（拉取失败但本机已有该镜像时自动放行）。
+
+**路径二：管理后台一键升级（可选开启）**
+
+管理后台「系统配置 → 版本升级」页可在线检查新版本并一键升级：自动完成拉镜像 →
+数据库增量迁移 → **逐台**重建 worker/app 容器（多副本近似无感，单副本中断约 10-30 秒，
+建议低峰期操作），页面实时展示执行进度；同时回写宿主 `.env` 的 `PAY_IMAGE`，
+之后手工执行 `deploy.sh` 不会把版本拉回旧标签。
+
+一键升级由编排里的 `upgrader` 服务执行（`app/upgrader.py`），**默认不启动**。开启：
+
+```shell
+echo "COMPOSE_PROFILES=upgrade" >> .env    # 或手动加到 .env
+bash scripts/deploy.sh                     # 重新 up 生效
+```
+
+关闭则删除该行后重新执行 `deploy.sh`（`docker compose rm -sf upgrader` 可单独停掉）。
+
+> **安全边界**：upgrader 容器挂载了 `/var/run/docker.sock`（等价宿主机 root 权限），
+> 且触发接口仅 `system.admin`（超管级）可调。仅在客户接受该边界时开启；不接受就
+> 用路径一，功能上只差「是否需要 SSH 登录服务器」。
+>
+> upgrader 每次升级结束会用新镜像再造一个自身容器（旧容器 exit 0 退场属预期，
+> `restart: on-failure` 不会拉起它）；新容器名带 `-next` 后缀，之后任何一次
+> `deploy.sh` 执行都会让 compose 把它收敛回规范名。
+
 ### 生成客户部署包（一条命令交付）
 
 ```shell

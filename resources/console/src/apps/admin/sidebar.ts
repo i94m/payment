@@ -2,7 +2,7 @@ import {
   IconGauge, IconListDetails, IconBuildingStore, IconHistory,
   IconReceipt, IconSpeakerphone, IconRoute,
   IconAdjustments, IconPlugConnected, IconBell,
-  IconCreditCard, IconShieldLock,
+  IconCreditCard, IconShieldLock, IconRocket,
 } from "@tabler/icons-react"
 import type { MenuSection } from "@/apps/merchant/sidebar"
 
@@ -51,6 +51,9 @@ export function getAdminMenu(): MenuSection[] {
           title: "管理员账号", url: "/system/accounts", icon: IconShieldLock,
           permission: "system.admin", superOnly: true,
         },
+        // 版本升级：在线检查镜像仓库版本，一键升级（upgrader）或命令行指引；
+        // 整机级操作，仅超管可见/可进（后端接口同样要求超管）
+        { title: "版本升级", url: "/system/upgrade", icon: IconRocket, permission: "system.admin", superOnly: true },
       ],
     },
   ]

@@ -57,6 +57,8 @@ export type {
 export { accountApi } from "./account"
 export type { ApiKeyData, MerchantChannelCode, SettingItem, SignDebugResult } from "./account"
 export { securityApi } from "./account"
+export { upgradeApi } from "./upgrade"
+export type { UpgradeCheckData, UpgradeStatusData, UpgradeStep } from "./upgrade"
 export { agentsApi } from "./agents"
 export type { AgentData, AgentListParams, AgentPerformanceRow, AgentPerformanceSummary } from "./agents"
 export { agentPanelApi } from "./agent"

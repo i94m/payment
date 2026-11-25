@@ -17,6 +17,7 @@ const SettlePage = lazy(() => import("./pages/settle/list").then((m) => ({ defau
 const AnnouncesPage = lazy(() => import("./pages/announce/list").then((m) => ({ default: m.AnnouncesPage })))
 const PaySettingsPage = lazy(() => import("./pages/setting/pay").then((m) => ({ default: m.PaySettingsPage })))
 const AccountsPage = lazy(() => import("./pages/system/accounts").then((m) => ({ default: m.AccountsPage })))
+const UpgradePage = lazy(() => import("./pages/system/upgrade").then((m) => ({ default: m.UpgradePage })))
 const AdminNotificationsPage = lazy(() => import("./pages/system/notifications").then((m) => ({ default: m.AdminNotificationsPage })))
 const UserCenterPage = lazy(() => import("@/pages/user-center").then((m) => ({ default: m.UserCenterPage })))
 // 错误页体积小且需在异常时立即可用，保持静态导入
@@ -54,6 +55,9 @@ const pageRoutes: PermissionRouteObject[] = [
   },
   { path: "/setting/pay", element: <PaySettingsPage />, permission: "pay_setting.view" },
   { path: "/system/accounts", element: <AccountsPage />, permission: "system.admin", superOnly: true },
+  // 版本升级：镜像仓库在线查版本 + 一键升级（upgrader）/命令行指引；
+  // 整机级操作（upgrader 持 docker.sock），与账号管理一致仅超管可进
+  { path: "/system/upgrade", element: <UpgradePage />, permission: "system.admin", superOnly: true },
   { path: "/403", element: <Error403 /> },
   { path: "/500", element: <Error500 /> },
   { path: "*", element: <Error404 /> },

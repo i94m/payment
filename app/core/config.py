@@ -47,6 +47,9 @@ class Config(BaseSettings):
     APP_VERSION: str = "dev"
     APP_REVISION: str = ""
     APP_BUILD_DATE: str = ""
+    # 当前运行镜像（compose 的 PAY_IMAGE，随挂载的 .env 读入；源码运行为空）。
+    # 版本升级用它推导镜像仓库地址去查询可用版本，见 app/services/upgrade.py。
+    PAY_IMAGE: str = ""
     # 预留字段，当前代码未实际读取；同上
     APP_URL: str = "http://localhost:8000"
     # 管理后台页面路径前缀（默认 admin）：改掉可隐藏后台入口，如 "console-x9"。

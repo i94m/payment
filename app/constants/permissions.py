@@ -112,4 +112,5 @@ MENU_TREE: list[dict] = [
     {"key": "notify_log.view", "name": "回调日志", "path": "/trade/notifylogs", "icon": "icon-file"},
     {"key": "pay_setting.view", "name": "站点配置", "path": "/setting/pay", "icon": "icon-settings"},
     {"key": "system.admin", "name": "管理员账号", "path": "/system/accounts", "icon": "icon-safe"},
+    {"key": "system.admin", "name": "版本升级", "path": "/system/upgrade", "icon": "icon-safe"},
 ]
