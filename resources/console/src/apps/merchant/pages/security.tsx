@@ -36,9 +36,9 @@ function IntegrationRow({
     }
   }
   return (
-    <div className="flex items-start gap-2 px-4 py-1">
-      <span className="w-14 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 break-all font-mono text-[13px]">
+    <div className="flex items-center gap-2 pr-2">
+      <span className="w-14 shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">
         {value || "-"}
       </span>
       <div className="flex shrink-0 items-center">
@@ -46,15 +46,15 @@ function IntegrationRow({
         <Button
           size="icon"
           variant="ghost"
-          className="size-7"
+          className="size-5"
           aria-label={`复制${label}`}
           title={`复制${label}`}
           disabled={!target}
           onClick={onCopy}
         >
           {isCopied
-            ? <IconCheck className="size-4 text-green-500" />
-            : <IconCopy className="size-4" />}
+            ? <IconCheck className="size-3.5 text-green-500" />
+            : <IconCopy className="size-3.5" />}
         </Button>
       </div>
     </div>
@@ -180,10 +180,10 @@ export function SecurityPage() {
             <>
               {/* 对接信息：整段/逐项复制给接入方的纯文本，密钥按当前可见状态复制 */}
               {apiKey && (
-                <Card>
+                <Card size="sm">
                   <CardHeader>
                     <CardTitle>{"对接信息"}</CardTitle>
-                    <CardDescription>
+                    <CardDescription className="text-xs">
                       {"可直接复制发送给接入方。"}
                     </CardDescription>
                     <CardAction>
@@ -202,20 +202,18 @@ export function SecurityPage() {
                   <CardContent className="p-0">
                     {/* 「【商户对接参数】」小标题只出现在一键复制的纯文本里（发给接入方的格式），
                         页面上不再重复展示 */}
-                    <div className="py-1">
-                      {integrationFields.map(([label, value]) => {
-                        // RSA2 下没有可交付的共享密钥，这一行不可单独复制
-                        const cannotCopy = label === "API密钥" && rsa2
-                        return (
-                          <IntegrationRow
-                            key={label}
-                            label={label}
-                            value={value}
-                            copyValue={cannotCopy ? "" : undefined}
-                          />
-                        )
-                      })}
-                    </div>
+                    {integrationFields.map(([label, value]) => {
+                      // RSA2 下没有可交付的共享密钥，这一行不可单独复制
+                      const cannotCopy = label === "API密钥" && rsa2
+                      return (
+                        <IntegrationRow
+                          key={label}
+                          label={label}
+                          value={value}
+                          copyValue={cannotCopy ? "" : undefined}
+                        />
+                      )
+                    })}
                   </CardContent>
                 </Card>
               )}

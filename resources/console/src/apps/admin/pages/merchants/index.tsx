@@ -135,12 +135,12 @@ function IntegrationRow({ label, value, copyValue }: {
   copyValue?: string
 }) {
   return (
-    <div className="flex items-start gap-2 px-4 py-1">
-      <span className="w-14 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
-      <span className="min-w-0 flex-1 break-all font-mono text-[13px]">{value || "-"}</span>
+    <div className="flex items-center gap-2 pr-2">
+      <span className="w-14 shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 flex-1 break-all font-mono text-xs leading-5">{value || "-"}</span>
       <CopyButton
         value={copyValue ?? value}
-        className="size-7"
+        className="size-5"
         aria-label={`复制${label}`}
         title={`复制${label}`}
         disabled={!value}
@@ -200,11 +200,11 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
   }
 
   return (
-    <Card>
+    <Card size="sm">
       <CardHeader>
         <CardTitle>{"对接信息"}</CardTitle>
-        <CardDescription>
-          {"格式与商户端「API 信息」页一致，可直接复制发送。"}
+        <CardDescription className="text-xs">
+          {"可直接复制发送给接入方。"}
         </CardDescription>
         <CardAction className="flex items-center gap-2">
           <Badge variant={data.rsa2_enable ? "default" : "secondary"}>
@@ -224,7 +224,7 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent className="p-0 pb-1">
+      <CardContent className="p-0">
         {/* 「【商户对接参数】」小标题只出现在一键复制的纯文本里，页面上不重复展示 */}
         {fields.map(([label, value]) => (
           <IntegrationRow key={label} label={label} value={value} />
@@ -1293,7 +1293,7 @@ export function MerchantsPage() {
           <DialogHeader>
             <DialogTitle>{"扣量"} - {deductTarget?.username}</DialogTitle>
             <DialogDescription>
-              {"开启后按成功单计数轮询抽单：命中单标为已支付，但不入账、不返佣、不通知，商户与代理侧一律显示未支付"}
+              {"开启后按成功单计数轮询抽单：命中单在后台标为已支付，商户与代理侧一律显示未支付"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

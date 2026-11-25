@@ -246,11 +246,10 @@ export function OrdersPage() {
         accessorKey: "is_deducted",
         enableSorting: false,
         header: () => "扣量",
-        // 命中扣量的订单：不入账、不返佣、不通知，但后台要能看见（实心对号）；
-        // 非扣量就是「没有这个标记」，留空而不是画横杠
+        // 命中扣量的订单在后台可见（实心对号），非扣量留空而不是画横杠
         cell: ({ row }) => (row.original.is_deducted
           ? (
-            <span className="inline-flex text-emerald-600 dark:text-emerald-400" title={"扣量单（不入账 / 不返佣 / 不通知）"}>
+            <span className="inline-flex text-emerald-600 dark:text-emerald-400" title={"扣量单"}>
               <IconCircleCheckFilled className="size-4" />
             </span>
           )
@@ -558,7 +557,7 @@ function OrderDetailTable({ order }: { order: OrderData }) {
         // 扣量单在后台可见（对商户/代理端仍是「未支付」口径）
         { label: "扣量", value: order.is_deducted
           ? <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-            <IconCircleCheckFilled className="size-4" />{"扣量单（不入账 / 不返佣 / 不通知）"}
+            <IconCircleCheckFilled className="size-4" />{"是"}
           </span>
           : "否" },
         { label: "商户", value: order.merchant_username || String(order.merchant_id ?? "") },
