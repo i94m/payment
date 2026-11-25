@@ -40,7 +40,7 @@ import { IconPlus, IconEdit, IconTrash, IconList, IconRefresh, IconSearch } from
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 
-/** 编码级策略：0=随机 2=权重（轮询已下线，存量 mode=1 按随机处理） */
+/** 编码级策略：0=随机 2=权重（轮询已下线，存量 mode=1 由迁移改为随机） */
 const MODE_LABEL: Record<number, string> = { 0: "随机", 2: "权重" }
 
 /** 费率展示：统一两位小数（"2" / "2.00" 都显示 2.00%） */
@@ -74,6 +74,14 @@ const memberSchema = z.object({
     .max(100, "权重不能超过 100（按百分比配置）"),
 })
 
+/** 金额/费率输入解析：空串按 0 处理（后台表单习惯「留空=不限」），非法返回 NaN */
+const parseNum = (raw: string) => {
+  const s = (raw ?? "").trim()
+  if (!s) return 0
+  const n = Number(s)
+  return Number.isFinite(n) ? n : NaN
+}
+
 const codeSchema = z.object({
   code: z.string().trim()
     .min(1, "通道编码不能为空")
@@ -84,8 +92,30 @@ const codeSchema = z.object({
   mode: z.number(),
   status: z.number(),
   is_test: z.boolean(),
+  // 单笔金额区间（两端含，0=不限，两边都 0=不限制）
+  min_amount: z.string().trim(),
+  max_amount: z.string().trim(),
+  // 编码费率（%），留空=不覆盖（按商户专属 / 通道费率）
+  fee_rate: z.string().trim(),
   members: z.record(z.string(), memberSchema),
 }).superRefine((values, ctx) => {
+  const min = parseNum(values.min_amount)
+  const max = parseNum(values.max_amount)
+  if (Number.isNaN(min) || min < 0) {
+    ctx.addIssue({ code: "custom", path: ["min_amount"], message: "金额下限需为不小于 0 的数字" })
+  }
+  if (Number.isNaN(max) || max < 0) {
+    ctx.addIssue({ code: "custom", path: ["max_amount"], message: "金额上限需为不小于 0 的数字" })
+  }
+  if (!Number.isNaN(min) && !Number.isNaN(max) && max > 0 && min > max) {
+    ctx.addIssue({ code: "custom", path: ["max_amount"], message: "金额下限不能大于上限" })
+  }
+  if (values.fee_rate) {
+    const fee = parseNum(values.fee_rate)
+    if (Number.isNaN(fee) || fee < 0 || fee > 100) {
+      ctx.addIssue({ code: "custom", path: ["fee_rate"], message: "费率需在 0~100 之间" })
+    }
+  }
   const items = Object.values(values.members)
   if (items.length === 0) {
     ctx.addIssue({ code: "custom", path: ["members"], message: "请至少勾选一个通道" })
@@ -110,7 +140,8 @@ const codeSchema = z.object({
 type CodeFormValues = z.infer<typeof codeSchema>
 
 const emptyValues = (): CodeFormValues => ({
-  code: "", name: "", remark: "", mode: 0, status: 1, is_test: false, members: {},
+  code: "", name: "", remark: "", mode: 0, status: 1, is_test: false,
+  min_amount: "0.00", max_amount: "0.00", fee_rate: "", members: {},
 })
 
 /**
@@ -207,7 +238,10 @@ export function ChannelCodesPage() {
         code: detail.code, name: detail.name, remark: detail.remark,
         // 轮询已下线：存量 mode=1 的编码按随机展示（运行时同样走随机分支），保存即归一为 0
         mode: detail.mode === 1 ? 0 : detail.mode,
-        status: detail.status, is_test: detail.is_test, members: memberMap,
+        status: detail.status, is_test: detail.is_test,
+        min_amount: detail.min_amount, max_amount: detail.max_amount,
+        fee_rate: detail.fee_rate,
+        members: memberMap,
       })
       setDialogOpen(true)
     } catch (err) {
@@ -276,6 +310,10 @@ export function ChannelCodesPage() {
       mode: values.mode,
       status: values.status,
       is_test: values.is_test,
+      // 空串按 0 落库（0=不限），费率留空=不覆盖（后端按 NULL 存）
+      min_amount: values.min_amount || "0.00",
+      max_amount: values.max_amount || "0.00",
+      fee_rate: values.fee_rate,
       items: items.map((it, idx) => ({ ...it, sort: idx })),
     }
     setSaving(true)
@@ -324,6 +362,22 @@ export function ChannelCodesPage() {
         header: () => "策略",
         cell: ({ getValue }) => secondaryCell(MODE_LABEL[getValue() as number] ?? "随机"),
         meta: { headClassName: "w-[70px]" },
+      },
+      {
+        accessorKey: "amount_text",
+        enableSorting: false,
+        header: () => "单笔限额",
+        cell: ({ row }) => (
+          <span className="text-sm tabular-nums">{row.original.amount_text || "不限"}</span>
+        ),
+        meta: { headClassName: "w-[120px] text-right", cellClassName: "text-right" },
+      },
+      {
+        accessorKey: "fee_rate",
+        enableSorting: false,
+        header: () => "费率",
+        cell: ({ row }) => secondaryCell(row.original.fee_rate ? `${row.original.fee_rate}%` : "按通道"),
+        meta: { headClassName: "w-[80px] text-right", cellClassName: "text-right" },
       },
       {
         accessorKey: "item_count",
@@ -533,6 +587,75 @@ export function ChannelCodesPage() {
                         ? "按权重百分比随机：同一编码内各通道权重合计 100，权重值就是命中概率；权重 0 的通道不参与分流"
                         : "每单在编码内的可用通道中等概率随机选一条"}
                     </FieldDescription>
+                  </Field>
+                )}
+              />
+              <Controller
+                name="min_amount"
+                control={codeForm.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid} className="col-span-1">
+                    <FieldLabel htmlFor="code-min-amount">{"金额下限"}</FieldLabel>
+                    <Input
+                      {...field}
+                      id="code-min-amount"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className="text-right tabular-nums"
+                      placeholder={"0.00"}
+                      aria-invalid={fieldState.invalid || undefined}
+                    />
+                    {fieldState.error
+                      ? <FieldError>{fieldState.error.message}</FieldError>
+                      : <FieldDescription className="text-xs">{"0 = 不限"}</FieldDescription>}
+                  </Field>
+                )}
+              />
+              <Controller
+                name="max_amount"
+                control={codeForm.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid} className="col-span-1">
+                    <FieldLabel htmlFor="code-max-amount">{"金额上限"}</FieldLabel>
+                    <Input
+                      {...field}
+                      id="code-max-amount"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className="text-right tabular-nums"
+                      placeholder={"0.00"}
+                      aria-invalid={fieldState.invalid || undefined}
+                    />
+                    {fieldState.error
+                      ? <FieldError>{fieldState.error.message}</FieldError>
+                      : <FieldDescription className="text-xs">{"0 = 不限"}</FieldDescription>}
+                  </Field>
+                )}
+              />
+              <Controller
+                name="fee_rate"
+                control={codeForm.control}
+                render={({ field, fieldState }) => (
+                  <Field data-invalid={fieldState.invalid} className="col-span-2">
+                    <FieldLabel htmlFor="code-fee-rate">{"费率（%）"}</FieldLabel>
+                    <Input
+                      {...field}
+                      id="code-fee-rate"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="0.01"
+                      className="text-right tabular-nums"
+                      placeholder={"留空 = 按通道费率"}
+                      aria-invalid={fieldState.invalid || undefined}
+                    />
+                    {fieldState.error
+                      ? <FieldError>{fieldState.error.message}</FieldError>
+                      : <FieldDescription className="text-xs">
+                        {"该编码下商户的结算费率；留空则按商户专属费率 / 通道费率"}
+                      </FieldDescription>}
                   </Field>
                 )}
               />

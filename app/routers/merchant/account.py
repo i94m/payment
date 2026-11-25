@@ -1,4 +1,5 @@
 """商户端账户/安全：资料、改密、API 密钥（MD5 与 RSA2 二选一，由 RSA2 开关切换）。"""
+from decimal import Decimal
 from typing import Optional
 
 from cryptography.hazmat.primitives import serialization
@@ -13,6 +14,8 @@ from app.lib.sign import derive_public_key, get_sign_content, make_md5_sign, pem
 from app.models import Channel, ChannelCode, ChannelCodeItem, Merchant, PaymentType
 from app.responses import err, suc
 from app.services.apikey import ensure_api_secret, set_api_secret
+from app.services.balance import dmoney
+from app.services.channel import code_amount_text
 from app.services.settings import get_all_settings
 
 router = APIRouter()
@@ -86,11 +89,14 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
 
 @router.get("/channel-codes")
 async def list_channel_codes(auth: MerchantUser, session: SessionDep):
-    """商户端「支付通道」卡片：所有启用中的通道编码 + 每条编码可用的支付方式。
+    """商户端「支付通道」卡片：所有启用中的通道编码 + 每条编码的限额/费率/支付方式。
 
     - 只列 `status=1` 的编码：停用编码下单直接报错，展示出来只会误导接入方
     - 支付方式取自该编码内**启用中**的通道：停用通道不参与分流，列出来等于虚假可用
     - 编码没有任何可用通道时 `pay_types` 为空数组，前端按「暂不可用」提示
+    - 金额区间 = 编码级限额（`amount_text`，0 显示为「不限」），与下单校验同一口径
+    - 费率 = **该商户实际生效的费率**，优先级：我的专属费率 > 编码费率 > 编码内通道费率；
+      通道费率不一致时给区间（min~max），不假装只有一个值
     """
     codes = (await session.exec(
         select(ChannelCode)
@@ -99,13 +105,13 @@ async def list_channel_codes(auth: MerchantUser, session: SessionDep):
     )).all()
     if not codes:
         return suc([])
-    # 编码 → 启用通道的支付方式 id 集合（去重后再按支付方式的展示顺序输出）
+    # 编码 → 启用通道的支付方式 id 与通道费率（去重后再按支付方式的展示顺序输出）
     rows = (await session.exec(
-        select(ChannelCodeItem.code_id, Channel.payment_type_id)
+        select(ChannelCodeItem.code_id, Channel.payment_type_id, Channel.merchant_rate)
         .join(Channel, col(ChannelCodeItem.channel_id) == col(Channel.id))
         .where(Channel.status == 1)
     )).all()
-    type_ids = {type_id for _, type_id in rows if type_id}
+    type_ids = {type_id for _, type_id, _ in rows if type_id}
     types = []
     if type_ids:
         types = (await session.exec(
@@ -114,18 +120,44 @@ async def list_channel_codes(auth: MerchantUser, session: SessionDep):
             .order_by(col(PaymentType.sort), col(PaymentType.id))
         )).all()
     code_types: dict[int, set[int]] = {}
-    for code_id, type_id in rows:
+    code_rates: dict[int, set[Decimal]] = {}
+    for code_id, type_id, channel_rate in rows:
         code_types.setdefault(code_id, set()).add(type_id)
-    return suc([{
-        "code": c.code,
-        "name": c.name or "",
-        "remark": c.remark or "",
-        "is_test": bool(c.is_test),
-        "pay_types": [
-            {"code": t.code, "name": t.name, "icon": t.icon or ""}
-            for t in types if t.id in code_types.get(c.id, set())
-        ],
-    } for c in codes])
+        code_rates.setdefault(code_id, set()).add(dmoney(channel_rate))
+
+    def _fee(c: ChannelCode) -> tuple[Decimal | None, Decimal | None, str]:
+        """生效费率与来源：我的专属 > 编码 > 编码内通道（不一致时取区间）。"""
+        if auth.user.rate is not None:
+            rate = dmoney(auth.user.rate)
+            return rate, rate, "merchant"
+        if c.fee_rate is not None:
+            rate = dmoney(c.fee_rate)
+            return rate, rate, "code"
+        rates = code_rates.get(c.id) or set()
+        if rates:
+            return min(rates), max(rates), "channel"
+        return None, None, "none"
+
+    data = []
+    for c in codes:
+        lo, hi, source = _fee(c)
+        data.append({
+            "code": c.code,
+            "name": c.name or "",
+            "remark": c.remark or "",
+            "is_test": bool(c.is_test),
+            "min_amount": str(c.min_amount),
+            "max_amount": str(c.max_amount),
+            "amount_text": code_amount_text(c),
+            "fee_rate_min": str(lo) if lo is not None else "",
+            "fee_rate_max": str(hi) if hi is not None else "",
+            "fee_rate_source": source,
+            "pay_types": [
+                {"code": t.code, "name": t.name, "icon": t.icon or ""}
+                for t in types if t.id in code_types.get(c.id, set())
+            ],
+        })
+    return suc(data)
 
 
 @router.post("/apikey/secret")

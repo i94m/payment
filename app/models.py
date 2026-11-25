@@ -342,10 +342,15 @@ class ChannelCode(SQLModel, table=True):
     - `code` 是给下游的对外契约：全局唯一命名空间，落库统一小写、下游大小写不敏感
     - `mode` 是**编码级**策略（0=随机 2=权重），与通道自身的 mode 互不影响：
       同一个通道被多个编码引用时，各编码按自己的策略分流。
-      轮询（旧 mode=1）已下线：后台不再提供、保存时拒绝，存量值按随机处理
+      轮询（旧 mode=1）已下线，存量值由迁移 0019 改为随机
     - `status=0` 是编码总闸：停用后该编码下单直接报错，不回落默认路由
     - `is_test=1` 标记「测试编码」：商户端对接信息只展示这条（多条时取 id 最小的一条）。
       标记挂在业务编码而不是上游通道上 —— 卡片展示的是编码，标记要跟着被展示的那条走
+    - `min_amount` / `max_amount` 是**编码级单笔金额区间**（两端含，0=不限，两边都 0=不限制）：
+      超出范围直接拒绝建单/拉起，不进入通道选择 —— 编码是下游的产品边界，不能靠通道级
+      区间「恰好过滤掉」来兜底（那样只会报「编码当前不可用」）
+    - `fee_rate` 是**编码级商户费率**（%，空=不覆盖）：商户专属费率 > 编码费率 > 通道费率，
+      与订单记账使用的费率同一条链路，商户端展示的就是实际生效值
     """
     __tablename__ = "channel_codes"
     __table_args__ = (
@@ -360,6 +365,11 @@ class ChannelCode(SQLModel, table=True):
     mode: int = Field(default=0, sa_column=Column(SmallInteger, server_default=text("0"), nullable=False))  # 0=随机 2=权重（轮询已下线）
     status: int = Field(default=1, sa_column=Column(SmallInteger, server_default=text("1"), nullable=False))  # 1=启用 0=停用
     is_test: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))  # 1=测试编码
+    # 编码级单笔金额区间（两端含，0=不限；min=0 且 max=0 = 完全不限制）
+    min_amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
+    max_amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
+    # 编码级商户费率（%），NULL=不覆盖（按商户专属 / 通道费率）
+    fee_rate: Optional[Decimal] = Field(default=None, sa_column=Column(Numeric(5, 2)))
     created_at: Optional[datetime] = _ts_created()
     updated_at: Optional[datetime] = _ts_updated()
 
@@ -369,7 +379,7 @@ class ChannelCode(SQLModel, table=True):
 class ChannelCodeItem(SQLModel, table=True):
     """编码 → 通道绑定（成员）。
 
-    「勾选即启用」：成员表本身就是候选集，要摘掉某条通道就取消勾选（删绑定行）；
+    「勾选即启用」：成员表本身就是候选集，要摘掉某条通道就取消勾选（删绑定行）。
     `sort` 是成员顺序（权重模式按它从上往下累减抽签，与 epay「通道:权重」串的顺序一致）；
     `last_used_at` 是历史轮询游标，轮询策略下线后保留字段但当前不读写。
     """
