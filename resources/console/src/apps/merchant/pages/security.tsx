@@ -17,46 +17,14 @@ import { IconCheck, IconCopy, IconKey } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard"
 
-/** 对接信息一行：标签 + 值 + 可选操作 + 复制按钮。
- *  复制目标可单独传入（如 RSA2 下密钥行不可复制时传空串），默认复制展示值。 */
-function IntegrationRow({
-  label, value, copyValue, children,
-}: {
-  label: string
-  value: string
-  copyValue?: string
-  children?: React.ReactNode
-}) {
-  const { copyToClipboard, isCopied } = useCopyToClipboard()
-  const target = copyValue ?? value
-  const onCopy = async () => {
-    if (!target) return
-    if (!(await copyToClipboard(target))) {
-      toast.error("复制失败，请手动选中文本复制")
-    }
-  }
+/** 对接信息一行：标签 + 值。 */
+function IntegrationRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start gap-2 py-0.5">
       <span className="w-14 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
       <span className="min-w-0 flex-1 break-all font-mono text-[13px]">
         {value || "-"}
       </span>
-      <div className="flex shrink-0 items-center">
-        {children}
-        <Button
-          size="icon"
-          variant="ghost"
-          className="size-7"
-          aria-label={`复制${label}`}
-          title={`复制${label}`}
-          disabled={!target}
-          onClick={onCopy}
-        >
-          {isCopied
-            ? <IconCheck className="size-4 text-green-500" />
-            : <IconCopy className="size-4" />}
-        </Button>
-      </div>
     </div>
   )
 }
@@ -183,7 +151,6 @@ export function SecurityPage() {
                     </CardDescription>
                     <CardAction>
                       <Button
-                        size="sm"
                         onClick={doCopyIntegration}
                         disabled={!integrationText}
                       >
@@ -194,32 +161,22 @@ export function SecurityPage() {
                       </Button>
                     </CardAction>
                   </CardHeader>
-                  <CardContent className="space-y-3">
-                    {/* 商户对接参数模块：与后台数据统计页「订单成功率」同为卡片内的浅色分区，
-                        标题只出现在模块里，一键复制的纯文本仍带「【商户对接参数】」 */}
-                    <div className="rounded-lg border bg-muted/30 p-3">
+                  <CardContent className="space-y-4">
+                    {/* 商户对接参数：标题行 + 参数行，不再套卡片/浅色分区 */}
+                    <div>
                       <div className="text-sm font-semibold text-foreground">{"商户对接参数"}</div>
-                      <div className="mt-2 space-y-0">
-                        {integrationFields.map(([label, value]) => {
-                          // RSA2 下没有可交付的共享密钥，这一行不可单独复制
-                          const cannotCopy = label === "API密钥" && rsa2
-                          return (
-                            <IntegrationRow
-                              key={label}
-                              label={label}
-                              value={value}
-                              copyValue={cannotCopy ? "" : undefined}
-                            />
-                          )
-                        })}
+                      <div className="mt-2 space-y-1.5">
+                        {integrationFields.map(([label, value]) => (
+                          <IntegrationRow key={label} label={label} value={value} />
+                        ))}
                       </div>
                     </div>
 
-                    {/* 支付通道同为其下的子模块：所有启用中的通道编码，下单时作为 channel_code 传入 */}
-                    <div className="rounded-lg border bg-muted/30 p-3">
+                    {/* 支付通道：同为「对接信息」下的无卡片分区，下单时作为 channel_code 传入 */}
+                    <div>
                       <div className="text-sm font-semibold text-foreground">{"支付通道"}</div>
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        {"下单时把编码作为 channel_code 传入即可限定路由；单笔金额超出「单笔限额」会被直接拒绝，费率按该商户实际生效值展示。"}
+                        {"下单时传 channel_code 即可限定路由；超出单笔限额会被拒绝，费率按实际生效值展示。"}
                       </p>
                       <div className="mt-2">
                         {channelsError ? (
@@ -234,14 +191,14 @@ export function SecurityPage() {
                             {"当前没有已开启的通道编码，请联系运营开通。"}
                           </p>
                         ) : (
-                          <Table>
+                          <Table className="text-xs [&_th]:h-8 [&_th]:px-2 [&_td]:px-2 [&_td]:py-1.5">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>{"通道编码"}</TableHead>
+                                <TableHead className="w-28">{"通道编码"}</TableHead>
                                 <TableHead>{"名称"}</TableHead>
-                                <TableHead className="text-right">{"单笔限额"}</TableHead>
-                                <TableHead className="text-right">{"费率"}</TableHead>
-                                <TableHead>{"支付方式"}</TableHead>
+                                <TableHead className="w-40">{"支付方式"}</TableHead>
+                                <TableHead className="w-28 text-right">{"单笔限额"}</TableHead>
+                                <TableHead className="w-28 text-right">{"费率"}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -249,7 +206,7 @@ export function SecurityPage() {
                                 <TableRow key={c.code}>
                                   <TableCell>
                                     <div className="flex items-center gap-1">
-                                      <span className="font-mono text-sm font-medium">{c.code}</span>
+                                      <span className="font-mono font-medium">{c.code}</span>
                                       <CopyButton
                                         value={c.code}
                                         aria-label={`复制编码 ${c.code}`}
@@ -259,25 +216,14 @@ export function SecurityPage() {
                                     </div>
                                   </TableCell>
                                   <TableCell>
-                                    <span className="text-sm">{c.name || "—"}</span>
+                                    <span>{c.name || "—"}</span>
                                     {c.remark && (
                                       <span className="mt-0.5 block text-xs text-muted-foreground">{c.remark}</span>
                                     )}
                                   </TableCell>
-                                  <TableCell className="text-right">
-                                    <span className="text-sm tabular-nums">{amountLimitText(c)}</span>
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    <span
-                                      className="text-sm tabular-nums"
-                                      title={FEE_SOURCE_LABEL[c.fee_rate_source] || undefined}
-                                    >
-                                      {feeRateText(c) || "—"}
-                                    </span>
-                                  </TableCell>
-                                  <TableCell>
+                                  <TableCell className="whitespace-normal">
                                     {c.pay_types.length > 0 ? (
-                                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
                                         {c.pay_types.map((t) => (
                                           <PayTypeLabel key={t.code} code={t.code} icon={t.icon} name={t.name} />
                                         ))}
@@ -285,6 +231,17 @@ export function SecurityPage() {
                                     ) : (
                                       <span className="text-xs text-muted-foreground">{"暂不可用"}</span>
                                     )}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <span className="tabular-nums">{amountLimitText(c)}</span>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <span
+                                      className="tabular-nums"
+                                      title={FEE_SOURCE_LABEL[c.fee_rate_source] || undefined}
+                                    >
+                                      {feeRateText(c) || "—"}
+                                    </span>
                                   </TableCell>
                                 </TableRow>
                               ))}
