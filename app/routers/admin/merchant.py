@@ -264,8 +264,8 @@ async def merchant_detail(merchant_id: int, session: SessionDep, request: Reques
     - `api_secret`：MD5 签名密钥**明文**（需求方明确后台不脱敏，运营要整段发给客户）。
       列表接口 `_dump_merchant` 仍只给掩码，避免一次拉全平台密钥。每返回一次明文都
       落一条审计日志（谁 / 何时 / 哪个商户 / 来源 IP），见 `_audit_secret_view`。
-    - `default_channel`：平台默认通道（全平台唯一，启用中）的 `{name, payment_type, codes}`，
-      没有则为 null；卡片据此决定「默认通道」整行是否展示（展示的是 `codes` 里的编码）。
+    - `default_channel`：平台默认通道编码（全平台唯一，启用中）的 `{code, name}`，
+      没有则为 null；卡片据此决定「默认通道」整行是否展示（展示的是 `code`）。
       口径与商户端 `/merchant-api/account/apikey` 完全一致。
     """
     m = await _get_merchant_or_404(session, merchant_id)

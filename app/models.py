@@ -328,9 +328,6 @@ class Channel(SQLModel, table=True):
     day_limit_count: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))  # 当日限笔 0=不限
     config: Optional[str] = Field(default=None, sa_column=Column(Text))  # Fernet 加密 JSON
     sort: int = Field(default=0, sa_column=Column(Integer, server_default=text("0"), nullable=False))
-    # 默认通道：全平台只允许一条（设置时同事务清掉其它通道的标记），
-    # 商户端「对接信息」展示这条通道的名称（只做展示，不参与分流）
-    is_default: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     debug_log: int = Field(default=0, sa_column=Column(SmallInteger, server_default=text("0"), nullable=False))  # 调试日志 0=关 1=开
     usetime: int = Field(default=0, sa_column=Column(BigInteger, server_default=text("0"), nullable=False))  # 顺序轮询游标
     created_at: Optional[datetime] = _ts_created()
@@ -366,6 +363,9 @@ class ChannelCode(SQLModel, table=True):
     # 编码级单笔金额区间（两端含，0=不限；min=0 且 max=0 = 完全不限制）
     min_amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
     max_amount: Decimal = Field(default=Decimal("0.00"), sa_column=Column(Numeric(12, 2), server_default=text("0.00"), nullable=False))
+    # 默认编码：全平台只允许一条（设置时同事务清掉其它编码的标记），
+    # 商户端「对接信息」展示这条编码（下游直接当 channel_code 传），只做展示、不参与分流
+    is_default: bool = Field(default=False, sa_column=Column(Boolean, server_default=text("0"), nullable=False))
     created_at: Optional[datetime] = _ts_created()
     updated_at: Optional[datetime] = _ts_updated()
 

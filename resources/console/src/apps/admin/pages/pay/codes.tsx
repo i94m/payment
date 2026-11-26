@@ -36,7 +36,7 @@ import {
 } from "@/components/data-list/"
 import type { ActionItem } from "@/components/data-list/"
 import { PayTypeLabel } from "@/components/pay-icon"
-import { IconPlus, IconEdit, IconTrash, IconList, IconRefresh, IconSearch } from "@tabler/icons-react"
+import { IconPlus, IconEdit, IconTrash, IconList, IconRefresh, IconSearch, IconCircleCheckFilled } from "@tabler/icons-react"
 import { toast } from "sonner"
 import { getErrorMessage } from "@/lib/error"
 
@@ -192,8 +192,22 @@ export function ChannelCodesPage() {
     const next = item.status === 1 ? 0 : 1
     try {
       await payApi.setChannelCodeStatus(item.id, next)
-      updateRow(item.id, { status: next })
+      // 停用默认编码时后端会一并清掉默认标记（商户端不能展示不可用编码）
+      updateRow(item.id, next === 1 ? { status: next } : { status: next, is_default: false })
       toast.success(next === 1 ? "编码已启用" : "编码已停用")
+    } catch (err) {
+      toast.error(getErrorMessage(err, "操作失败"))
+    }
+  }
+
+  // 设为默认通道编码：全平台唯一，后端同事务清掉其它编码的标记。
+  // 不能复用全量 PUT：那会把成员绑定与限额一起重写，这里走专用接口。
+  const setDefault = async (item: ChannelCodeData) => {
+    try {
+      await payApi.setChannelCodeDefault(item.id, true)
+      // 标记可能从另一条编码移过来，整表刷新最稳（列表页数据量小）
+      refresh()
+      toast.success(`已将「${item.code}」设为默认通道`)
     } catch (err) {
       toast.error(getErrorMessage(err, "操作失败"))
     }
@@ -398,6 +412,35 @@ export function ChannelCodesPage() {
         header: () => "昨日收款",
         cell: ({ row }) => secondaryCell(row.original.yesterday_amount ?? "-"),
         meta: { headClassName: "w-[100px] text-right", cellClassName: "text-right" },
+      },
+      {
+        accessorKey: "is_default",
+        enableSorting: false,
+        header: () => "默认",
+        // 默认编码只做展示（商户端对接信息用），不参与分流
+        cell: ({ row }) => {
+          if (row.original.is_default) {
+            return (
+              <span className="inline-flex text-emerald-600 dark:text-emerald-400" title={"平台默认通道编码"}>
+                <IconCircleCheckFilled className="size-4" />
+              </span>
+            )
+          }
+          if (row.original.status !== 1) {
+            return <span className="text-xs text-muted-foreground">{"—"}</span>
+          }
+          return (
+            <Button
+              variant="ghost"
+              className="h-7 px-2 text-xs text-muted-foreground"
+              title={"设为平台默认通道编码（商户端对接信息展示）"}
+              onClick={() => setDefault(row.original)}
+            >
+              {"设为默认"}
+            </Button>
+          )
+        },
+        meta: { headClassName: "w-[96px] text-center", cellClassName: "text-center" },
       },
       {
         accessorKey: "status",

@@ -88,8 +88,6 @@ export interface ChannelData {
   day_limit: string
   day_limit_count: number
   sort: number
-  /** 默认通道：全平台唯一，商户端对接信息展示它的名称（不参与分流） */
-  is_default: boolean
   /** 调试日志开关：0=关 1=开 */
   debug_log: number
   config: Record<string, string> // 脱敏后的凭证
@@ -158,8 +156,6 @@ export interface ChannelOptionData {
   plugin_name: string
   payment_type_id: number
   status: number
-  /** 默认通道（全平台唯一） */
-  is_default: boolean
   /** 通道商户费率（%），编码模块展示用 */
   merchant_rate: string
 }
@@ -192,6 +188,8 @@ export interface ChannelCodeData {
   max_amount: string
   /** 限额展示文案：`1.00 ~ 9.00` / `≥ 5.00` / `≤ 100.00` / `不限` */
   amount_text: string
+  /** 默认编码：全平台唯一，商户端对接信息展示它的 code（不参与分流） */
+  is_default: boolean
   item_count: number
   members: ChannelCodeItemData[]
   today_count?: number
@@ -211,6 +209,7 @@ export interface ChannelCodeDetailData {
   min_amount: string
   max_amount: string
   amount_text: string
+  is_default: boolean
   items: ChannelCodeItemData[]
 }
 
@@ -279,9 +278,9 @@ export const payApi = {
   setChannelDebugLog: (id: number, enabled: boolean) =>
     apiClient.put(`/pay/channels/${id}/debug-log`, { enabled }),
 
-  /** 设为默认通道（全平台唯一）：只改 is_default，不触碰费率/限额/凭证 */
-  setChannelDefault: (id: number, enabled = true) =>
-    apiClient.put(`/pay/channels/${id}/default`, { enabled }) as Promise<{ id: number; is_default: boolean }>,
+  /** 设为默认通道编码（全平台唯一）：只改 is_default，不触碰成员/限额/启用状态 */
+  setChannelCodeDefault: (id: number, enabled = true) =>
+    apiClient.put(`/pay/channel-codes/${id}/default`, { enabled }) as Promise<{ id: number; is_default: boolean }>,
 
   // 全部通道今日/昨日收款统计（键为通道 id 字符串）
   channelStats: () => apiClient.get("/pay/channels/stats") as Promise<Record<string, ChannelStats>>,

@@ -123,16 +123,11 @@ export function SecurityPage() {
   const { copyToClipboard: copyIntegration, isCopied: integrationCopied } = useCopyToClipboard()
   // 域名一律取当前访问页面的 origin：客户从哪个域名登录，拿到的就是哪个域名
   const site = window.location.origin.replace(/\/+$/, "")
-  // 默认通道由后台指定（全平台唯一），只做展示：让接入方知道平台当前主用哪条。
-  // 展示的是**通道编码**（下游下单直接当 channel_code 传），不是通道名称；
-  // 一条通道可以被多个编码引用，按「、」拼起来；没有绑定编码时回退到通道名称。
-  // 没有默认通道时这一行整行不展示。
+  // 默认通道由后台指定（全平台唯一），只做展示：让接入方知道平台当前主用哪条编码。
+  // 展示的是**通道编码**本身（下游下单直接当 channel_code 传），不是通道名称。
+  // 没有默认编码时这一行整行不展示。
   const defaultChannel = apiKey?.default_channel
-  const channelValue = defaultChannel
-    ? (defaultChannel.codes.length > 0
-      ? defaultChannel.codes.join("、")
-      : defaultChannel.name)
-    : ""
+  const channelValue = defaultChannel?.code ?? ""
   // 商户端密钥始终明文展示，逐项复制与整段复制都直接用原始值，不做任何掩码
   // RSA2 生效时没有可交付的共享密钥（私钥只在商户侧），不能把已停用的 MD5 密钥发出去
   const secretValue = rsa2 ? "RSA2 签名（私钥由接入方自行保管）" : secret

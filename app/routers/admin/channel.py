@@ -468,8 +468,6 @@ def _dump_channel(c: Channel, reveal: bool = False) -> dict:
         "day_limit": str(c.day_limit),
         "day_limit_count": c.day_limit_count,
         "sort": c.sort,
-        # 默认通道标记：全平台只有一条，商户端对接信息展示它的名称
-        "is_default": bool(c.is_default),
         "debug_log": 1 if c.debug_log else 0,
         # 默认脱敏：channel.view（只读）拿不到上游 appkey/appsecret 明文
         "config": config if reveal else _mask_config(config),
@@ -634,9 +632,6 @@ async def channel_update(channel_id: int, body: ChannelRequest, session: Session
     c.sort = body.sort
     if body.debug_log is not None:
         c.debug_log = 1 if body.debug_log == 1 else 0
-    # 停用默认通道时一并清掉默认标记：商户端不能展示一条不可用的通道
-    if c.status != 1:
-        c.is_default = False
     if body.config:
         # 凭证：提交什么存什么；哨兵值（前端未改动的密钥）沿用库内原值
         c.config = encrypt_config(_merge_config(body.config, decrypt_config(c.config)))
@@ -647,40 +642,6 @@ async def channel_update(channel_id: int, body: ChannelRequest, session: Session
 
 class DebugLogRequest(BaseModel):
     enabled: bool
-
-
-@router.put("/channels/{channel_id}/default",
-            dependencies=[Depends(PermissionChecker("channel.update"))])
-async def channel_set_default(channel_id: int, session: SessionDep,
-                              body: DebugLogRequest | None = None):
-    """设为默认通道（全平台唯一）。
-
-    - `enabled` 缺省为 true：把该通道设为默认，同事务清掉其它通道的标记
-    - `enabled=false`：取消（仅对当前默认通道生效，避免误清别人的标记）
-    - 只有启用中的通道能设为默认：商户端对接信息展示的是可用通道
-
-    不能复用全量 PUT /channels/{id}：那个接口会重写费率/限额/凭证，
-    从列表点一下「设为默认」不能走它（同 debug-log 的处理）。
-    """
-    c = await session.get(Channel, channel_id)
-    if not c:
-        return err(404, "通道不存在")
-    enable = True if body is None else bool(body.enabled)
-    if enable:
-        if c.status != 1:
-            return err(-1, "请先启用该通道再设为默认")
-        others = (await session.exec(
-            select(Channel).where(col(Channel.id) != channel_id, col(Channel.is_default).is_(True))
-        )).all()
-        for other in others:
-            other.is_default = False
-            session.add(other)
-        c.is_default = True
-    elif c.is_default:
-        c.is_default = False
-    session.add(c)
-    await session.commit()
-    return suc({"id": c.id, "is_default": bool(c.is_default)})
 
 
 @router.put("/channels/{channel_id}/debug-log",
@@ -892,7 +853,6 @@ async def channel_options(session: SessionDep):
         "plugin_name": c.plugin_name,
         "payment_type_id": c.payment_type_id,
         "status": c.status,
-        "is_default": bool(c.is_default),
         "merchant_rate": str(c.merchant_rate),
     } for c in rows])
 
@@ -942,6 +902,8 @@ async def channel_code_list(session: SessionDep, page: int = Query(1, ge=1),
             "min_amount": str(c.min_amount),
             "max_amount": str(c.max_amount),
             "amount_text": code_amount_text(c),
+            # 默认编码标记：全平台只有一条，商户端对接信息展示它的 code
+            "is_default": bool(c.is_default),
             "item_count": len(members),
             "members": [
                 _dump_code_item(it, channel_map.get(it.channel_id)) for it in members
@@ -979,6 +941,7 @@ async def channel_code_detail(code_id: int, session: SessionDep):
         "min_amount": str(c.min_amount),
         "max_amount": str(c.max_amount),
         "amount_text": code_amount_text(c),
+        "is_default": bool(c.is_default),
         "items": [_dump_code_item(it, channels.get(it.channel_id)) for it in items],
     })
 
@@ -1040,9 +1003,52 @@ async def channel_code_set_status(code_id: int, body: ChannelCodeStatusRequest,
     if not c:
         return err(404, "通道编码不存在")
     c.status = 1 if body.status == 1 else 0
+    # 停用默认编码时一并清掉默认标记：商户端不能展示一条不可用的编码
+    if c.status != 1:
+        c.is_default = False
     session.add(c)
     await session.commit()
     return suc({"id": c.id, "status": c.status})
+
+
+class CodeDefaultRequest(BaseModel):
+    enabled: bool = True
+
+
+@router.put("/channel-codes/{code_id}/default",
+            dependencies=[Depends(PermissionChecker("channel_code.update"))])
+async def channel_code_set_default(code_id: int, session: SessionDep,
+                                   body: CodeDefaultRequest | None = None):
+    """设为默认通道编码（全平台唯一）。
+
+    - `enabled` 缺省为 true：把该编码设为默认，同事务清掉其它编码的标记
+    - `enabled=false`：取消（仅对当前默认编码生效，避免误清别人的标记）
+    - 只有启用中的编码能设为默认：商户端对接信息展示的是下游能直接下单的编码
+
+    不能复用全量 PUT /channel-codes/{id}：那个接口会重写成员绑定与限额，
+    从列表点一下「设为默认」不能走它（同通道 debug-log 的处理）。
+    """
+    c = await session.get(ChannelCode, code_id)
+    if not c:
+        return err(404, "通道编码不存在")
+    enable = True if body is None else bool(body.enabled)
+    if enable:
+        if c.status != 1:
+            return err(-1, "请先启用该编码再设为默认")
+        others = (await session.exec(
+            select(ChannelCode).where(
+                col(ChannelCode.id) != code_id, col(ChannelCode.is_default).is_(True)
+            )
+        )).all()
+        for other in others:
+            other.is_default = False
+            session.add(other)
+        c.is_default = True
+    elif c.is_default:
+        c.is_default = False
+    session.add(c)
+    await session.commit()
+    return suc({"id": c.id, "is_default": bool(c.is_default)})
 
 
 @router.delete("/channel-codes/{code_id}",

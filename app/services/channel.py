@@ -297,38 +297,22 @@ def code_amount_error(code: ChannelCode) -> str:
 
 
 async def default_channel_payload(session: AsyncSession) -> dict[str, Any] | None:
-    """平台默认通道的对接信息口径（`channels.is_default`，全平台唯一，只做展示）。
+    """平台默认通道编码的对接信息口径（`channel_codes.is_default`，全平台唯一，只做展示）。
 
     商户端 `/merchant-api/account/apikey` 与后台商户详情共用这一处，保证两边逐字一致。
 
-    - 停用的通道不算（后台停用时会清标记，这里再判一次兜底），没有则返回 None
-    - `codes` = 绑定该通道的**启用中**编码，按编码升序：对接信息展示的是下游能直接
-      当 `channel_code` 传进去的编码，不是通道名称（通道可以被多个编码引用，
-      所以给的是列表；前端用「、」拼起来展示，为空时回退到通道名称）
+    - 展示的是**通道编码**本身（下游下单直接当 `channel_code` 传），不是通道名称
+    - 停用的编码不算（后台停用时会清标记，这里再判一次兜底），没有则返回 None
     """
-    default = (await session.exec(
-        select(Channel)
-        .where(col(Channel.is_default).is_(True), col(Channel.status) == 1)
-        .order_by(col(Channel.id))
+    code = (await session.exec(
+        select(ChannelCode)
+        .where(col(ChannelCode.is_default).is_(True), col(ChannelCode.status) == 1)
+        .order_by(col(ChannelCode.id))
         .limit(1)
     )).first()
-    if not default:
+    if not code:
         return None
-    pt = await session.get(PaymentType, default.payment_type_id)
-    codes = (await session.exec(
-        select(ChannelCode.code)
-        .join(ChannelCodeItem, col(ChannelCodeItem.code_id) == col(ChannelCode.id))
-        .where(
-            ChannelCodeItem.channel_id == default.id,
-            col(ChannelCode.status) == 1,
-        )
-        .order_by(col(ChannelCode.code))
-    )).all()
-    return {
-        "name": default.name,
-        "payment_type": pt.name if pt else "",
-        "codes": list(codes),
-    }
+    return {"code": code.code, "name": code.name or code.code}
 
 
 def effective_merchant_rate(merchant_rate: Decimal | None) -> Decimal | None:

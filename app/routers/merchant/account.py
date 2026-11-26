@@ -54,8 +54,8 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
     - rsa2_enable / public_key：RSA2 是否开启及商户公钥（开启后 MD5 失效）
     - platform_public_key：平台公钥（验 RSA2 通知签名用）
     - 对接信息（面板「对接信息」一键复制用）：username /
-      default_channel（平台默认通道的 `{name, payment_type, codes}`；没有则为 null，
-      `codes` 是绑定该通道的启用编码，展示给接入方当 `channel_code` 用）
+      default_channel（平台默认通道编码的 `{code, name}`；没有则为 null，
+      `code` 即下游直接当 `channel_code` 传的编码）
     - 下单/查询/文档地址的域名由前端取 `window.location.origin` 拼接，
       后端不再下发 site_url（站点地址配置不等于用户实际访问的域名）
     """
@@ -66,7 +66,7 @@ async def get_apikey(auth: MerchantUser, session: SessionDep, cache: CacheDep):
         platform_public_key = derive_public_key(str(settings.get("platform_rsa_private_key") or ""))
     except ValueError:
         platform_public_key = ""
-    # 默认通道由后台「支付通道」列表设置（全平台唯一），只做展示；口径见 services.channel
+    # 默认编码由后台「通道编码」列表设置（全平台唯一），只做展示；口径见 services.channel
     default_channel = await default_channel_payload(session)
     return suc({
         "pid": m.pid,

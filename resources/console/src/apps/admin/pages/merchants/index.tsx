@@ -157,7 +157,7 @@ function IntegrationRow({ label, value, copyValue }: {
  * 是同一份文本。区别只有一处——后台**直接展示明文密钥**（需求方明确要求不脱敏），
  * 明文来自详情接口 `GET /admin-api/merchant/{id}`，列表接口不下发。
  *
- * 默认通道由后台「支付通道」列表指定（全平台唯一），没有就整行不展示。
+ * 默认通道由后台「通道编码」列表指定（全平台唯一），没有就整行不展示。
  * 地址取当前访问页面的 origin。行高比标准卡片紧凑（一屏看全所有字段）。
  */
 function MerchantIntegrationCard({ data, canReset, onReset }: {
@@ -172,13 +172,9 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
     ? "RSA2 签名（私钥由接入方自行保管）"
     : (data.api_secret || "")
   const defaultChannel = data.default_channel
-  // 展示的是**通道编码**（下游直接当 channel_code 传），不是通道名称：一条通道可被多个编码引用，
-  // 按「、」拼起来；没有绑定编码时回退到通道名称。口径与商户端 security.tsx 一致。
-  const channelValue = defaultChannel
-    ? (defaultChannel.codes.length > 0
-      ? defaultChannel.codes.join("、")
-      : defaultChannel.name)
-    : ""
+  // 展示的是**通道编码**本身（下游直接当 channel_code 传），不是通道名称。
+  // 口径与商户端 security.tsx 一致。
+  const channelValue = defaultChannel?.code ?? ""
   const fields: Array<[string, string]> = [
     ["商户名称", data.username],
     ["商户号", String(data.pid)],

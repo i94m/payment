@@ -1,9 +1,9 @@
 """商户面板「对接信息」：apikey 接口带出复制用的真实配置。
 
 面板把这段数据拼成「字段：值」纯文本给接入方，所以接口至少要保证：
-名称/商户号真实、默认通道取后台指定且启用中的那条 `channels.is_default`
-（全平台唯一，没有就是 null，不回退到随便一条通道）、不再下发站点地址
-（下单/查询/文档域名由前端取 window.location.origin）。
+名称/商户号真实、默认通道取后台指定且启用中的那条 **通道编码**
+（`channel_codes.is_default`，全平台唯一，没有就是 null，不回退到随便一条编码）、
+不再下发站点地址（下单/查询/文档域名由前端取 window.location.origin）。
 """
 import pytest
 from sqlmodel import select
@@ -30,24 +30,28 @@ async def _admin_headers(session):
     return {"Authorization": f"Bearer {tk.access_token}"}
 
 
-def _mk_channel(pt_id: int, name: str, status: int = 1, is_default: bool = False) -> Channel:
+def _mk_channel(pt_id: int, name: str, status: int = 1) -> Channel:
     return Channel(name=name, plugin_name="epay", payment_type_id=pt_id,
-                   status=status, mode=0, is_default=is_default)
+                   status=status, mode=0)
+
+
+def _mk_code(code: str, name: str, status: int = 1, is_default: bool = False) -> ChannelCode:
+    return ChannelCode(code=code, name=name, status=status, mode=0, is_default=is_default)
 
 
 @pytest.mark.asyncio
 async def test_apikey_exposes_default_channel(client, seeded, session):
-    """后台指定了默认通道 → 下发通道名称 + 绑定该通道的启用编码（对接信息展示编码）。"""
+    """后台指定了默认编码 → 下发该编码本身（下游直接当 channel_code 用）。"""
     session.add(Setting(key="site_url", value="https://p.example.com/"))
     pt = (await session.exec(
         select(PaymentType).where(PaymentType.code == "alipay")
     )).first()
-    main = _mk_channel(pt.id, "主用通道", is_default=True)
+    main = _mk_channel(pt.id, "主用通道")
     session.add_all([_mk_channel(pt.id, "普通通道"), main])
     await session.commit()
     await session.refresh(main)
-    on = ChannelCode(code="8088", name="主用编码", status=1)
-    off = ChannelCode(code="9999", name="停用编码", status=0)
+    on = _mk_code("8088", "主用编码", is_default=True)
+    off = _mk_code("9999", "停用编码", status=0)
     session.add_all([on, off])
     await session.commit()
     await session.refresh(on)
@@ -66,9 +70,7 @@ async def test_apikey_exposes_default_channel(client, seeded, session):
 
     assert data["username"] == "testmch"
     assert data["pid"] == 1001
-    assert data["default_channel"] == {
-        "name": "主用通道", "payment_type": pt.name, "codes": ["8088"],
-    }
+    assert data["default_channel"] == {"code": "8088", "name": "主用编码"}
     # 域名交给前端 window.location.origin，后端不再下发站点地址
     assert "site_url" not in data
     assert "channel_codes" not in data
@@ -76,14 +78,15 @@ async def test_apikey_exposes_default_channel(client, seeded, session):
 
 @pytest.mark.asyncio
 async def test_apikey_default_channel_null_without_default(client, seeded, session):
-    """没有默认通道 → null（前端整行不展示），不回退到第一个启用通道。"""
+    """没有默认编码 → null（前端整行不展示），不回退到第一个启用编码。"""
     pt = (await session.exec(
         select(PaymentType).where(PaymentType.code == "alipay")
     )).first()
-    session.add_all([
-        _mk_channel(pt.id, "通道A"),
-        _mk_channel(pt.id, "通道B"),
-    ])
+    ch = _mk_channel(pt.id, "通道A")
+    session.add(ch)
+    await session.commit()
+    await session.refresh(ch)
+    session.add(_mk_code("7001", "普通编码"))
     await session.commit()
 
     resp = await client.get("/merchant-api/account/apikey",
@@ -106,11 +109,8 @@ async def test_apikey_default_channel_empty_when_none_at_all(client, seeded, ses
 
 @pytest.mark.asyncio
 async def test_apikey_skips_disabled_default_channel(client, seeded, session):
-    """标记了但被停用的通道不算（后台停用会清标记，这里兜底再判一次）。"""
-    pt = (await session.exec(
-        select(PaymentType).where(PaymentType.code == "alipay")
-    )).first()
-    session.add(_mk_channel(pt.id, "停用的默认通道", status=0, is_default=True))
+    """标记了但被停用的编码不算（后台停用会清标记，这里兜底再判一次）。"""
+    session.add(_mk_code("6001", "停用的默认编码", status=0, is_default=True))
     await session.commit()
 
     resp = await client.get("/merchant-api/account/apikey",
@@ -120,47 +120,45 @@ async def test_apikey_skips_disabled_default_channel(client, seeded, session):
 
 @pytest.mark.asyncio
 async def test_admin_set_default_channel_is_global_unique(client, session, seeded):
-    """默认通道全平台唯一：设新的会清掉旧的；停用通道不能设为默认。"""
+    """默认编码全平台唯一：设新的会清掉旧的；停用编码不能设为默认。"""
     headers = await _admin_headers(session)
-    pt = (await session.exec(
-        select(PaymentType).where(PaymentType.code == "alipay")
-    )).first()
-    a = _mk_channel(pt.id, "通道A")
-    b = _mk_channel(pt.id, "通道B")
-    off = _mk_channel(pt.id, "停用通道", status=0)
+    a = _mk_code("a001", "编码A")
+    b = _mk_code("b001", "编码B")
+    off = _mk_code("c001", "停用编码", status=0)
     session.add_all([a, b, off])
     await session.commit()
     for c in (a, b, off):
         await session.refresh(c)
 
-    r = await client.put(f"/admin-api/pay/channels/{a.id}/default",
+    r = await client.put(f"/admin-api/pay/channel-codes/{a.id}/default",
                          json={"enabled": True}, headers=headers)
     assert r.json()["code"] == 0, r.text
     assert r.json()["data"]["is_default"] is True
 
     # 换到 B：A 的标记必须被清掉（商户端只展示一条）
-    r = await client.put(f"/admin-api/pay/channels/{b.id}/default",
+    r = await client.put(f"/admin-api/pay/channel-codes/{b.id}/default",
                          json={"enabled": True}, headers=headers)
     assert r.json()["code"] == 0, r.text
-    detail_a = (await client.get(f"/admin-api/pay/channels/{a.id}", headers=headers)).json()["data"]
-    detail_b = (await client.get(f"/admin-api/pay/channels/{b.id}", headers=headers)).json()["data"]
+    detail_a = (await client.get(f"/admin-api/pay/channel-codes/{a.id}",
+                                 headers=headers)).json()["data"]
+    detail_b = (await client.get(f"/admin-api/pay/channel-codes/{b.id}",
+                                 headers=headers)).json()["data"]
     assert detail_a["is_default"] is False
     assert detail_b["is_default"] is True
 
-    # 停用通道不能设为默认
-    r = await client.put(f"/admin-api/pay/channels/{off.id}/default",
+    # 停用编码不能设为默认
+    r = await client.put(f"/admin-api/pay/channel-codes/{off.id}/default",
                          json={"enabled": True}, headers=headers)
     assert r.json()["code"] == -1
     assert "先启用" in r.json()["message"]
 
-    # 停用当前默认通道时，标记一并清掉
-    r = await client.put(f"/admin-api/pay/channels/{b.id}",
-                         json={"name": b.name, "plugin_name": "epay",
-                               "payment_type_id": pt.id, "status": 0,
-                               "merchant_rate": "0.00", "cost_rate": "0.00"},
-                         headers=headers)
+    # 停用当前默认编码时，标记一并清掉
+    r = await client.put(f"/admin-api/pay/channel-codes/{b.id}/status",
+                         json={"status": 0}, headers=headers)
     assert r.json()["code"] == 0, r.text
-    assert r.json()["data"]["is_default"] is False
+    detail_b = (await client.get(f"/admin-api/pay/channel-codes/{b.id}",
+                                 headers=headers)).json()["data"]
+    assert detail_b["is_default"] is False
 
 
 @pytest.mark.asyncio

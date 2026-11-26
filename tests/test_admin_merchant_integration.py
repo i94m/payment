@@ -3,8 +3,8 @@
 口径要求（需求方拍板）：
 - 明文 `api_secret` **只**从详情接口 `GET /admin-api/merchant/{id}` 出；
   列表 `POST /admin-api/merchant/list` 仍只有掩码，绝不批量下发。
-- 默认通道取 `channels.is_default=1` 且启用的那条（全平台唯一），没有就是 null，
-  不回退随便一条通道 —— 与商户端 `/merchant-api/account/apikey` 同一口径。
+- 默认通道取 `channel_codes.is_default=1` 且启用的那条编码（全平台唯一），没有就是 null，
+  不回退随便一条 —— 与商户端 `/merchant-api/account/apikey` 同一口径。
 - 每下发一次明文就留一条审计日志（谁 / 哪个商户 / 来源 IP）。
 """
 import logging
@@ -55,20 +55,15 @@ class _Capture(logging.Handler):
 async def test_admin_detail_returns_plaintext_and_default_channel(client, seeded, session):
     """详情带明文密钥与默认通道；列表接口不下发明文。"""
     pt = await _alipay(session)
-    main = Channel(name="主用通道", plugin_name="epay", payment_type_id=pt.id, status=1,
-                   mode=0, is_default=True)
+    main = Channel(name="主用通道", plugin_name="epay", payment_type_id=pt.id, status=1, mode=0)
     session.add_all([
         Channel(name="普通通道", plugin_name="epay", payment_type_id=pt.id, status=1, mode=0),
         main,
-        # 停用的默认通道不参与挑选
-        Channel(name="停用的主用通道", plugin_name="epay", payment_type_id=pt.id,
-                status=0, mode=0, is_default=True),
     ])
     await session.commit()
     await session.refresh(main)
-    # 对接信息展示的是「通道编码」（下游能直接当 channel_code 用），不是通道名称：
-    # 只认启用中的编码，停用编码不展示
-    on = ChannelCode(code="8088", name="主用编码", status=1)
+    # 默认标记在「通道编码」上（下游能直接当 channel_code 用），不是通道
+    on = ChannelCode(code="8088", name="主用编码", status=1, is_default=True)
     off = ChannelCode(code="9999", name="停用编码", status=0)
     session.add_all([on, off])
     await session.commit()
@@ -89,9 +84,7 @@ async def test_admin_detail_returns_plaintext_and_default_channel(client, seeded
     # 明文（不是掩码），且详情仍保留掩码字段供旧前端/其它用途
     assert data["api_secret"] and "*" not in data["api_secret"]
     assert data["api_secret_masked"].count("*") >= 4
-    assert data["default_channel"] == {
-        "name": "主用通道", "payment_type": pt.name, "codes": ["8088"],
-    }
+    assert data["default_channel"] == {"code": "8088", "name": "主用编码"}
     # 旧的测试编码字段已下线
     assert "channel_code" not in data
 
@@ -109,8 +102,7 @@ async def test_admin_detail_default_channel_null_without_marker(client, seeded, 
     pt = await _alipay(session)
     session.add_all([
         Channel(name="普通通道", plugin_name="epay", payment_type_id=pt.id, status=1, mode=0),
-        Channel(name="停用的主用通道", plugin_name="epay", payment_type_id=pt.id,
-                status=0, mode=0, is_default=True),
+        ChannelCode(code="9999", name="停用的默认编码", status=0, is_default=True),
     ])
     await session.commit()
     m = await _merchant(session)
