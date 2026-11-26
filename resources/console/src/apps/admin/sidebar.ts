@@ -27,8 +27,6 @@ export function getAdminMenu(): MenuSection[] {
     {
       label: "商户管理",
       items: [
-        // 总业绩统计：按天看收入（收款/扣量/平台利润），权限沿用 dashboard.view
-        { title: "总业绩统计", url: "/report/performance", icon: IconChartHistogram, permission: "dashboard.view" },
         { title: "商户列表", url: "/merchants", icon: IconBuildingStore, permission: "merchant.view" },
         { title: "资金明细", url: "/records", icon: IconHistory, permission: "merchant.view" },
         { title: "结算管理", url: "/settle", icon: IconReceipt, permission: "settle.view" },
@@ -38,6 +36,8 @@ export function getAdminMenu(): MenuSection[] {
           title: "公告管理", url: "/announces", icon: IconSpeakerphone,
           permission: "announce.view", feature: "announce_enable",
         },
+        // 总业绩统计：按天看收入（收款/扣量/平台利润），权限沿用 dashboard.view
+        { title: "总业绩统计", url: "/report/performance", icon: IconChartHistogram, permission: "dashboard.view" },
       ],
     },
     {
