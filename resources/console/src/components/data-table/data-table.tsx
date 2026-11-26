@@ -27,6 +27,8 @@ interface DataTableProps<TData> {
   table: Table<TData>
   loading?: boolean
   emptyMessage?: string
+  /** 按行数据追加样式（如扣量单底色），返回 undefined 表示不额外加类 */
+  rowClassName?: (row: TData) => string | undefined
   children?: React.ReactNode
 }
 
@@ -40,6 +42,7 @@ export function DataTable<TData>({
   table,
   loading = false,
   emptyMessage = "暂无数据",
+  rowClassName,
   children,
 }: DataTableProps<TData>) {
   const colCount = table.getHeaderGroups()[0]?.headers.length ?? 1
@@ -110,6 +113,7 @@ export function DataTable<TData>({
             <TableRow
               key={row.id}
               data-state={row.getIsSelected() ? "selected" : undefined}
+              className={rowClassName?.(row.original)}
             >
               {row.getVisibleCells().map((cell) => {
                 const sticky = cell.column.columnDef.meta?.sticky

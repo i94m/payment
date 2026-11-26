@@ -20,7 +20,7 @@ import { FilterCard } from "@/components/filter-card"
 import { PayIcon } from "@/components/pay-icon"
 import { DetailTable } from "@/components/detail-table"
 import { OrderStatusBadge } from "@/components/order-status"
-import { ORDER_STATUS_OPTIONS } from "@/lib/order-status"
+import { DEDUCTED_ORDER_ROW_CLASS, ORDER_STATUS_OPTIONS } from "@/lib/order-status"
 import {
   useDataList,
   ListError,
@@ -501,7 +501,12 @@ export function OrdersPage() {
           {error ? (
             <ListError error={error} onRetry={refresh} />
           ) : (
-            <DataTable table={table} loading={loading} emptyMessage={"暂无数据"}>
+            <DataTable
+              table={table}
+              loading={loading}
+              emptyMessage={"暂无数据"}
+              rowClassName={(o) => (o.is_deducted ? DEDUCTED_ORDER_ROW_CLASS : undefined)}
+            >
               <DataTablePagination table={table} total={total} />
             </DataTable>
           )}

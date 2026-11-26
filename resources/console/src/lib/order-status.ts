@@ -50,6 +50,10 @@ export const NOTIFY_STATUS_CLASS = {
   retry: "bg-[#E6F4FF] text-[#0958D9] dark:bg-[#0958D9]/20 dark:text-[#69B1FF]",
 } as const
 
+/** 后台订单列表的扣量行底色：与「已支付」同一档浅绿，只上底色、不改文字（商户/代理端不展示扣量单） */
+export const DEDUCTED_ORDER_ROW_CLASS =
+  "bg-[#F6FFED] hover:bg-[#EDF9DF] dark:bg-[#389E0D]/10 dark:hover:bg-[#389E0D]/15"
+
 /** 状态徽标的公共外形，颜色由上面的 className 提供 */
 export const STATUS_BADGE_BASE =
   "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap"
