@@ -768,7 +768,7 @@ def _parse_code_limits(body: ChannelCodeRequest) -> tuple[Decimal, Decimal, str]
         return minv, maxv, "金额限额不能为负数"
     # max=0 表示不限上限；min=0 表示不限下限，两者都 0 = 不限制
     if maxv > 0 and minv > maxv:
-        return minv, maxv, f"金额下限不能大于上限（{minv} > {maxv}）"
+        return minv, maxv, f"最小金额不能大于最大金额（{minv} > {maxv}）"
     return minv, maxv, ""
 
 

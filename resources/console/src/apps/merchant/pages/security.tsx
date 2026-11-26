@@ -36,7 +36,7 @@ function IntegrationRow({
     }
   }
   return (
-    <div className="flex items-start gap-2 px-4 py-1">
+    <div className="flex items-start gap-2 py-0.5">
       <span className="w-14 shrink-0 pt-0.5 text-xs text-muted-foreground">{label}</span>
       <span className="min-w-0 flex-1 break-all font-mono text-[13px]">
         {value || "-"}
@@ -184,7 +184,7 @@ export function SecurityPage() {
                   <CardHeader>
                     <CardTitle>{"对接信息"}</CardTitle>
                     <CardDescription>
-                      {"可直接复制发送给接入方。"}
+                      {"商户对接参数可一键复制发送给接入方。"}
                     </CardDescription>
                     <CardAction>
                       <Button
@@ -195,113 +195,112 @@ export function SecurityPage() {
                         {integrationCopied
                           ? <IconCheck className="size-4 text-green-500" />
                           : <IconCopy className="size-4" />}
-                        {"一键复制全部信息"}
+                        {"一键复制对接参数"}
                       </Button>
                     </CardAction>
                   </CardHeader>
-                  <CardContent className="p-0">
-                    {/* 「【商户对接参数】」小标题只出现在一键复制的纯文本里（发给接入方的格式），
-                        页面上不再重复展示 */}
-                    <div className="py-1">
-                      {integrationFields.map(([label, value]) => {
-                        // RSA2 下没有可交付的共享密钥，这一行不可单独复制
-                        const cannotCopy = label === "API密钥" && rsa2
-                        return (
-                          <IntegrationRow
-                            key={label}
-                            label={label}
-                            value={value}
-                            copyValue={cannotCopy ? "" : undefined}
-                          />
-                        )
-                      })}
+                  <CardContent className="space-y-3">
+                    {/* 商户对接参数模块：与后台数据统计页「订单成功率」同为卡片内的浅色分区，
+                        标题只出现在模块里，一键复制的纯文本仍带「【商户对接参数】」 */}
+                    <div className="rounded-lg border bg-muted/30 p-3">
+                      <div className="text-sm font-semibold text-foreground">{"商户对接参数"}</div>
+                      <div className="mt-2 space-y-0">
+                        {integrationFields.map(([label, value]) => {
+                          // RSA2 下没有可交付的共享密钥，这一行不可单独复制
+                          const cannotCopy = label === "API密钥" && rsa2
+                          return (
+                            <IntegrationRow
+                              key={label}
+                              label={label}
+                              value={value}
+                              copyValue={cannotCopy ? "" : undefined}
+                            />
+                          )
+                        })}
+                      </div>
+                    </div>
+
+                    {/* 支付通道同为其下的子模块：所有启用中的通道编码，下单时作为 channel_code 传入 */}
+                    <div className="rounded-lg border bg-muted/30 p-3">
+                      <div className="text-sm font-semibold text-foreground">{"支付通道"}</div>
+                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                        {"下单时把编码作为 channel_code 传入即可限定路由；单笔金额超出「单笔限额」会被直接拒绝，费率按该商户实际生效值展示。"}
+                      </p>
+                      <div className="mt-2">
+                        {channelsError ? (
+                          <PanelError error={channelsError} onRetry={() => { setChannelsError(null); loadChannels() }} />
+                        ) : channelsLoading ? (
+                          <div className="space-y-2">
+                            <Skeleton className="h-9 w-full rounded-md" />
+                            <Skeleton className="h-9 w-full rounded-md" />
+                          </div>
+                        ) : channels.length === 0 ? (
+                          <p className="py-4 text-center text-xs text-muted-foreground">
+                            {"当前没有已开启的通道编码，请联系运营开通。"}
+                          </p>
+                        ) : (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>{"通道编码"}</TableHead>
+                                <TableHead>{"名称"}</TableHead>
+                                <TableHead className="text-right">{"单笔限额"}</TableHead>
+                                <TableHead className="text-right">{"费率"}</TableHead>
+                                <TableHead>{"支付方式"}</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {channels.map((c) => (
+                                <TableRow key={c.code}>
+                                  <TableCell>
+                                    <div className="flex items-center gap-1">
+                                      <span className="font-mono text-sm font-medium">{c.code}</span>
+                                      <CopyButton
+                                        value={c.code}
+                                        aria-label={`复制编码 ${c.code}`}
+                                        title={`复制编码 ${c.code}`}
+                                        className="size-6"
+                                      />
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <span className="text-sm">{c.name || "—"}</span>
+                                    {c.remark && (
+                                      <span className="mt-0.5 block text-xs text-muted-foreground">{c.remark}</span>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <span className="text-sm tabular-nums">{amountLimitText(c)}</span>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <span
+                                      className="text-sm tabular-nums"
+                                      title={FEE_SOURCE_LABEL[c.fee_rate_source] || undefined}
+                                    >
+                                      {feeRateText(c) || "—"}
+                                    </span>
+                                  </TableCell>
+                                  <TableCell>
+                                    {c.pay_types.length > 0 ? (
+                                      <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                                        {c.pay_types.map((t) => (
+                                          <PayTypeLabel key={t.code} code={t.code} icon={t.icon} name={t.name} />
+                                        ))}
+                                      </span>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">{"暂不可用"}</span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
               )}
-
-              {/* 支付通道：所有启用中的通道编码，下单时作为 channel_code 传入 */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>{"支付通道"}</CardTitle>
-                  <CardDescription>
-                    {"当前已开启的通道编码，下单时把编码作为 channel_code 传入即可限定路由；单笔金额超出「单笔限额」会被直接拒绝，费率按该商户实际生效值展示。"}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {channelsError ? (
-                    <div className="px-4 py-3">
-                      <PanelError error={channelsError} onRetry={() => { setChannelsError(null); loadChannels() }} />
-                    </div>
-                  ) : channelsLoading ? (
-                    <div className="space-y-2 px-4 py-3">
-                      <Skeleton className="h-9 w-full rounded-md" />
-                      <Skeleton className="h-9 w-full rounded-md" />
-                    </div>
-                  ) : channels.length === 0 ? (
-                    <p className="px-4 py-6 text-center text-xs text-muted-foreground">
-                      {"当前没有已开启的通道编码，请联系运营开通。"}
-                    </p>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="pl-4">{"通道编码"}</TableHead>
-                          <TableHead>{"名称"}</TableHead>
-                          <TableHead className="text-right">{"单笔限额"}</TableHead>
-                          <TableHead className="text-right">{"费率"}</TableHead>
-                          <TableHead className="pr-4">{"支付方式"}</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {channels.map((c) => (
-                          <TableRow key={c.code}>
-                            <TableCell className="pl-4">
-                              <div className="flex items-center gap-1">
-                                <span className="font-mono text-sm font-medium">{c.code}</span>
-                                <CopyButton
-                                  value={c.code}
-                                  aria-label={`复制编码 ${c.code}`}
-                                  title={`复制编码 ${c.code}`}
-                                  className="size-6"
-                                />
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm">{c.name || "—"}</span>
-                              {c.remark && (
-                                <span className="mt-0.5 block text-xs text-muted-foreground">{c.remark}</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <span className="text-sm tabular-nums">{amountLimitText(c)}</span>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <span
-                                className="text-sm tabular-nums"
-                                title={FEE_SOURCE_LABEL[c.fee_rate_source] || undefined}
-                              >
-                                {feeRateText(c) || "—"}
-                              </span>
-                            </TableCell>
-                            <TableCell className="pr-4">
-                              {c.pay_types.length > 0 ? (
-                                <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-                                  {c.pay_types.map((t) => (
-                                    <PayTypeLabel key={t.code} code={t.code} icon={t.icon} name={t.name} />
-                                  ))}
-                                </span>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">{"暂不可用"}</span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
-                </CardContent>
-              </Card>
             </>
           )}
         </div>

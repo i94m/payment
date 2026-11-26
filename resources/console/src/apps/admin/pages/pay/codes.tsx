@@ -98,13 +98,13 @@ const codeSchema = z.object({
   const min = parseNum(values.min_amount)
   const max = parseNum(values.max_amount)
   if (Number.isNaN(min) || min < 0) {
-    ctx.addIssue({ code: "custom", path: ["min_amount"], message: "金额下限需为不小于 0 的数字" })
+    ctx.addIssue({ code: "custom", path: ["min_amount"], message: "最小金额需为不小于 0 的数字" })
   }
   if (Number.isNaN(max) || max < 0) {
-    ctx.addIssue({ code: "custom", path: ["max_amount"], message: "金额上限需为不小于 0 的数字" })
+    ctx.addIssue({ code: "custom", path: ["max_amount"], message: "最大金额需为不小于 0 的数字" })
   }
   if (!Number.isNaN(min) && !Number.isNaN(max) && max > 0 && min > max) {
-    ctx.addIssue({ code: "custom", path: ["max_amount"], message: "金额下限不能大于上限" })
+    ctx.addIssue({ code: "custom", path: ["max_amount"], message: "最小金额不能大于最大金额" })
   }
   const items = Object.values(values.members)
   if (items.length === 0) {
@@ -564,7 +564,7 @@ export function ChannelCodesPage() {
                 control={codeForm.control}
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid} className="col-span-1">
-                    <FieldLabel htmlFor="code-min-amount">{"金额下限"}</FieldLabel>
+                    <FieldLabel htmlFor="code-min-amount">{"最小金额"}</FieldLabel>
                     <UnitInput
                       {...field}
                       id="code-min-amount"
@@ -587,7 +587,7 @@ export function ChannelCodesPage() {
                 control={codeForm.control}
                 render={({ field, fieldState }) => (
                   <Field data-invalid={fieldState.invalid} className="col-span-1">
-                    <FieldLabel htmlFor="code-max-amount">{"金额上限"}</FieldLabel>
+                    <FieldLabel htmlFor="code-max-amount">{"最大金额"}</FieldLabel>
                     <UnitInput
                       {...field}
                       id="code-max-amount"

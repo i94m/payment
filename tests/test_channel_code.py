@@ -760,7 +760,7 @@ async def test_merchant_rate_drives_order_accounting(client, session, two_channe
 
 
 async def test_admin_code_limit_validation(client, session, two_channels):
-    """后台保存校验：金额下限>上限、负数、非数字都被拒；合法值能落库并回显。"""
+    """后台保存校验：最小金额>最大金额、负数、非数字都被拒；合法值能落库并回显。"""
     seeded = two_channels
     headers = await _admin_headers(session)
     # 表单已去掉启用开关：请求体不带 status，编辑时后端保持原状态
@@ -774,7 +774,7 @@ async def test_admin_code_limit_validation(client, session, two_channels):
                           json={**base, "min_amount": "9.00", "max_amount": "1.00"},
                           headers=headers)
     assert r.json()["code"] == -1
-    assert "金额下限不能大于上限" in r.json()["message"]
+    assert "最小金额不能大于最大金额" in r.json()["message"]
 
     r = await client.post("/admin-api/pay/channel-codes",
                           json={**base, "min_amount": "-1.00"}, headers=headers)
