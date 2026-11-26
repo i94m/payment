@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="聚合支付网关：多通道聚合、智能轮询、统一收银台、代理分润、自动结算，提供商户中心、代理面板与开放 API。">
 <link rel="icon" type="image/svg+xml" href="/images/logo.svg" />
 <title>聚合支付 - 一站式聚合支付管理系统</title>
 <style>
@@ -73,6 +74,7 @@ img { max-width: 100%; }
   font-size: 15px; color: var(--text-secondary); transition: color 0.2s;
 }
 .nav-links a:hover { color: var(--text-primary); }
+.nav-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
 .nav-admin-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 20px; border-radius: 6px; font-size: 14px; font-weight: 500;
@@ -83,6 +85,15 @@ img { max-width: 100%; }
   background: #D85600;
   box-shadow: 0 4px 12px rgba(250, 100, 0, 0.3);
 }
+/* 注册商户入口（site-info 的 merchant_reg_open 开启时由 JS 显示） */
+.nav-reg-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 18px; border-radius: 6px; font-size: 14px; font-weight: 500;
+  background: transparent; color: #FA6400;
+  border: 1px solid #FA6400; cursor: pointer;
+  transition: background 0.3s, color 0.3s;
+}
+.nav-reg-btn:hover { background: #FA6400; color: #ffffff; }
 
 /* Mobile menu */
 .menu-toggle {
@@ -92,6 +103,7 @@ img { max-width: 100%; }
 @media (max-width: 768px) {
   .nav-links { display: none; }
   .menu-toggle { display: block; }
+  .nav-reg-btn { display: none !important; }
   .nav-links.open {
     display: flex; flex-direction: column; position: absolute;
     top: 64px; left: 0; right: 0; background: #ffffff;
@@ -239,9 +251,6 @@ img { max-width: 100%; }
 .section-title p { font-size: 16px; color: var(--text-secondary); max-width: 540px; margin: 0 auto; }
 
 /* ========== Core Features (6-grid) ========== */
-.section#features {
-  position: relative;
-}
 .features-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -285,19 +294,6 @@ img { max-width: 100%; }
   border-color: rgba(0, 180, 42, 0.35);
   box-shadow: 0 4px 16px rgba(0,0,0,0.08), 0 0 20px rgba(0, 180, 42, 0.06);
 }
-.feature-card .card-icon {
-  width: 48px; height: 48px;
-  border-radius: 12px;
-  display: flex; align-items: center; justify-content: center;
-  margin-bottom: 20px;
-}
-.feature-card .card-icon svg { width: 24px; height: 24px; }
-.feature-card .card-icon.blue { background: #FA6400; color: #ffffff; }
-.feature-card .card-icon.green { background: #722ED1; color: #ffffff; }
-.feature-card .card-icon.purple { background: #0FC6C2; color: #ffffff; }
-.feature-card .card-icon.orange { background: #F53F3F; color: #ffffff; }
-.feature-card .card-icon.cyan { background: #FF7D00; color: #ffffff; }
-.feature-card .card-icon.red { background: #00B42A; color: #ffffff; }
 .feature-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 10px; color: var(--text-primary); }
 .feature-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
 
@@ -315,16 +311,6 @@ img { max-width: 100%; }
 .feature-card:hover .feature-icon {
   filter: brightness(1.1);
 }
-.feature-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 10px; color: var(--text-primary); }
-.feature-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
-
-/* Colored left borders for "为什么选择" cards */
-#highlights .feature-card:nth-child(1) { border-left: 3px solid #FA6400; }
-#highlights .feature-card:nth-child(2) { border-left: 3px solid #722ED1; }
-#highlights .feature-card:nth-child(3) { border-left: 3px solid #0FC6C2; }
-#highlights .feature-card:nth-child(4) { border-left: 3px solid #F53F3F; }
-#highlights .feature-card:nth-child(5) { border-left: 3px solid #FF7D00; }
-#highlights .feature-card:nth-child(6) { border-left: 3px solid #00B42A; }
 
 @media (max-width: 900px) {
   .features-grid { grid-template-columns: repeat(2, 1fr); }
@@ -390,8 +376,24 @@ img { max-width: 100%; }
   .highlight-item, .highlight-item.reverse { flex-direction: column; gap: 30px; }
 }
 
+/* ========== Entries (多端入口) ========== */
+.alt-section { background: #f7f8fa; }
+#entries .feature-card { display: flex; flex-direction: column; }
+.entry-link {
+  margin-top: auto; padding-top: 18px;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 14px; font-weight: 600; color: #FA6400;
+  transition: gap 0.2s;
+}
+.entry-link:hover { gap: 10px; }
+.entry-tag {
+  margin-top: auto; padding-top: 18px;
+  display: inline-flex; align-items: center;
+  font-size: 12px; color: var(--text-tertiary);
+}
+.entry-card-text { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+
 /* ========== Tech Stack ========== */
-.tech-section { background: #f7f8fa; }
 .tech-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
 .tech-card {
   background: #ffffff; border: 1px solid var(--border-color); border-radius: 14px;
@@ -438,6 +440,7 @@ img { max-width: 100%; }
 }
 .step-content h4 { font-size: 18px; font-weight: 600; margin-bottom: 6px; color: var(--text-primary); }
 .step-content p { font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
+.step-content p a { color: #FA6400; font-weight: 600; }
 .code-block {
   flex: 1; background: #f2f3f5; border-radius: 14px;
   border: 1px solid var(--border-color);
@@ -472,7 +475,7 @@ img { max-width: 100%; }
 }
 .footer-brand { font-size: 18px; font-weight: 700; color: #ffffff; }
 .footer-brand span { color: #ffffff; }
-.footer-links { display: flex; gap: 24px; }
+.footer-links { display: flex; gap: 24px; flex-wrap: wrap; }
 .footer-links a {
   font-size: 14px; color: #a0a0a0; transition: color 0.2s;
 }
@@ -505,13 +508,21 @@ img { max-width: 100%; }
     </a>
     <ul class="nav-links" id="navLinks">
       <li><a href="#features">产品功能</a></li>
+      <li><a href="#entries">多端入口</a></li>
       <li><a href="#tech">技术架构</a></li>
-      <li><a href="#quickstart">快速开始</a></li>
+      <li data-feature="api_pay_enable"><a href="#quickstart">快速开始</a></li>
+      <li><a href="/docs/guide/protocol.html">开发文档</a></li>
     </ul>
-    <a href="/merchant" class="nav-admin-btn">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11 6a3 3 0 11-6 0 3 3 0 016 0zm-9 8.5A1.5 1.5 0 013.5 13h9a1.5 1.5 0 011.5 1.5V15H2v-.5z" fill="currentColor"/></svg>
-      商户登录
-    </a>
+    <div class="nav-actions">
+      <a href="/merchant/#/register" class="nav-reg-btn" data-reg style="display:none">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        注册商户
+      </a>
+      <a href="/merchant/" class="nav-admin-btn">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M11 6a3 3 0 11-6 0 3 3 0 016 0zm-9 8.5A1.5 1.5 0 013.5 13h9a1.5 1.5 0 011.5 1.5V15H2v-.5z" fill="currentColor"/></svg>
+        商户登录
+      </a>
+    </div>
     <button class="menu-toggle" id="menuToggle" aria-label="菜单">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16" stroke="#1d2129" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
@@ -528,12 +539,13 @@ img { max-width: 100%; }
   <div class="container">
     <div class="hero-text fade-up">
       <h1>一站式<span>聚合支付</span>管理系统</h1>
-      <p>支持多通道聚合、智能轮询、代理分润，轻松管理支付业务。高性能、易扩展、安全可靠。</p>
+      <p>多通道聚合收款、智能轮询分流、统一收银台、代理分润、自动结算 —— 一套系统覆盖支付业务全流程。</p>
       <div class="hero-buttons">
-        <a href="/merchant" class="btn-primary">
+        <a href="/merchant/" class="btn-primary">
           立即体验
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9h10m-4-4l4 4-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
+        <a href="/merchant/#/register" class="btn-secondary" data-reg style="display:none">注册商户</a>
         <a href="/docs/guide/protocol.html" class="btn-secondary">阅读文档</a>
       </div>
     </div>
@@ -586,7 +598,7 @@ img { max-width: 100%; }
       <p>全方位覆盖支付业务场景，助力高效运营</p>
     </div>
     <div class="features-grid">
-      <!-- Card 1: 多通道聚合 - Blue -->
+      <!-- Card 1: 多通道聚合 -->
       <div class="feature-card fade-up">
         <div class="feature-icon blue">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -596,9 +608,9 @@ img { max-width: 100%; }
           </svg>
         </div>
         <h3>多通道聚合</h3>
-        <p>接入 30+ 支付通道，统一 API 调用，降低接入成本，灵活配置通道策略</p>
+        <p>插件化接入上游支付通道：内置插件开箱即用，三方插件包签名校验后上传即生效，统一 API 对外输出</p>
       </div>
-      <!-- Card 2: 智能轮询 - Purple -->
+      <!-- Card 2: 智能轮询 -->
       <div class="feature-card fade-up">
         <div class="feature-icon purple">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -608,10 +620,10 @@ img { max-width: 100%; }
           </svg>
         </div>
         <h3>智能轮询</h3>
-        <p>权重/随机策略灵活切换，自动检测故障通道并实时剔除，保障交易连续性</p>
+        <p>权重 / 随机策略灵活切换，通道编码定向分流，故障通道自动检测剔除，保障交易连续性</p>
       </div>
-      <!-- Card 3: 代理分润 - Cyan -->
-      <div class="feature-card fade-up">
+      <!-- Card 3: 代理分润（agent_enable 关闭时隐藏） -->
+      <div class="feature-card fade-up" data-feature="agent_enable">
         <div class="feature-icon green">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
             <circle cx="9" cy="10" r="4" stroke="#ffffff" stroke-width="2"/>
@@ -620,9 +632,9 @@ img { max-width: 100%; }
           </svg>
         </div>
         <h3>代理分润</h3>
-        <p>二级代理体系，自定义分润比例，自动计算入账，代理商独立管理后台</p>
+        <p>二级代理体系，邀请注册自动绑定归属关系，支付成功即时分润入账，代理独立面板透明可查</p>
       </div>
-      <!-- Card 4: 风控安全 - Red -->
+      <!-- Card 4: 风控安全 -->
       <div class="feature-card fade-up">
         <div class="feature-icon orange">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -631,9 +643,9 @@ img { max-width: 100%; }
           </svg>
         </div>
         <h3>风控安全</h3>
-        <p>黑名单过滤、IP 白名单限制、异常交易实时监控，多层防护保障资金安全</p>
+        <p>MD5 / RSA2 双算法签名 + 时间戳防重放，IP 与支付域名白名单，回调持续异常自动关停支付权限</p>
       </div>
-      <!-- Card 5: 掉单补回 - Amber -->
+      <!-- Card 5: 掉单补回 -->
       <div class="feature-card fade-up">
         <div class="feature-icon cyan">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -643,9 +655,9 @@ img { max-width: 100%; }
           </svg>
         </div>
         <h3>掉单补回</h3>
-        <p>回调失败按分钟阶梯重试，定时主动查单补账，交易状态实时同步，资金到账不遗漏</p>
+        <p>异步通知分钟级阶梯重试，定时主动查单补偿，过期订单回补窗口内仍可入账，交易状态实时同步</p>
       </div>
-      <!-- Card 6: 自动结算 - Green -->
+      <!-- Card 6: 自动结算 -->
       <div class="feature-card fade-up">
         <div class="feature-icon red">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -655,7 +667,7 @@ img { max-width: 100%; }
           </svg>
         </div>
         <h3>自动结算</h3>
-        <p>商户自助申请结算，多级审核流程，批量处理打款，资金变动逐笔可追溯</p>
+        <p>商户自助申请或按户定时自动结算，T+1 / D+1 模式灵活配置，手续费保底封顶，资金流水逐笔可追溯</p>
       </div>
     </div>
   </div>
@@ -687,15 +699,15 @@ img { max-width: 100%; }
         <ul class="highlight-list">
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            多维度费率配置 — 按通道、分组、时段灵活设置
+            独立费率与分组管理 — 按商户单独设置费率，批量操作提效
           </li>
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            分组管理 — 批量操作，提升管理效率
+            限额管控 — 日限额、单笔限额精细化运营
           </li>
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            域名白名单 — 限制来源域名，防止盗刷
+            支付域名白名单 — 限制请求来源，防止盗刷；支持自助注册与审核
           </li>
         </ul>
       </div>
@@ -718,20 +730,20 @@ img { max-width: 100%; }
         </div>
       </div>
       <div class="highlight-text">
-        <h3>订单系统</h3>
-        <p>实时追踪每一笔交易，全自动处理回调与退款</p>
+        <h3>订单与收银台</h3>
+        <p>实时追踪每一笔交易，多种支付形态灵活拉起</p>
         <ul class="highlight-list">
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            实时订单追踪 — 交易状态一目了然
+            幂等建单 — 同一商户订单号重复请求返回原单，重试零副作用
           </li>
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            自动异步回调 — 确保通知到达
+            多形态拉起 — 跳转 / 二维码 / 小程序 scheme / HTML 按设备自动匹配
           </li>
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            退款管理 — 支持全额/部分退款
+            统一收银台 — 收银台地址引导支付，台内可随时切换支付方式
           </li>
         </ul>
       </div>
@@ -754,25 +766,25 @@ img { max-width: 100%; }
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="6" stroke="#86909c" stroke-width="1.5"/><path d="M4.5 7l2 2 3-3.5" stroke="#1d2129" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            <span style="font-size:12px;color:var(--text-secondary)">T+1 自动结算已开启</span>
+            <span style="font-size:12px;color:var(--text-secondary)">自动结算已开启</span>
           </div>
         </div>
       </div>
       <div class="highlight-text">
         <h3>资金结算</h3>
-        <p>灵活的结算周期，安全高效的资金流转</p>
+        <p>灵活的结算策略，安全高效的资金流转</p>
         <ul class="highlight-list">
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            灵活结算周期 — 支持 T+0、T+1、手动结算
+            多结算模式 — 商户自助申请 / 按户自动结算 / D+1 延后提现
           </li>
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            批量审核 — 快速处理结算申请
+            手续费引擎 — 费率 + 保底 + 封顶自由组合，最低金额限制
           </li>
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            线下打款 — 完整打款记录与对账
+            全程可追溯 — 结算审核、打款记录与资金明细完整留存
           </li>
         </ul>
       </div>
@@ -803,15 +815,15 @@ img { max-width: 100%; }
         <ul class="highlight-list">
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            交易报表 — 按日/周/月多维度统计
+            交易报表 — 按日 / 周多维度统计，总业绩一目了然
           </li>
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            成功率分析 — 定位问题通道
+            成功率分析 — 通道表现对比，快速定位问题通道
           </li>
           <li>
             <svg class="icon-check" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M4 9l3.5 3.5L14 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            趋势图表 — 可视化数据趋势
+            趋势图表 — 近 7 日收款趋势可视化呈现
           </li>
         </ul>
       </div>
@@ -820,8 +832,81 @@ img { max-width: 100%; }
   </div>
 </section>
 
+<!-- ==================== Entries（多端入口） ==================== -->
+<section class="section alt-section" id="entries">
+  <div class="container">
+    <div class="section-title fade-up">
+      <h2>多端入口</h2>
+      <p>一套系统多端协同，各角色独立工作台</p>
+    </div>
+    <div class="features-grid">
+      <!-- 商户中心 -->
+      <div class="feature-card fade-up">
+        <div class="feature-icon blue">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M4 9l2-5h16l2 5" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 9v13a1 1 0 001 1h18a1 1 0 001-1V9" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M11 23v-7h6v7" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h3>商户中心</h3>
+        <p class="entry-card-text">订单记录、结算提现、资金明细、API 信息与测试支付，一站式管理商户业务</p>
+        <a href="/merchant/" class="entry-link">
+          进入商户中心
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8m-3-3l3 3-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
+      <!-- 代理面板（agent_enable 关闭时隐藏） -->
+      <div class="feature-card fade-up" data-feature="agent_enable">
+        <div class="feature-icon purple">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <circle cx="9" cy="10" r="4" stroke="#ffffff" stroke-width="2"/>
+            <circle cx="19" cy="10" r="3" stroke="#ffffff" stroke-width="2"/>
+            <path d="M4 22c0-3.3 2.2-6 5-6h10c2.8 0 5 2.7 5 6" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3>代理面板</h3>
+        <p class="entry-card-text">佣金收益、下级商户与业绩数据独立呈现，分润到账实时可查</p>
+        <a href="/agent/" class="entry-link">
+          进入代理面板
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8m-3-3l3 3-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
+      <!-- 聚合收款页（paypage_enable 关闭时隐藏） -->
+      <div class="feature-card fade-up" data-feature="paypage_enable">
+        <div class="feature-icon green">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <rect x="4" y="4" width="8" height="8" rx="1.5" stroke="#ffffff" stroke-width="2"/>
+            <rect x="16" y="4" width="8" height="8" rx="1.5" stroke="#ffffff" stroke-width="2"/>
+            <rect x="4" y="16" width="8" height="8" rx="1.5" stroke="#ffffff" stroke-width="2"/>
+            <path d="M16 16h3v3h-3zM21 16h3M16 21h3M21 19v5M24 21v3" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3>聚合收款页</h3>
+        <p class="entry-card-text">免登录收款短链 /p/xxxx，买家输入金额即可付款，支持随机金额自动建单</p>
+        <span class="entry-tag">收款链接在商户后台生成</span>
+      </div>
+      <!-- 对接文档 -->
+      <div class="feature-card fade-up">
+        <div class="feature-icon cyan">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M5 5a2 2 0 012-2h13v20H7a2 2 0 01-2-2V5z" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M20 19H7a2 2 0 00-2 2M9 8h7M9 12h7" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3>对接文档</h3>
+        <p class="entry-card-text">协议规则、签名算法（MD5 / RSA2）、API 列表与补单机制，随系统同步更新</p>
+        <a href="/docs/guide/protocol.html" class="entry-link">
+          查看文档
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7h8m-3-3l3 3-3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ==================== Tech Stack ==================== -->
-<section class="section tech-section" id="tech">
+<section class="section" id="tech">
   <div class="container">
     <div class="section-title fade-up">
       <h2>现代技术栈</h2>
@@ -839,7 +924,7 @@ img { max-width: 100%; }
         </div>
         <h3>FastAPI</h3>
         <div class="tech-sub">后端框架</div>
-        <p>基于 Python 异步框架，自动生成 API 文档，高性能异步处理，快速开发支付接口</p>
+        <p>Python 3.12 全异步框架，配合 SAQ 任务队列驱动通知重试、主动查单与定时结算，支付链路毫秒级响应</p>
       </div>
       <!-- React 19 -->
       <div class="tech-card fade-up">
@@ -854,7 +939,7 @@ img { max-width: 100%; }
         </div>
         <h3>React 19</h3>
         <div class="tech-sub">前端框架</div>
-        <p>React Hooks + TypeScript，搭配 shadcn/ui 组件库，打造流畅的管理后台体验</p>
+        <p>React Hooks + TypeScript + shadcn/ui，管理端 / 商户端 / 代理端三套控制台一体构建，体验一致</p>
       </div>
       <!-- MySQL + Redis -->
       <div class="tech-card fade-up">
@@ -869,80 +954,14 @@ img { max-width: 100%; }
         </div>
         <h3>MySQL + Redis</h3>
         <div class="tech-sub">数据存储</div>
-        <p>MySQL 持久化存储交易数据，Redis 缓存热点数据与限流计数，保障高并发性能</p>
+        <p>金额 Decimal 全链路精确记账；MySQL 持久化交易数据，Redis 承担缓存、限流与计数，撑起高并发</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== Feature Cards（"为什么选择本平台"） ==================== -->
-<section class="section" id="highlights">
-  <div class="container">
-    <div class="section-title fade-up">
-      <h2>为什么选择 <span data-site-name>聚合支付</span></h2>
-      <p>开箱即用，覆盖支付业务全流程</p>
-    </div>
-    <div class="features-grid">
-      <div class="feature-card fade-up">
-        <div class="card-icon blue">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-          </svg>
-        </div>
-        <h3>多端适配</h3>
-        <p>同时支持 PC 端和移动端 H5，自动识别设备类型匹配最优支付通道，无缝覆盖全场景收款需求</p>
-      </div>
-      <div class="feature-card fade-up">
-        <div class="card-icon green">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>
-          </svg>
-        </div>
-        <h3>安全可靠</h3>
-        <p>MD5 / RSA 双重签名验证，IP 白名单、域名绑定、支付密码等多层防护机制，保障资金安全</p>
-      </div>
-      <div class="feature-card fade-up">
-        <div class="card-icon purple">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
-          </svg>
-        </div>
-        <h3>灵活配置</h3>
-        <p>按商户、分组独立配置费率和通道，支持日限额、单笔限额等精细化运营策略</p>
-      </div>
-      <div class="feature-card fade-up">
-        <div class="card-icon orange">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-          </svg>
-        </div>
-        <h3>实时监控</h3>
-        <p>通道成功率、响应时间实时监控，异常自动告警，故障通道自动剔除，保障支付顺畅</p>
-      </div>
-      <div class="feature-card fade-up">
-        <div class="card-icon cyan">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
-          </svg>
-        </div>
-        <h3>代理分润</h3>
-        <p>内置二级代理体系，代理商推荐商户自动建立绑定关系，支付成功即时分润入账，透明可查</p>
-      </div>
-      <div class="feature-card fade-up">
-        <div class="card-icon red">
-          <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
-          </svg>
-        </div>
-        <h3>完善审计</h3>
-        <p>全操作日志记录，资金变动逐笔追溯，结算多级审核流程，合规透明</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ==================== Quick Start ==================== -->
-<section class="section quickstart" id="quickstart">
+<!-- ==================== Quick Start（api_pay_enable 关闭时隐藏） ==================== -->
+<section class="section quickstart" id="quickstart" data-feature="api_pay_enable">
   <div class="container">
     <div class="section-title fade-up">
       <h2>快速开始</h2>
@@ -953,48 +972,67 @@ img { max-width: 100%; }
         <div class="step-num">1</div>
         <div class="step-content">
           <h4>注册商户</h4>
-          <p>联系管理员开通商户账号，配置基本信息与支付参数</p>
+          <p id="step1-desc">联系管理员开通商户账号，配置费率与支付参数</p>
         </div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
         <div class="step-content">
           <h4>接入 API</h4>
-          <p>根据文档调用统一支付接口，支持多种编程语言 SDK</p>
+          <p>查阅<a href="/docs/guide/protocol.html">对接文档</a>，使用商户 ID + 签名（MD5 / RSA2）调用统一下单接口</p>
         </div>
       </div>
       <div class="step">
         <div class="step-num">3</div>
         <div class="step-content">
           <h4>开始收款</h4>
-          <p>发起支付请求，通过异步回调获取支付结果，完成交易闭环</p>
+          <p>引导用户完成支付，通过异步回调 / 查单接口获取结果，支持退款与结算提现</p>
         </div>
       </div>
     </div>
     <div class="code-block fade-up">
-      <div><span class="comment">// 创建支付订单（pid + RSA2 签名，详见对接文档）</span></div>
-      <div><span class="key">POST</span> <span class="str">/api/orders</span></div>
-      <br>
+      <div><span class="comment">// 创建支付订单 — POST /api/orders（pid + 签名，详见对接文档）</span></div>
       <div>{</div>
       <div>&nbsp;&nbsp;<span class="key">"pid"</span><span class="punct">:</span> <span class="num">1001</span><span class="punct">,</span></div>
       <div>&nbsp;&nbsp;<span class="key">"type"</span><span class="punct">:</span> <span class="str">"alipay"</span><span class="punct">,</span></div>
       <div>&nbsp;&nbsp;<span class="key">"out_trade_no"</span><span class="punct">:</span> <span class="str">"20160806151343349"</span><span class="punct">,</span></div>
-      <div>&nbsp;&nbsp;<span class="key">"name"</span><span class="punct">:</span> <span class="str">"商品名称"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"name"</span><span class="punct">:</span> <span class="str">"VIP会员"</span><span class="punct">,</span></div>
       <div>&nbsp;&nbsp;<span class="key">"money"</span><span class="punct">:</span> <span class="str">"99.00"</span><span class="punct">,</span></div>
       <div>&nbsp;&nbsp;<span class="key">"notify_url"</span><span class="punct">:</span> <span class="str">"https://yoursite.com/notify"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"return_url"</span><span class="punct">:</span> <span class="str">"https://yoursite.com/return"</span><span class="punct">,</span></div>
       <div>&nbsp;&nbsp;<span class="key">"timestamp"</span><span class="punct">:</span> <span class="num">1696000000</span><span class="punct">,</span></div>
-      <div>&nbsp;&nbsp;<span class="key">"sign_type"</span><span class="punct">:</span> <span class="str">"RSA2"</span><span class="punct">,</span></div>
-      <div>&nbsp;&nbsp;<span class="key">"sign"</span><span class="punct">:</span> <span class="str">"a1b2c3d4e5f6..."</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"sign_type"</span><span class="punct">:</span> <span class="str">"MD5"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"sign"</span><span class="punct">:</span> <span class="str">"9f2c1a...（32位小写）"</span></div>
+      <div>}</div>
+      <br>
+      <div><span class="comment">// 成功返回 data（四种拉起形态按 pay_type 其一返回）</span></div>
+      <div>{</div>
+      <div>&nbsp;&nbsp;<span class="key">"trade_no"</span><span class="punct">:</span> <span class="str">"2611271200000000001234"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"pay_type"</span><span class="punct">:</span> <span class="str">"qrcode"</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"qrcode"</span><span class="punct">:</span> <span class="str">"weixin://wxpay/bizpayurl?pr=..."</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"cashier_url"</span><span class="punct">:</span> <span class="str">"https://.../cashier/..."</span><span class="punct">,</span></div>
+      <div>&nbsp;&nbsp;<span class="key">"expires_in"</span><span class="punct">:</span> <span class="num">300</span></div>
       <div>}</div>
     </div>
   </div>
 </section>
 
 <!-- ==================== Footer ==================== -->
-<footer class="footer" id="pricing">
+<footer class="footer">
   <div class="container">
+    <div class="footer-content">
+      <div class="footer-brand" data-site-name>聚合支付</div>
+      <div class="footer-links">
+        <a href="#features">产品功能</a>
+        <a href="/docs/guide/protocol.html">开发文档</a>
+        <a href="/merchant/">商户中心</a>
+        <a href="/agent/" data-feature="agent_enable">代理面板</a>
+        <a href="#" data-link="site_qq_group" style="display:none" target="_blank" rel="noopener">产品QQ群</a>
+        <a href="#" data-link="site_app_url" style="display:none" target="_blank" rel="noopener">APP下载</a>
+      </div>
+    </div>
     <div class="footer-copy">
-      &copy; 2026 <span data-site-name>聚合支付</span>
+      &copy; 2026 <span data-site-name>聚合支付</span><span id="footer-version"></span>
     </div>
   </div>
 </footer>
@@ -1034,13 +1072,40 @@ img { max-width: 100%; }
     observer.observe(el);
   });
 
-  // Site name follows admin settings (public endpoint, silent on failure)
+  // 站点信息 + 功能开关适配（公开端点，静默失败则按默认内容展示）
   fetch('/admin-api/site-info').then(function(r) { return r.json(); }).then(function(res) {
-    var name = res && res.data && res.data.site_name;
-    if (!name) return;
-    document.title = name + ' - 一站式聚合支付管理系统';
-    var nodes = document.querySelectorAll('[data-site-name]');
-    for (var i = 0; i < nodes.length; i++) nodes[i].textContent = name;
+    var data = (res && res.data) || {};
+    var name = data.site_name;
+    if (name) {
+      document.title = name + ' - 一站式聚合支付管理系统';
+      var nodes = document.querySelectorAll('[data-site-name]');
+      for (var i = 0; i < nodes.length; i++) nodes[i].textContent = name;
+    }
+    var f = data.features || {};
+    // 平台关闭的功能模块：关联区块整块隐藏（与商户端菜单显隐同一组开关）
+    document.querySelectorAll('[data-feature]').forEach(function(el) {
+      if (f[el.getAttribute('data-feature')] === false) el.style.display = 'none';
+    });
+    // 商户自助注册开放：显示注册入口，快速开始第一步切换为自助注册
+    if (f.merchant_reg_open === true) {
+      document.querySelectorAll('[data-reg]').forEach(function(el) { el.style.display = ''; });
+      var step = document.getElementById('step1-desc');
+      if (step) {
+        step.innerHTML = '在线<a href="/merchant/#/register">注册商户</a>，获取商户 ID 与交易密钥，即可开始对接';
+      }
+    }
+    // 站点设置里的外链（QQ 群 / APP 下载）：有值才显示
+    document.querySelectorAll('[data-link]').forEach(function(el) {
+      var url = String(f[el.getAttribute('data-link')] || '').trim();
+      if (url) {
+        el.href = url;
+        el.style.display = '';
+      }
+    });
+    // 镜像版本（源码运行为 dev，不展示）
+    var v = String(data.version || '').trim();
+    var vnode = document.getElementById('footer-version');
+    if (v && v !== 'dev' && vnode) vnode.textContent = ' · v' + v;
   }).catch(function() {});
 })();
 </script>
