@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { format } from "date-fns"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 import { reportApi } from "@/api"
 import type { DailyPerformanceData } from "@/api"
 import { Button } from "@/components/ui/button"
@@ -12,20 +11,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
-import {
-  ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig,
-} from "@/components/ui/chart"
 import { ListError } from "@/components/data-list/list-error"
 import { toast } from "sonner"
 import { IconRefresh, IconSearch } from "@tabler/icons-react"
 
 /** 默认区间：近 30 天（后端同样默认 30 天，最多 90 天） */
 const DEFAULT_DAYS = 30
-
-const performanceChartConfig = {
-  paid_money: { label: "收款金额(元)", color: "var(--primary)" },
-  profit: { label: "平台利润(元)", color: "var(--chart-2)" },
-} satisfies ChartConfig
 
 function fmtMoney(v: number | string): string {
   return Number(v ?? 0).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -91,17 +82,9 @@ export function PerformancePage() {
     void load(start, end)
   }
 
-  const total = data?.total
   const items = data?.items ?? []
-  // 表格按日期倒序（最新在上），图表仍按时间正序画
+  // 表格按日期倒序（最新在上）
   const rows = React.useMemo(() => [...items].reverse(), [items])
-
-  const kpis = [
-    { key: "paid_money", label: "收款金额", value: fmtMoney(total?.paid_money ?? 0) },
-    { key: "deduct_money", label: "扣量金额", value: fmtMoney(total?.deduct_money ?? 0) },
-    { key: "profit", label: "平台利润", value: fmtMoney(total?.profit ?? 0) },
-    { key: "paid_count", label: "收款笔数", value: fmtCount(total?.paid_count ?? 0) },
-  ]
 
   return (
     <div className="flex flex-1 flex-col">
@@ -136,51 +119,6 @@ export function PerformancePage() {
           </div>
         ) : (
           <>
-            {/* 汇总卡片 */}
-            <div className="grid grid-cols-2 gap-4 px-4 lg:px-6 @3xl/main:grid-cols-4">
-              {kpis.map((k) => (
-                <Card key={k.key} className="bg-gradient-to-t from-primary/5 to-card shadow-xs">
-                  <CardHeader>
-                    <CardDescription>{k.label}</CardDescription>
-                    <CardTitle className="text-2xl font-semibold tabular-nums">
-                      {loading ? <Skeleton className="h-8 w-24" /> : k.value}
-                    </CardTitle>
-                  </CardHeader>
-                </Card>
-              ))}
-            </div>
-
-            {/* 收入走势 */}
-            <Card className="mx-4 lg:mx-6">
-              <CardHeader>
-                <CardTitle>{"收入走势"}</CardTitle>
-                <CardDescription>{"每日收款金额与平台利润（平台利润含扣量单回补的商户到账）"}</CardDescription>
-              </CardHeader>
-              <CardContent className="px-2 pt-0 sm:px-4">
-                {loading ? (
-                  <Skeleton className="h-[260px] w-full" />
-                ) : (
-                  <ChartContainer config={performanceChartConfig} className="aspect-auto h-[260px] w-full">
-                    <AreaChart data={items}>
-                      <defs>
-                        <linearGradient id="fillPaidMoney" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="var(--color-paid_money)" stopOpacity={0.8} />
-                          <stop offset="95%" stopColor="var(--color-paid_money)" stopOpacity={0.1} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid vertical={false} />
-                      <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={4} minTickGap={24} tick={{ fontSize: 11 }} />
-                      <YAxis tickLine={false} axisLine={false} width={64} tick={{ fontSize: 11 }} />
-                      <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-                      <Area dataKey="paid_money" type="natural" fill="url(#fillPaidMoney)"
-                        stroke="var(--color-paid_money)" />
-                      <Area dataKey="profit" type="natural" fill="none" stroke="var(--color-profit)" />
-                    </AreaChart>
-                  </ChartContainer>
-                )}
-              </CardContent>
-            </Card>
-
             {/* 按天明细 */}
             <Card className="mx-4 gap-3 py-4 lg:mx-6">
               <CardHeader>
