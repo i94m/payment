@@ -40,16 +40,6 @@ export default defineConfig({
         items: [
           { text: "支付下单", link: "/pay/api.html" },
           { text: "回调通知", link: "/pay/notify.html" },
-          { text: "查询订单", link: "/api/order-query.html" },
-          { text: "申请退款", link: "/api/refund.html" },
-          { text: "查询退款", link: "/api/refund.html#查询退款" },
-        ],
-      },
-      {
-        text: "附录",
-        items: [
-          { text: "支付方式列表", link: "/appendix/paytype.html" },
-          { text: "补单机制", link: "/appendix/replenish.html" },
         ],
       },
     ],

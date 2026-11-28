@@ -59,11 +59,8 @@ class _DocsStaticFiles(StaticFiles):
         self.config_checked = True
 
     async def get_response(self, path: str, scope):
-        # 无独立文档首页：/docs/（StaticFiles 收到规范化后的 "."）与 /docs/index.html
-        # 统一跳转协议规则页（商户对接流程起点）
-        normalized = path.strip("/")
-        if normalized in ("", ".", "index.html"):
-            return RedirectResponse(url="/docs/guide/protocol.html", status_code=307)
+        # 文档首页由 VitePress 的 index.md 生成（/docs/ 与 /docs/index.html 正常出首页），
+        # 这里只负责把未命中的路径换成可读的构建提示。
         try:
             return await super().get_response(path, scope)
         except StarletteHTTPException as exc:  # starlette 抛的是父类，fastapi.HTTPException 捕不到

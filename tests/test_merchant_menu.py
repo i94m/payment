@@ -31,11 +31,15 @@ async def test_menu_default_sections(client, session):
         return [i["name"] for i in next(s for s in sections if s["label"] == label)["items"]]
 
     assert names(None) == ["用户中心"]
-    assert names("个人资料") == ["API信息", "修改资料", "修改密码"]
-    assert names("查询") == ["订单记录", "测试支付", "结算记录", "资金明细"]
+    assert names("个人资料") == ["API信息"]
+    assert names("查询") == ["订单记录", "测试支付"]
     assert names("下级代理") == ["代理管理", "代理业绩"]
     # 外链默认空串 → 不下发
     assert names("其他") == ["开发文档"]
+
+    # 修改资料/修改密码/结算记录/资金明细静态隐藏：页面与接口保留，菜单不下发
+    all_names = [i["name"] for s in sections for i in s["items"]]
+    assert not {"修改资料", "修改密码", "结算记录", "资金明细"} & set(all_names)
 
 
 @pytest.mark.asyncio

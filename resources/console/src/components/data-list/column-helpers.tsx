@@ -35,7 +35,7 @@ export function selectColumn<T>(): ColumnDef<T> {
 
 export function actionsColumn<T>(
   actions: ActionItem<T>[],
-  opts?: { header?: string; width?: number },
+  opts?: { header?: string; width?: number; sticky?: boolean },
 ): ColumnDef<T> {
   const width = opts?.width
   const inlineActions = actions.filter((a) => a.placement !== "menu")
@@ -96,11 +96,13 @@ export function actionsColumn<T>(
     ),
     // width: 操作列固定宽度（w=minWidth，防被自动表格布局压缩成多行），
     // 不传时保持默认 w-[72px] 内容自适应
+    // sticky: 默认贴右；最后一列本身就是关键内容（如平台订单号在操作列左侧、
+    // 表格略微超宽）时关掉，避免操作列把最后一列盖住
     meta: {
       headClassName: width ? "text-center" : "w-[72px] text-center",
       headStyle: width ? { width, minWidth: width } : undefined,
       cellClassName: "text-center",
-      sticky: "right",
+      sticky: opts?.sticky === false ? undefined : "right",
     },
   }
 }

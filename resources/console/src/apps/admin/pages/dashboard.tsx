@@ -298,7 +298,19 @@ export function DashboardPage() {
 
   const trend: { date: string; count: number; money: number }[] = overview?.trend ?? []
   // 卡片数值保留原始 number，交给 AnimatedNumber 做变化动画（格式化在渲染时做）
-  const kpis = [
+  // unit/extra：主数值后的单位与副数值（扣量卡片用它同时展示笔数与金额）
+  type KpiItem = {
+    key: string
+    label: string
+    icon: React.ComponentType<{ className?: string }>
+    value: number
+    format: (v: number) => string
+    to: string
+    note: string
+    unit?: string
+    extra?: string
+  }
+  const kpis: KpiItem[] = [
     {
       key: "today_deduct_money", label: "今日预计收入", icon: IconTrendingUp,
       value: overview?.today_deduct_money ?? 0, format: fmtMoney, to: "",
@@ -310,15 +322,18 @@ export function DashboardPage() {
       note: "昨日全天汇总",
     },
     // 同类指标相邻：今日/昨日收入在前，今日/昨日扣量紧随其后
+    // 扣量卡片同时给出笔数与金额（如「8 笔 / 88.00 元」），金额口径 = 命中扣量单的订单金额合计
     {
       key: "today_deduct_count", label: "今日扣量", icon: IconPercentage,
       value: overview?.today_deduct_count ?? 0, format: fmtCount, to: "",
-      note: "今日命中扣量笔数",
+      unit: "笔", extra: `${fmtMoney(overview?.today_deduct_money ?? 0)} 元`,
+      note: "今日命中扣量笔数 / 金额",
     },
     {
       key: "yesterday_deduct_count", label: "昨日扣量", icon: IconPercentage,
       value: overview?.yesterday_deduct_count ?? 0, format: fmtCount, to: "",
-      note: "昨日命中扣量笔数",
+      unit: "笔", extra: `${fmtMoney(overview?.yesterday_deduct_money ?? 0)} 元`,
+      note: "昨日命中扣量笔数 / 金额",
     },
     {
       key: "usermoney", label: "总计余额", icon: IconCoin,
@@ -427,7 +442,20 @@ export function DashboardPage() {
                     <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
                       {loading
                         ? <Skeleton className="h-8 w-24" />
-                        : <AnimatedNumber value={kpi.value} format={kpi.format} />}
+                        : (
+                          <span className="flex flex-wrap items-baseline gap-x-1.5">
+                            <AnimatedNumber value={kpi.value} format={kpi.format} />
+                            {kpi.unit && (
+                              <span className="text-sm font-normal text-muted-foreground">{kpi.unit}</span>
+                            )}
+                            {kpi.extra && (
+                              <>
+                                <span className="text-muted-foreground/60">{"/"}</span>
+                                <span className="text-base font-medium text-muted-foreground">{kpi.extra}</span>
+                              </>
+                            )}
+                          </span>
+                        )}
                     </CardTitle>
                   </CardHeader>
                   <CardFooter className="flex-col items-start text-sm">

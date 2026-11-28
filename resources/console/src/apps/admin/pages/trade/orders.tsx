@@ -25,7 +25,6 @@ import {
   useDataList,
   ListError,
   actionsColumn,
-  secondaryCell,
   dateCell,
   copyableCell,
   truncatedCell,
@@ -156,31 +155,40 @@ export function OrdersPage() {
     initialKeyword: initialTradeNo,
     columns: [
       {
-        accessorKey: "trade_no",
-        enableSorting: false,
-        header: () => "平台订单号",
-        cell: ({ row }) => (
-          <span className="flex items-center gap-1.5">
-            {copyableCell(row.original.trade_no, 220)}
-            {row.original.order_type === 2 && <Badge variant="secondary">{"测试"}</Badge>}
-            {row.original.order_type === 1 && <Badge variant="outline">{"充值"}</Badge>}
-          </span>
-        ),
-        meta: { headClassName: "min-w-[240px]", sticky: "left" },
-      },
-      {
         accessorKey: "out_trade_no",
         enableSorting: false,
         header: () => "商户订单号",
-        cell: ({ row }) => truncatedCell(row.original.out_trade_no, 200),
-        meta: { headClassName: "min-w-[220px]" },
+        cell: ({ row }) => truncatedCell(row.original.out_trade_no, 140),
+        meta: { headClassName: "min-w-[140px]", sticky: "left" },
+      },
+      {
+        // 扣量紧跟商户订单号：后台判断「这笔算不算钱」第一眼就看这一列
+        accessorKey: "is_deducted",
+        enableSorting: false,
+        header: () => "扣量",
+        // 命中扣量的订单在后台可见（实心对号），非扣量留空而不是画横杠
+        cell: ({ row }) => (row.original.is_deducted
+          ? (
+            <span className="inline-flex text-emerald-600 dark:text-emerald-400" title={"扣量单"}>
+              <IconCircleCheckFilled className="size-4" />
+            </span>
+          )
+          : null),
+        meta: { headClassName: "w-[32px] text-center", cellClassName: "text-center" },
       },
       {
         accessorKey: "merchant_username",
         enableSorting: false,
         header: () => "商户",
-        cell: ({ row }) => secondaryCell(row.original.merchant_username || row.original.merchant_id || ""),
-        meta: { headClassName: "min-w-[90px]" },
+        cell: ({ row }) => {
+          const name = row.original.merchant_username || String(row.original.merchant_id ?? "")
+          return (
+            <span className="block truncate text-muted-foreground" style={{ maxWidth: 92 }} title={name}>
+              {name}
+            </span>
+          )
+        },
+        meta: { headClassName: "min-w-[80px]" },
       },
       {
         accessorKey: "type",
@@ -193,7 +201,7 @@ export function OrdersPage() {
             {row.original.type_name || row.original.type}
           </span>
         ),
-        meta: { headClassName: "w-[80px]" },
+        meta: { headClassName: "w-[84px]" },
       },
       {
         accessorKey: "channel_code",
@@ -205,14 +213,14 @@ export function OrdersPage() {
             // 未走编码路由的订单留空，不展示占位横杠
             : null
         ),
-        meta: { headClassName: "w-[90px]" },
+        meta: { headClassName: "w-[56px]" },
       },
       {
         accessorKey: "subject",
         enableSorting: false,
         header: () => "商品名称",
-        cell: ({ row }) => truncatedCell(row.original.subject, 120),
-        meta: { headClassName: "min-w-[120px]" },
+        cell: ({ row }) => truncatedCell(row.original.subject, 88),
+        meta: { headClassName: "min-w-[88px]" },
       },
       {
         accessorKey: "money",
@@ -243,25 +251,25 @@ export function OrdersPage() {
         meta: { headClassName: "w-[80px] text-center", cellClassName: "text-center" },
       },
       {
-        accessorKey: "is_deducted",
-        enableSorting: false,
-        header: () => "扣量",
-        // 命中扣量的订单在后台可见（实心对号），非扣量留空而不是画横杠
-        cell: ({ row }) => (row.original.is_deducted
-          ? (
-            <span className="inline-flex text-emerald-600 dark:text-emerald-400" title={"扣量单"}>
-              <IconCircleCheckFilled className="size-4" />
-            </span>
-          )
-          : null),
-        meta: { headClassName: "w-[60px] text-center", cellClassName: "text-center" },
-      },
-      {
         accessorKey: "created_at",
         enableSorting: false,
         header: () => "创建时间",
         cell: ({ row }) => dateCell(row.original.created_at),
-        meta: { headClassName: "min-w-[150px]" },
+        meta: { headClassName: "min-w-[120px]" },
+      },
+      {
+        // 平台订单号放最后：它是内部追溯用的长串，不占首屏视线（首列让给商户订单号）
+        accessorKey: "trade_no",
+        enableSorting: false,
+        header: () => "平台订单号",
+        cell: ({ row }) => (
+          <span className="flex items-center gap-1.5">
+            {copyableCell(row.original.trade_no, 92)}
+            {row.original.order_type === 2 && <Badge variant="secondary">{"测试"}</Badge>}
+            {row.original.order_type === 1 && <Badge variant="outline">{"充值"}</Badge>}
+          </span>
+        ),
+        meta: { headClassName: "min-w-[186px]" },
       },
       actionsColumn([
         {
@@ -288,7 +296,7 @@ export function OrdersPage() {
           icon: <IconBell className="size-4" />,
           onClick: (item: OrderData) => { setActionType("notify"); setActionTradeNo(item.trade_no) },
         }] : []),
-      ] as ActionItem<OrderData>[], { width: 264 }),
+      ] as ActionItem<OrderData>[], { width: 240 }),
     ],
     perPage: 20,
   })
@@ -505,6 +513,7 @@ export function OrdersPage() {
               table={table}
               loading={loading}
               emptyMessage={"暂无数据"}
+              dense
               rowClassName={(o) => (o.is_deducted ? DEDUCTED_ORDER_ROW_CLASS : undefined)}
             >
               <DataTablePagination table={table} total={total} />

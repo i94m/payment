@@ -53,7 +53,9 @@ export function UserMenuContent() {
         </DropdownMenuLabel>
       </DropdownMenuGroup>
 
-      {APP_MODULE !== "agent" && (
+      {/* 商户端「账号信息」指向 /user-center（修改资料），侧边栏已下线该入口，
+          这里一并隐藏；admin 端仍保留（账号信息 + 改密弹窗） */}
+      {APP_MODULE === "admin" && (
         <>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>

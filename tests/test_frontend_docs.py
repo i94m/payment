@@ -40,10 +40,9 @@ def _location_path(r: httpx.Response) -> str:
 
 @pytest.mark.skipif(not frontend.os.path.exists(DOCS_DIST), reason="docs 未构建")
 async def test_docs_served_when_built():
-    """dist 存在时 /docs 由 mount 接管，文档首页统一跳转协议规则页（无独立首页）。
+    """dist 存在时 /docs 由 mount 接管，/docs/ 直接出文档首页（index.md）。
 
-    裸 /docs 不被 Mount 匹配，由 SPA 兜底 307 到 /docs/；/docs/ 再由
-    _DocsStaticFiles 307 到 /docs/guide/protocol.html。
+    裸 /docs 不被 Mount 匹配，由 SPA 兜底 307 到 /docs/。
     """
     app = _registered(_build_app())
     r = await _get(app, "/docs")
@@ -51,8 +50,9 @@ async def test_docs_served_when_built():
     assert _location_path(r) == "/docs/"
 
     r = await _get(app, "/docs/")
-    assert r.status_code == 307, (r.status_code, r.text[:120])
-    assert _location_path(r) == "/docs/guide/protocol.html"
+    assert r.status_code == 200, (r.status_code, r.text[:120])
+    assert "text/html" in r.headers["content-type"]
+    assert "对接文档" in r.text
 
     r = await _get(app, "/docs/guide/protocol.html")
     assert r.status_code == 200, (r.status_code, r.text[:120])
@@ -70,13 +70,10 @@ async def test_docs_404_hint_when_not_built(monkeypatch):
                         lambda: frontend.os.path.join(PROJECT_ROOT, "static", "docs_missing"))
     app = _registered(_build_app())
 
-    # 裸 /docs 先 307 到 /docs/（绝对/相对地址均可）；/docs/ 无独立首页再 307 到协议页，
-    # 未构建时最终在协议页路径上给出 404 提示
+    # 裸 /docs 先 307 到 /docs/（绝对/相对地址均可）；未构建时文档路径统一给 404 提示
     r = await _get(app, "/docs")
     assert r.status_code == 307 and _location_path(r) == "/docs/", r.status_code
-    r = await _get(app, "/docs/")
-    assert r.status_code == 307 and _location_path(r) == "/docs/guide/protocol.html", r.status_code
-    for path in ("/docs/guide/protocol.html", "/docs/guide/protocol.md"):
+    for path in ("/docs/", "/docs/guide/protocol.html", "/docs/guide/protocol.md"):
         r = await _get(app, path)
         assert r.status_code == 404, (path, r.status_code)
         assert "pnpm install" in r.text, (path, r.text[:200])

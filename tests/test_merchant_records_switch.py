@@ -1,8 +1,8 @@
 """商户端资金明细开关（merchant_records_enable）：站点配置页可改 + 菜单隐藏 + 接口级拦截。
 
 开关语义：
-- 开（默认）：商户端侧边栏「资金明细」可见，/merchant-api/record/list 正常
-- 关：菜单项隐藏；直访 /records 由前端按 404 处理；接口 403
+- 开（默认）：商户端「资金明细」接口正常；菜单入口已静态下线（hidden），恢复需改 sidebar/common
+- 关：接口 403（页面直访由前端按 404 处理）
 - 结算记录（/record/settlements）不受这个开关影响
 """
 import pytest
@@ -58,13 +58,14 @@ async def test_switch_exposed_in_admin_settings_page(client, seeded, session):
 
 
 @pytest.mark.asyncio
-async def test_switch_off_hides_menu_item(client, seeded, session):
+async def test_records_menu_statically_hidden(client, seeded, session):
+    """资金明细入口已静态下线：开关开/关都不下发（开关仍决定接口是否 403）。"""
     h = await _headers(session)
-    paths = lambda sections: [i["path"] for s in sections for i in s["items"]]
-    assert "/records" in paths((await client.get("/merchant-api/menuList", headers=h)).json()["data"])
+    names = lambda sections: [i["name"] for s in sections for i in s["items"]]
+    assert "资金明细" not in names((await client.get("/merchant-api/menuList", headers=h)).json()["data"])
 
     await set_settings(session, {"merchant_records_enable": False})
-    assert "/records" not in paths((await client.get("/merchant-api/menuList", headers=h)).json()["data"])
+    assert "资金明细" not in names((await client.get("/merchant-api/menuList", headers=h)).json()["data"])
 
 
 @pytest.mark.asyncio

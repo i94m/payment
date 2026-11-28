@@ -110,10 +110,6 @@ export const merchantsApi = {
   generateRsaKey: (id: number) =>
     apiClient.post(`/merchant/${id}/rsakey`) as Promise<{ public_key: string; private_key: string }>,
 
-  /** 重置商户 MD5 签名密钥（旧密钥立即失效） */
-  resetApiSecret: (id: number) =>
-    apiClient.post(`/merchant/${id}/apisecret`) as Promise<{ api_secret: string }>,
-
   /** 平台RSA公钥（由 platform_rsa_private_key 派生，商户用于验证平台通知签名） */
   platformKey: () =>
     apiClient.get("/merchant/platform-key") as Promise<{ public_key: string }>,

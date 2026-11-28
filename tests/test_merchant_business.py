@@ -278,6 +278,64 @@ async def test_admin_random_integer_validation(client, seeded, session):
 
 
 @pytest.mark.asyncio
+async def test_admin_merchant_update_username_and_password(client, seeded, session):
+    """编辑弹窗：用户名可改（唯一）、密码留空不改、填了就重置。"""
+    from app.core.security import verify_password
+
+    headers = await _admin_headers(session)
+    m = await _get_merchant(session)
+    old_pwd = m.password
+    old_name = m.username
+
+    # 改名 + 设置密码：一次提交完成
+    resp = await client.put(
+        f"/admin-api/merchant/{m.id}",
+        json={"username": "renamed_merchant", "password": "newpass123"},
+        headers=headers)
+    assert resp.json()["code"] == 0, resp.json()
+    await session.refresh(m)
+    assert m.username == "renamed_merchant"
+    assert verify_password("newpass123", m.password)
+
+    # 用户名重复：拒绝且不落库
+    other = Merchant(pid=9999, username="dup_merchant", password="x")
+    session.add(other)
+    await session.commit()
+    resp = await client.put(
+        f"/admin-api/merchant/{m.id}", json={"username": "dup_merchant"}, headers=headers)
+    assert resp.json()["code"] == -1
+    assert "已存在" in resp.json()["message"]
+    await session.refresh(m)
+    assert m.username == "renamed_merchant"
+
+    # 用户名太短：拒绝
+    resp = await client.put(
+        f"/admin-api/merchant/{m.id}", json={"username": "a"}, headers=headers)
+    assert resp.json()["code"] == -1
+
+    # 密码留空 = 不修改（编辑弹窗只改别的字段时不冲掉密码）
+    resp = await client.put(
+        f"/admin-api/merchant/{m.id}", json={"username": "renamed_merchant", "rate": ""},
+        headers=headers)
+    assert resp.json()["code"] == 0
+    await session.refresh(m)
+    assert verify_password("newpass123", m.password)
+    assert m.username == "renamed_merchant"
+
+    # 密码过短：拒绝
+    resp = await client.put(
+        f"/admin-api/merchant/{m.id}", json={"password": "123"}, headers=headers)
+    assert resp.json()["code"] == -1
+    await session.refresh(m)
+    assert verify_password("newpass123", m.password)
+
+    # 老用户名已释放：另一个商户可以改用它
+    resp = await client.put(
+        f"/admin-api/merchant/{other.id}", json={"username": old_name}, headers=headers)
+    assert resp.json()["code"] == 0, resp.json()
+
+
+@pytest.mark.asyncio
 async def test_order_realmoney_integer_only(client, seeded, session):
     m = await _get_merchant(session)
     m.random_enable = True

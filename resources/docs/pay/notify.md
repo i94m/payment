@@ -13,7 +13,7 @@
 | 商户ID | pid | 是 | String | 1001 | |
 | 平台订单号 | trade_no | 是 | String | 2609261200000000001234 | 平台订单号 |
 | 商户订单号 | out_trade_no | 是 | String | 20160806151343349 | 商户系统内部的订单号 |
-| 支付方式 | type | 是 | String | alipay | [支付方式列表](/appendix/paytype.html) |
+| 支付方式 | type | 是 | String | alipay | 平台已开通的支付方式编码 |
 | 商品名称 | name | 是 | String | VIP会员 | |
 | 商品金额 | money | 是 | String | 1.00 | 固定两位小数（如 `5.00`），验签请使用收到的参数原值 |
 | 支付状态 | trade_status | 是 | String | TRADE_SUCCESS | 只有TRADE_SUCCESS是成功 |
@@ -31,7 +31,7 @@
 - 返回非 2xx（或超时/连接失败）的通知视为失败，平台将按
   **1 / 2 / 5 / 10 / 30 / 60 / 120 分钟** 的阶梯间隔重试，默认最多尝试 6 次（次数由平台配置）；
 - 重试期间商户侧对 `timestamp` 的校验可按自身策略放宽；
-- 通知与查单结果一致，商户如对通知有疑义，以[查单接口](/api/order-query.html)结果为准。
+- 通知即最终结果，收到成功通知后即可据此完成订单履约。
 
 ## 应答示例
 

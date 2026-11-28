@@ -106,7 +106,6 @@ export function SecurityPage() {
     // 没有默认通道时不占这一行；缺这一行不影响其它字段与整段复制
     ...(channelValue ? [["默认通道", channelValue] as [string, string]] : []),
     ["下单地址", `${site}/api/orders`],
-    ["查询地址", `${site}/api/orders/{trade_no}`],
     ["对接文档", `${site}/docs`],
   ] : []
   const integrationText = apiKey ? [
