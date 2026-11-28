@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { merchantsApi, merchantSecurityApi } from "@/api"
+import { merchantsApi } from "@/api"
 import type { MerchantData } from "@/api"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -121,7 +121,9 @@ const recordSchema = z.object({
 })
 
 const editSchema = z.object({
-  username: z.string(),
+  username: z.string().min(2, "用户名至少 2 位"),
+  // 留空 = 不修改；填了才重置（与后端 update 的 password 语义一致）
+  password: z.string().refine((v) => v === "" || v.length >= 6, "密码至少 6 位"),
   rate: rateField,
   status: z.boolean(),
   pay_status: z.boolean(),
@@ -203,9 +205,6 @@ function MerchantIntegrationCard({ data, canReset, onReset }: {
           {"格式与商户端「API 信息」页一致，可直接复制发送。"}
         </CardDescription>
         <CardAction className="flex items-center gap-2">
-          <Badge variant={data.rsa2_enable ? "default" : "secondary"}>
-            {data.rsa2_enable ? "签名方式 RSA2" : "签名方式 MD5"}
-          </Badge>
           {canReset && (
             <Button size="sm" variant="outline" onClick={onReset}>
               <IconRefresh className="size-4" />
@@ -247,8 +246,6 @@ export function MerchantsPage() {
   const [balanceAmount, setBalanceAmount] = React.useState("")
   const [balanceRemark, setBalanceRemark] = React.useState("")
 
-  const [pwdTarget, setPwdTarget] = React.useState<MerchantData | null>(null)
-  const [pwdValue, setPwdValue] = React.useState("")
   const [deleteTarget, setDeleteTarget] = React.useState<MerchantData | null>(null)
 
   // ---- ulist 对齐弹窗 ----
@@ -667,12 +664,12 @@ export function MerchantsPage() {
         { label: "API密钥", onClick: (item) => openDetail(item) },
         { label: "调整余额", onClick: (item) => { setBalanceTarget(item); setBalanceAmount(""); setBalanceRemark("") } },
         { label: "登录", title: "SSO 一键登录商户后台", onClick: (item) => submitSso(item) },
-        { label: "重置密码", onClick: (item) => { setPwdValue(""); setPwdTarget(item) } },
         // 编辑入口恒定显示：弹窗里的状态开关受 MERCHANT_STATUS_ENABLED 控制，
         // 但「费率」不受开关约束，隐藏入口会让商户专属费率无处可填。
+        // 重置密码已并入编辑弹窗（密码留空 = 不修改），不再单列按钮。
         { label: "编辑", onClick: (item: MerchantData) => { setEditingId(item.id); setFormOpen(true) } },
         { label: "删除", variant: "destructive", title: "删除商户", onClick: (item) => setDeleteTarget(item) },
-      ] as ActionItem<MerchantData>[], { width: 420 }),
+      ] as ActionItem<MerchantData>[], { width: 360 }),
     ],
   })
 
@@ -882,22 +879,6 @@ export function MerchantsPage() {
     refresh()
   }
 
-  const submitResetPwd = async () => {
-    if (!pwdTarget) return
-    const pwd = pwdValue.trim()
-    if (pwd.length < 6) {
-      toast.error("密码至少 6 位"); return
-    }
-    try {
-      await merchantSecurityApi.resetPassword(pwdTarget.id, pwd)
-      toast.success("密码已重置，该商户现有登录会话已失效")
-      setPwdTarget(null)
-      refresh()
-    } catch (err) {
-      toast.error(getErrorMessage(err, "操作失败"))
-    }
-  }
-
   const submitDelete = async () => {
     if (!deleteTarget) return
     // 失败时抛出：由 ConfirmDialog 提示后端原因并保持弹窗打开
@@ -1054,7 +1035,13 @@ export function MerchantsPage() {
         schema={editSchema}
         width="sm:max-w-sm"
         fields={[
-          { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", props: { disabled: true } },
+          // 用户名可改：改完即生效（登录名），留空不允许
+          { type: "input", name: "username", label: "用户名", placeholder: "用户名", span: "full", props: { autoComplete: "off" } },
+          {
+            type: "password", name: "password", label: "密码", span: "full",
+            placeholder: "留空 = 不修改",
+            props: { autoComplete: "new-password", spellCheck: false },
+          },
           {
             type: "input", name: "rate", label: "费率", unit: "%", span: "full",
             placeholder: "留空 = 按通道费率",
@@ -1070,11 +1057,12 @@ export function MerchantsPage() {
           }] as FormFieldConfig[]) : []),
         ]}
         defaultValues={() => ({
-          username: "", rate: "",
+          username: "", password: "", rate: "",
           status: true, pay_status: true, settle_status: true,
         })}
         fetchDetail={(id) => merchantsApi.get(id).then((d) => ({
           username: d.username,
+          password: "",
           rate: d.rate,
           status: d.status === 1,
           pay_status: d.pay_status === 1,
@@ -1082,6 +1070,9 @@ export function MerchantsPage() {
         }) as unknown as Record<string, unknown>)}
         onSubmit={async (id, values) => {
           if (id) await merchantsApi.update(id, {
+            // 用户名改了才下发；密码留空表示不重置
+            ...(values.username?.trim() ? { username: values.username.trim() } : {}),
+            ...(values.password ? { password: values.password } : {}),
             // 空串 = 清除专属费率（后端显式处理），留空不会把已有值改成 0
             rate: values.rate ?? "",
             status: values.status ? 1 : 0,
@@ -1089,7 +1080,7 @@ export function MerchantsPage() {
             settle_status: values.settle_status ? 1 : 0,
           })
           refresh()
-          toast.success("商户已更新")
+          toast.success(values.password ? "商户已更新，密码已重置" : "商户已更新")
         }}
         editTitle={"编辑商户"}
       />
@@ -1188,32 +1179,6 @@ export function MerchantsPage() {
           </div>
           <DialogFooter>
             <Button onClick={() => setRsaResult(null)}>{"我已保存，关闭"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 重置登录密码（管理员直接输入新密码） */}
-      <Dialog open={!!pwdTarget} onOpenChange={(open) => { if (!open) setPwdTarget(null) }} disablePointerDismissal>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{"重置密码"} - {pwdTarget?.username}</DialogTitle>
-            <DialogDescription>{"输入新密码后立即生效，该商户现有登录会话将全部失效"}</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="reset-pwd">{"新密码"}</Label>
-            <Input
-              id="reset-pwd"
-              type="text"
-              autoComplete="new-password"
-              value={pwdValue}
-              onChange={(e) => setPwdValue(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") submitResetPwd() }}
-              placeholder={"至少 6 位"}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPwdTarget(null)}>{"取消"}</Button>
-            <Button onClick={submitResetPwd} disabled={pwdValue.trim().length < 6}>{"确定"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1557,57 +1522,64 @@ export function MerchantsPage() {
           ) : (
             <div className="space-y-4">
               {/* 对接信息（明文，可整段/逐项复制）：原「MD5 签名密钥」掩码框已并入此卡片，
-                  同一值不再出现两次；重置按钮与签名方式徽标挪到卡片头部 */}
+                  同一值不再出现两次；重置按钮挪到卡片头部。
+                  签名方式徽标不再展示：默认就是 MD5，写出来只会让运营误以为要选。 */}
               <MerchantIntegrationCard
                 data={detailData}
                 canReset={hasPermission("merchant.resetkey")}
                 onReset={() => setSecretResetTarget(detailData)}
               />
 
-              {/* 平台公钥（商户用于验证平台通知签名） */}
-              <div className="grid gap-1.5">
-                <Label>{"平台公钥"}</Label>
-                {platformKey ? (
-                  <div className="flex items-start gap-2">
-                    <Textarea
-                      readOnly
-                      value={platformKey}
-                      rows={3}
-                      className="min-w-0 flex-1 resize-none field-sizing-fixed break-all font-mono text-xs"
-                    />
-                    <CopyButton value={platformKey} />
+              {/* 平台公钥 / 商户RSA公钥只在商户启用 RSA2 后才有意义：
+                  MD5 商户看 PEM 只是一堆噪音，整块不展示（RSA2 由商户在自己的
+                  面板开启并生成密钥，后台只做查看/重置） */}
+              {detailData.rsa2_enable && (
+                <>
+                  {/* 平台公钥（商户用于验证平台通知签名） */}
+                  <div className="grid gap-1.5">
+                    <Label>{"平台公钥"}</Label>
+                    {platformKey ? (
+                      <div className="flex items-start gap-2">
+                        <Textarea
+                          readOnly
+                          value={platformKey}
+                          rows={3}
+                          className="min-w-0 flex-1 resize-none field-sizing-fixed break-all font-mono text-xs"
+                        />
+                        <CopyButton value={platformKey} />
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {"未配置：请在 站点配置 中填写 平台RSA私钥 后自动派生"}
+                      </p>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    {"未配置：请在 站点配置 中填写 平台RSA私钥 后自动派生"}
-                  </p>
-                )}
-              </div>
 
-              {/* RSA 公钥 */}
-              <div className="grid gap-1.5">
-                <div className="flex items-center justify-between">
-                  <Label>{"商户RSA公钥"}</Label>
-                  <Button size="sm" variant="outline" onClick={() => setRsagenTarget(detailData)}>
-                    <IconKey className="size-4" />
-                    {detailData.public_key ? "重置RSA密钥对" : "生成RSA密钥对"}
-                  </Button>
-                </div>
-                {detailData.public_key ? (
-                  <div className="flex items-start gap-2">
-                    <Textarea
-                      readOnly
-                      value={detailData.public_key}
-                      rows={3}
-                      className="min-w-0 flex-1 resize-none field-sizing-fixed break-all font-mono text-xs"
-                    />
-                    <CopyButton value={detailData.public_key} />
+                  {/* RSA 公钥 */}
+                  <div className="grid gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label>{"商户RSA公钥"}</Label>
+                      <Button size="sm" variant="outline" onClick={() => setRsagenTarget(detailData)}>
+                        <IconKey className="size-4" />
+                        {detailData.public_key ? "重置RSA密钥对" : "生成RSA密钥对"}
+                      </Button>
+                    </div>
+                    {detailData.public_key ? (
+                      <div className="flex items-start gap-2">
+                        <Textarea
+                          readOnly
+                          value={detailData.public_key}
+                          rows={3}
+                          className="min-w-0 flex-1 resize-none field-sizing-fixed break-all font-mono text-xs"
+                        />
+                        <CopyButton value={detailData.public_key} />
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{"未生成"}</p>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">{"未生成"}</p>
-                )}
-              </div>
-
+                </>
+              )}
             </div>
           )}
           <DialogFooter>

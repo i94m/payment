@@ -361,6 +361,7 @@ async def create_merchant(body: CreateMerchantRequest, session: SessionDep):
 
 
 class UpdateMerchantRequest(BaseModel):
+    username: Optional[str] = None          # None=不改；改了要保证全平台唯一
     password: str = ""
     email: str = ""
     phone: str = ""
@@ -402,6 +403,22 @@ async def update_merchant(merchant_id: int, body: UpdateMerchantRequest, session
     except Exception:
         return err(-1, "金额格式错误")
     password_changed = bool(body.password)
+    if password_changed:
+        if not (6 <= len(body.password) <= 64):
+            return err(-1, "密码需 6~64 位")
+    # 用户名可改：空串=不改（前端「留空」语义），改成了别人的用户名直接拦下
+    if body.username is not None and body.username.strip() and body.username.strip() != m.username:
+        new_username = body.username.strip()
+        if len(new_username) < 2:
+            return err(-1, "用户名至少 2 位")
+        if len(new_username) > 64:
+            return err(-1, "用户名最多 64 位")
+        dup = (await session.exec(
+            select(Merchant).where(Merchant.username == new_username)
+        )).first()
+        if dup:
+            return err(-1, "用户名已存在")
+        m.username = new_username
     if password_changed:
         m.password = hash_password(body.password)
     if body.email != "":
