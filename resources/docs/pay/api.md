@@ -11,7 +11,7 @@ URL地址：`{site_url}/api/orders`
 | 字段名 | 变量名 | 必填 | 类型 | 示例值 | 描述 |
 |---|---|---|---|---|---|
 | 商户ID | pid | 是 | Int | 1001 | |
-| 支付方式 | type | 是 | String | alipay | [支付方式列表](/appendix/paytype.html) |
+| 支付方式 | type | 是 | String | alipay | 平台已开通的支付方式编码 |
 | 通道编码 | channel_code | 否 | String | 8088 | 平台分配的通道编码：本单只在该编码绑定的通道内分流，大小写不敏感；不传则按默认路由分流（详见 [协议规则](/guide/protocol.html)） |
 | 商户订单号 | out_trade_no | 是 | String | 20160806151343349 | 同一商户下唯一，最长64字符，重复请求幂等返回原订单 |
 | 异步通知地址 | notify_url | 否 | String | http://www.pay.com/notify_url.php | 服务器异步通知地址，缺省时使用商户后台配置的默认通知地址 |
@@ -86,5 +86,4 @@ curl -X POST "{site_url}/api/orders" \
 }
 ```
 
-支付成功后可通过 [回调通知](/pay/notify.html)、[查询订单](/api/order-query.html) 获取结果，
-通过 [申请退款](/api/refund.html) 接口退款。
+支付成功后平台通过[回调通知](/pay/notify.html)推送结果。

@@ -24,7 +24,7 @@ URL地址：`{site_url}/api/orders/{trade_no}`
 | 返回信息 | message | String | ok | 失败时返回原因 |
 | 平台订单号 | trade_no | String | 2609261200000000001234 | 平台订单号 |
 | 商户订单号 | out_trade_no | String | 20160806151343349 | 商户系统内部的订单号 |
-| 支付方式 | type | String | alipay | [支付方式列表](/appendix/paytype.html) |
+| 支付方式 | type | String | alipay | 平台已开通的支付方式编码 |
 | 商品名称 | name | String | VIP会员 | |
 | 商品金额 | money | String | 1.00 | 固定两位小数 |
 | 支付状态 | status | Int | 1 | 1为已支付（含已全额退款，退款状态见 refund_status），0为未支付 |
@@ -55,4 +55,3 @@ URL地址：`{site_url}/api/orders/{trade_no}`
 ```
 
 提示：查单接口与异步通知结果一致，商户如对通知有疑义，应以查单接口结果为准。
-退款相关操作见[申请退款](/api/refund.html)。

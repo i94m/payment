@@ -51,7 +51,7 @@ _MENU_SECTIONS: list[dict] = [
     ]},
     {"label": "查询", "items": [
         {"key": "merchant.order", "name": "订单记录", "path": "/orders", "icon": "icon-list"},
-        {"key": "merchant.testpay", "name": "测试支付", "path": "/testpay", "icon": "icon-flask"},
+        # 测试支付不再提供菜单入口（页面/接口保留，直访 /testpay 仍可用）
         {"key": "merchant.settle", "name": "结算记录", "path": "/settle", "icon": "icon-thumb-up"},
         {"key": "merchant.record", "name": "资金明细", "path": "/records", "icon": "icon-file",
          "flag": "merchant_records_enable"},

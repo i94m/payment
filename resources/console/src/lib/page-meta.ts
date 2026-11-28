@@ -47,10 +47,7 @@ const EXTRA_META: Record<string, PageMeta> =
         "/system/accounts": { title: "管理员账号", parents: [] },
       }
     : APP_MODULE === "merchant"
-      ? {
-          "/paypage": { title: "收款页设置", parents: [] },
-          "/messages": { title: "站内消息", parents: [] },
-        }
+      ? {}
       : {}
 
 export const PAGE_META: Record<string, PageMeta> = {

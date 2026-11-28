@@ -56,7 +56,9 @@ export function getMerchantMenu(): MenuSection[] {
       label: "交易中心",
       items: [
         { title: "订单记录", url: "/orders", icon: IconListDetails },
-        { title: "测试支付", url: "/testpay", icon: IconFlask },
+        // 测试支付不再放进菜单：测试单落在系统测试商户名下，商户看不到任何痕迹，
+        // 入口只留直访 URL（/testpay），需要时把 hidden 去掉即可恢复显示
+        { title: "测试支付", url: "/testpay", icon: IconFlask, hidden: true },
         { title: "结算记录", url: "/settle", icon: IconReceipt },
         { title: "资金明细", url: "/records", icon: IconHistory, feature: "merchant_records_enable" },
       ],
