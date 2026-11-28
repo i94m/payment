@@ -8,6 +8,8 @@ const SettlePage = lazy(() => import("./pages/settle").then((m) => ({ default: m
 const RecordsPage = lazy(() => import("./pages/records").then((m) => ({ default: m.RecordsPage })))
 const AgentsPage = lazy(() => import("./pages/agents").then((m) => ({ default: m.AgentsPage })))
 const AgentPerformancePage = lazy(() => import("./pages/agent-performance").then((m) => ({ default: m.AgentPerformancePage })))
+const PaypageMchPage = lazy(() => import("./pages/paypage").then((m) => ({ default: m.PaypageMchPage })))
+const MessagesPage = lazy(() => import("./pages/messages").then((m) => ({ default: m.MessagesPage })))
 const SecurityPage = lazy(() => import("./pages/security").then((m) => ({ default: m.SecurityPage })))
 const PasswordPage = lazy(() => import("./pages/password").then((m) => ({ default: m.PasswordPage })))
 const TestPayPage = lazy(() => import("./pages/testpay").then((m) => ({ default: m.TestPayPage })))
@@ -36,6 +38,8 @@ export const routes: PermissionRouteObject[] = [
   // 下级代理整组按 agent_enable 门控：关闭后直访 URL 也按不存在处理（接口同样 403）
   { path: "/agents", element: <FeatureRoute feature="agent_enable"><AgentsPage /></FeatureRoute> },
   { path: "/agent-performance", element: <FeatureRoute feature="agent_enable"><AgentPerformancePage /></FeatureRoute> },
+  { path: "/paypage", element: <PaypageMchPage /> },
+  { path: "/messages", element: <MessagesPage /> },
   { path: "/security", element: <SecurityPage /> },
   { path: "/password", element: <PasswordPage /> },
   { path: "/403", element: <Error403 /> },

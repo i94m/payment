@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useSearchParams } from "react-router-dom"
 import { ordersApi } from "@/api"
 import type { OrderData } from "@/api"
 import { format } from "date-fns"
@@ -77,8 +78,10 @@ function NotifyStatusCell({ status, notifyStatus }: { status: number; notifyStat
 }
 
 export function OrdersPage() {
-  // 商户侧只有正式收款单（测试单落在系统测试商户名下，不会出现在这里）
+  // 测试支付页跳转过来时带 ?order_type=2，直接落到测试单列表；默认全部类型（含测试单）
+  const [searchParams] = useSearchParams()
   const [outTradeNo, setOutTradeNo] = React.useState("")
+  const [orderType, setOrderType] = React.useState(searchParams.get("order_type") === "2" ? "2" : "")
   const [statusFilter, setStatusFilter] = React.useState("")
   const [startDate, setStartDate] = React.useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = React.useState<Date | undefined>(undefined)
@@ -91,16 +94,17 @@ export function OrdersPage() {
   const filterParams = React.useMemo(() => {
     const params: Record<string, unknown> = {}
     if (outTradeNo.trim()) params.out_trade_no = outTradeNo.trim()
+    if (orderType) params.order_type = orderType
     const status = toIntParam(statusFilter)
     if (status !== undefined) params.status = status
     if (startDate && endDate) {
       params.addtime = `${format(startDate, "yyyy-MM-dd")},${format(endDate, "yyyy-MM-dd")}`
     }
     return params
-  }, [outTradeNo, statusFilter, startDate, endDate])
+  }, [outTradeNo, orderType, statusFilter, startDate, endDate])
 
   const handleReset = () => {
-    setKeyword(""); setOutTradeNo(""); setStatusFilter("")
+    setKeyword(""); setOutTradeNo(""); setOrderType(""); setStatusFilter("")
     setStartDate(undefined); setEndDate(undefined)
     applyFilters()
   }
@@ -275,7 +279,7 @@ export function OrdersPage() {
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col gap-4 py-4 md:gap-6 md:py-6">
         <FilterCard>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 items-end">
             <div className="col-span-1 lg:col-span-2">
               <Input
                 placeholder={"平台订单号"}
@@ -292,6 +296,24 @@ export function OrdersPage() {
               onChange={(e) => setOutTradeNo(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSearch() }}
             />
+            <Select
+              value={orderType || "_all"}
+              onValueChange={(v) => setOrderType(v === "_all" ? "" : v)}
+              items={[
+                { value: "_all", label: "全部类型" },
+                { value: "0", label: "正式收款" },
+                { value: "2", label: "测试单" },
+              ]}
+            >
+              <SelectTrigger className="h-9 w-full">
+                <SelectValue placeholder={"订单类型"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">{"全部类型"}</SelectItem>
+                <SelectItem value="0">{"正式收款"}</SelectItem>
+                <SelectItem value="2">{"测试单"}</SelectItem>
+              </SelectContent>
+            </Select>
             <Select
               value={statusFilter || "_all"}
               onValueChange={(v) => setStatusFilter(v === "_all" ? "" : v)}
