@@ -265,7 +265,7 @@ check("关闭后下单拒绝", body9.get("code") != 0 and "API支付接口未开
 mh = merchant_login()
 st10, body10, _ = req("GET", "/merchant-api/menuList", headers=mh)
 names = [i["name"] for s in body10["data"] for i in s["items"]]
-check("商户端菜单隐藏「API信息」", "API信息" not in names and "修改密码" in names, str(names))
+check("商户端菜单隐藏「API信息」", "API信息" not in names, str(names))
 st11, body11, _ = req("GET", "/merchant-api/account/apikey", headers=mh)
 check("API信息页面接口仍可用（页面逻辑保留）",
       body11.get("code") == 0 and body11["data"].get("public_key")

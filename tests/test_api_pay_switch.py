@@ -85,13 +85,13 @@ async def test_disabled_rejects_create_and_query(client, session):
 async def test_disabled_hides_menu_but_keeps_page(client, session):
     await set_settings(session, {"api_pay_enable": False})
 
-    # 菜单隐藏「API信息」入口，同组其余项保留
+    # 菜单隐藏「API信息」入口；该组其余项（修改资料/修改密码）已静态隐藏，
+    # 组内没有可下发项时整组不下发
     resp = await client.get("/merchant-api/menuList", headers=await _headers(session))
     sections = resp.json()["data"]
-    profile = next(s for s in sections if s["label"] == "个人资料")
-    names = [i["name"] for i in profile["items"]]
-    assert "API信息" not in names
-    assert names == ["修改资料", "修改密码"]
+    all_names = [i["name"] for s in sections for i in s["items"]]
+    assert "API信息" not in all_names
+    assert "个人资料" not in [s["label"] for s in sections]
 
     # 页面与逻辑保留：API信息数据接口直访仍可用
     resp2 = await client.get("/merchant-api/account/apikey", headers=await _headers(session))

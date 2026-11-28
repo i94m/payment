@@ -48,8 +48,11 @@ export function getMerchantMenu(): MenuSection[] {
       items: [
         // 下游 API 支付接口关闭时隐藏入口（页面与逻辑保留，直访 URL 仍可用）
         { title: "API信息", url: "/security", icon: IconShieldLock, feature: "api_pay_enable" },
-        { title: "修改资料", url: "/user-center", icon: IconUserEdit },
-        { title: "修改密码", url: "/password", icon: IconLock },
+        // 修改资料/修改密码/结算记录/资金明细暂不提供商户端入口：收款账号与密码由
+        // 总后台「商户管理」维护，结算与流水在总后台处理。页面与路由保留（直访
+        // URL 仍可用、面包屑标题仍按全量菜单推导），需要恢复时删掉 hidden 即可。
+        { title: "修改资料", url: "/user-center", icon: IconUserEdit, hidden: true },
+        { title: "修改密码", url: "/password", icon: IconLock, hidden: true },
       ],
     },
     {
@@ -57,8 +60,8 @@ export function getMerchantMenu(): MenuSection[] {
       items: [
         { title: "订单记录", url: "/orders", icon: IconListDetails },
         { title: "测试支付", url: "/testpay", icon: IconFlask },
-        { title: "结算记录", url: "/settle", icon: IconReceipt },
-        { title: "资金明细", url: "/records", icon: IconHistory, feature: "merchant_records_enable" },
+        { title: "结算记录", url: "/settle", icon: IconReceipt, hidden: true },
+        { title: "资金明细", url: "/records", icon: IconHistory, feature: "merchant_records_enable", hidden: true },
       ],
     },
     {

@@ -36,7 +36,8 @@ async def user_info(auth: MerchantUser):
 
 
 # 商户端菜单全量分组定义。
-# flag: 为假剔除该项；group_flag: 为假剔除整组；url_setting: 取设置值作外链，空串剔除。
+# flag: 为假剔除该项；group_flag: 为假剔除整组；url_setting: 取设置值作外链，空串剔除；
+# hidden: 静态隐藏（定义保留便于恢复，不下发给客户端，与前端 sidebar.ts 的 hidden 一致）。
 _MENU_SECTIONS: list[dict] = [
     # 首组无 label（与前端 sidebar.ts、admin 侧边栏一致）
     {"items": [
@@ -46,15 +47,21 @@ _MENU_SECTIONS: list[dict] = [
         # 下游 API 支付接口关闭时隐藏入口（页面与逻辑保留，直访 URL 仍可用）
         {"key": "merchant.security", "name": "API信息", "path": "/security", "icon": "icon-safe",
          "flag": "api_pay_enable"},
-        {"key": "merchant.profile", "name": "修改资料", "path": "/user-center", "icon": "icon-user"},
-        {"key": "merchant.password", "name": "修改密码", "path": "/password", "icon": "icon-lock"},
+        {"key": "merchant.profile", "name": "修改资料", "path": "/user-center", "icon": "icon-user",
+         "hidden": True},
+        {"key": "merchant.password", "name": "修改密码", "path": "/password", "icon": "icon-lock",
+         "hidden": True},
     ]},
     {"label": "查询", "items": [
         {"key": "merchant.order", "name": "订单记录", "path": "/orders", "icon": "icon-list"},
         {"key": "merchant.testpay", "name": "测试支付", "path": "/testpay", "icon": "icon-flask"},
-        {"key": "merchant.settle", "name": "结算记录", "path": "/settle", "icon": "icon-thumb-up"},
+        # 修改资料/修改密码/结算记录/资金明细暂不提供商户端入口（与前端
+        # sidebar.ts 的 hidden 一致）：收款账号与密码由总后台「商户管理」维护，
+        # 结算与流水在总后台处理。页面/接口保留，直访 URL 仍可用。
+        {"key": "merchant.settle", "name": "结算记录", "path": "/settle", "icon": "icon-thumb-up",
+         "hidden": True},
         {"key": "merchant.record", "name": "资金明细", "path": "/records", "icon": "icon-file",
-         "flag": "merchant_records_enable"},
+         "flag": "merchant_records_enable", "hidden": True},
     ]},
     {"label": "下级代理", "group_flag": "agent_enable", "items": [
         {"key": "merchant.agent", "name": "代理管理", "path": "/agents", "icon": "icon-users"},
@@ -82,6 +89,9 @@ async def menu_list(auth: MerchantUser, session: SessionDep, cache: CacheDep):
             continue
         items = []
         for item in section["items"]:
+            # 静态隐藏项：定义保留（前端 sidebar.ts 同款），不下发给客户端
+            if item.get("hidden"):
+                continue
             flag = item.get("flag")
             if flag and not setting_enabled(settings.get(flag)):
                 continue
