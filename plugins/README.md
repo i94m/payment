@@ -98,6 +98,8 @@ plugins/
   - 验签失败 → `ack="fail"`（让上游重发）
   - 验签通过但状态非成功（如"处理中"）→ `ok=False, ack="success"`（让上游停止重发）
   - 验签通过且成功 → `ok=True, ack="success"`
+  - 异步回调**记账成功**后路由统一回 `success`；少数上游要求别的成功字面量（如金科 / RS 要 `OK`），
+    在插件类上覆盖 `notify_ok_ack = "OK"` 即可（`NotifyVerdict.ack` 只用于未记账的应答）
 - 回调里的成功状态码要转成字符串比较：`str(ctx_params.get("orderStatus")) == "2"`，防止上游传 `"02"` / int 差异
 - 同步回跳 `return_handler` 只在上游 return 请求**自带签名和成功态**时才实现；多数上游 return 无签名，保持默认返回 `None` 即可
 

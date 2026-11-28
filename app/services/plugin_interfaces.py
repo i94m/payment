@@ -74,6 +74,8 @@ class BasePayment(ABC):
     """支付插件基类（异步）。"""
 
     meta: PluginMeta
+    # 记账成功后应答给上游的字面量（默认 success；少数上游要求 "OK" 等其它串，插件覆盖此属性）
+    notify_ok_ack: str = "success"
 
     def __init__(self, channel: dict):
         """channel: 通道解密后的凭证 dict + 通道参数。"""

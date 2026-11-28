@@ -22,7 +22,8 @@
   URL 携带插件名并做一致性校验
 - **上游插件框架**：异步 `BasePayment`（submit/query/notify_handler）+ 目录自动发现（元信息在插件类 `meta`）；
   内置 **易支付插件**（`plugins/epay/`，易支付 V1 / MD5 签名）与 **易支付V2插件**
-  （`plugins/epayv2/`，易支付V2 / RSA2 签名 + `api/pay/*` 接口）
+  （`plugins/epayv2/`，易支付V2 / RSA2 签名 + `api/pay/*` 接口），以及从老 epay 项目移植的
+  **金科支付**（`plugins/jinke/`）、**RS支付**（`plugins/rspay/`）、**立鼎支付**（`plugins/liding/`）
 - **通道管理**：凭证 Fernet 加密（密钥派生自 APP_KEY）、商户费率/成本费率、
   随机/顺序/权重三种路由、金额区间与当日限额（Redis 计数）
 - **商户端**：登录（验证码）+ 管理员 SSO + 自助注册（开关/审核/邀请码绑定/
@@ -110,6 +111,9 @@ app/
   worker/jobs/              # notify_merchant / query_upstream / 三个扫描 cron
 plugins/epay/               # 易支付插件（V1，MD5 签名）
 plugins/epayv2/             # 易支付V2插件（RSA2 签名，api/pay/*）
+plugins/jinke/              # 金科支付插件（MD5 签名 + JSON 协议）
+plugins/rspay/              # RS支付插件（MD5 大写 + form 协议）
+plugins/liding/             # 立鼎支付插件（MD5 大写 + form 协议）
 alembic/versions/0001_*.py  # 初始迁移
 tests/                      # 签名 / 下单 / 回调幂等 / 阶梯重试 / 补单 / 收银台
 ```
@@ -172,7 +176,8 @@ docs/
 
 ## 已知边界（后续迭代）
 
-- 内置上游插件为易支付两版：`epay`（V1，MD5）与 `epayv2`（V2，RSA2，`api/pay/*` 接口）；
+- 内置上游插件：易支付两版 `epay`（V1，MD5）/ `epayv2`（V2，RSA2，`api/pay/*` 接口），
+  以及从老 epay 移植的 `jinke`（金科）/ `rspay`（RS）/ `liding`（立鼎）；
   官方直连类插件（微信 V3/支付宝等）已移除，
   需要时按 `plugins/README.md` 的流程重新接入
 - 商户找回密码依赖邮件通道：支付设置 `mail_channel`/`mail_config` 未配置时不可自助重置

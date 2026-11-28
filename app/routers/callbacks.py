@@ -33,6 +33,11 @@ RESP_OK = "success"
 RESP_FAIL = "fail"
 
 
+def _ok_ack(plugin) -> str:
+    """记账成功后应答给上游的字面量：插件可覆盖 notify_ok_ack（如 "OK"），默认 success。"""
+    return str(getattr(plugin, "notify_ok_ack", "") or RESP_OK)
+
+
 async def _load_plugin(plugin_name: str, trade_no: str, session: SessionDep):
     """按 URL 插件名加载插件实例，并校验与订单通道一致。
 
@@ -106,7 +111,7 @@ async def upstream_notify(plugin_name: str, trade_no: str, request: Request,
                 "trade_no": trade_no, "stage": "already_paid",
                 "params": dict(request.query_params),
             })
-        return Response(content=RESP_OK, media_type="text/plain")
+        return Response(content=_ok_ack(plugin), media_type="text/plain")
 
     params = await _parse_params(request)
     body = await request.body()
@@ -156,10 +161,10 @@ async def upstream_notify(plugin_name: str, trade_no: str, request: Request,
         # 扣量单、无回调地址的单都不通知（should_notify 由 process_paid_order 统一判定）
         if result.should_notify:
             await _notify_merchant(trade_no, session)
-        return Response(content=RESP_OK, media_type="text/plain")
+        return Response(content=_ok_ack(plugin), media_type="text/plain")
     if result.status == "lock_failed":
-        # 并发处理中，对上游回 success
-        return Response(content=RESP_OK, media_type="text/plain")
+        # 并发处理中，对上游回成功应答，让上游不再重发
+        return Response(content=_ok_ack(plugin), media_type="text/plain")
     if result.status == "not_found":
         return Response(content=RESP_FAIL, media_type="text/plain")
     if result.status == "mismatch":
